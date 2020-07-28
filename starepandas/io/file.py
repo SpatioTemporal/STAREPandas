@@ -12,7 +12,7 @@ import netCDF4
 
 def read_mod09(file_path, sidecar=None,
                track_first=False, add_stare=True, adapt_resolution=True, 
-               row_min=0, row_max=-1, col_min=0, col_max=-1):
+               row_min=None, row_max=None, col_min=None, col_max=None):
     modis = read_modis_base(file_path, sidecar, track_first, add_stare, adapt_resolution, 
                row_min, row_max, col_min, col_max)
     file_path = os.path.abspath(file_path)
@@ -24,7 +24,7 @@ def read_mod09(file_path, sidecar=None,
 
 def read_mod05(file_path, sidecar=None,
                track_first=False, add_stare=True, adapt_resolution=True, 
-               row_min=0, row_max=-1, col_min=0, col_max=-1):
+               row_min=None, row_max=None, col_min=None, col_max=None):
     modis = read_modis_base(file_path, sidecar, track_first, add_stare, adapt_resolution, 
                row_min, row_max, col_min, col_max)    
     return modis
@@ -32,7 +32,7 @@ def read_mod05(file_path, sidecar=None,
 
 def read_modis_base(file_path, sidecar=None,
                track_first=False, add_stare=True, adapt_resolution=True, 
-               row_min=0, row_max=-1, col_min=0, col_max=-1):
+               row_min=None, row_max=None, col_min=None, col_max=None):
     file_path = os.path.abspath(file_path)
     hdf = SD(file_path)
     lon = hdf.select('Longitude').get()[row_min:row_max, col_min:col_max].astype(numpy.double)
@@ -44,15 +44,16 @@ def read_modis_base(file_path, sidecar=None,
     modis = {'lat': lat.flatten(), 'lon': lon.flatten()}
     if sidecar:
         sidecar_path = guess_sidecar_name(file_path)
-        modis_['stare'] = read_sidecar(sidecar_path)    
+        modis['stare'] = read_sidecar(sidecar_path)    
     elif add_stare:
         stare = pystare.from_latlon2D(lat=lat, lon=lon, adapt_resolution=adapt_resolution)
         modis['stare'] = stare.flatten()
     modis = starepandas.STAREDataFrame(modis)
     return modis
 
-def guess_sidecar_name(file_path):
-    sidecar_name = file_path.split('.')[0:-1] + '_stare.nc'
+
+def guess_sidecar_name(file_path):    
+    return '.'.join(file_path.split('.')[0:-1]) + '_stare.nc'
 
 
 def read_sidecar(file_path):
