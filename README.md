@@ -1,3 +1,5 @@
+![Example 1](figures/starepandas.png)
+
 # STAREPandas
 STAREpandas adds [SpatioTemporal Adaptive Resolution Encoding
 (STARE)](https://github.com/SpatioTemporal) support to [pandas DataFrames](https://pandas.pydata.org/).
