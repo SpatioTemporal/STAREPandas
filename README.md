@@ -37,6 +37,8 @@ pip3 install $STAREPandas
     
     
 ## Features and usage
+The examples/ folder contains notebooks that highlight the usage.
+
 STAREPandas helps integrating STARE in the geospatial data workflow.
 Building on top of fiona and geopandas, STAREPandas allows to read almost any vector-based spatial data format and convert lat/lon and well-known-text (WKT) representation to STARE indices and covers.
    
