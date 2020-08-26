@@ -37,6 +37,13 @@ git clone https://github.com/NiklasPhabian/starepandas $STAREPandas
 pip3 install $STAREPandas
 ```
     
+## Note
+Some of the examples require Rtree-linux to be installed to run geopandas spatial joins. As of 2020-08-20, I could not make this work on Centos7 with rtree>0.9 (9.4) as it requires GLIBCXX_3.4.21. I therefor downgrade rtree to rtree-0.8.3 on Centos7 
+
+    pip3 install "rtree>=0.8,<0.9
+    
+This is likely related to [rtree issue 120](https://github.com/Toblerity/rtree/issues/120)
+
     
 ## Features and usage
 The examples/ folder contains notebooks that highlight the usage.
