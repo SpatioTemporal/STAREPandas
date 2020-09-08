@@ -149,7 +149,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             other = [other]
             
         if self.stare.dtype == numpy.int64:
-            data = pystare.intersects(other, self.stare)        
+            data = pystare.intersects(other, self.stare)
         else:
             data = []
             for srange in self.stare:                                
