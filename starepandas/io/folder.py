@@ -20,6 +20,9 @@ def get_timestamps(granule_name):
 
 def make_row(granule_name, add_sf=False):
     sidecar_name = starepandas.guess_sidecar_name(granule_name)
+    if not sidecar_name:
+        print('no sidecar found for {}'.format(granule_name))
+        return None
     stare_cover = starepandas.read_sidecar(sidecar_name)
     row = {}
     row['granule_name'] = granule_name
@@ -59,6 +62,9 @@ def get_sf_cover(granule_name):
 def folder2catalogue(path, granule_extension='hdf', add_sf=False):
     term = '{path}/*.{ext}'.format(path=path, ext=granule_extension)
     granule_names = glob.glob(term)    
+    if not granule_names:
+        print('no granules in folder')
+        return None
     df = starepandas.STAREDataFrame()
     for granule_name in granule_names:
         row = make_row(granule_name, add_sf)
@@ -67,3 +73,5 @@ def folder2catalogue(path, granule_extension='hdf', add_sf=False):
     if add_sf:
         df.set_geometry('geom', inplace=True)
     return df
+
+
