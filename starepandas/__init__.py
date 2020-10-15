@@ -3,8 +3,7 @@ from starepandas.stareseries import STARESeries
 
 from starepandas.tools import stare_join
 from starepandas.io.file import *
-#from starepandas.io.file import read_mod05
-#from starepandas.io.file import read_vnp02dnb
+from starepandas.io.folder import *
 
 from starepandas.tools.stare_conversions import *
 

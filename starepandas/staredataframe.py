@@ -32,7 +32,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         self._data = self._data.copy()
         
         # We carry over the geometry column name
-        if isinstance(*args, geopandas.GeoDataFrame):
+        if args and isinstance(*args, geopandas.GeoDataFrame):
             self._geometry_column_name = args[0]._geometry_column_name
         
         if stare is not None:
@@ -66,12 +66,12 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         The original stare column is replaced with the input.
         Parameters
         ----------
-        col : array-like of stare indices
+        col : array-like of stare indices or column name
         inplace : boolean, default False
             Modify the StareDataFrame  in place (do not create a new object)
         Examples
         --------
-        >>> df = df.set_geometry([[4611686018427387903, 4611686018427387903, 4611686018427387903])        
+        >>> df = df.set_stare([[4611686018427387903, 4611686018427387903, 4611686018427387903])  
         Returns
         -------
         StareDataFrame """
@@ -86,8 +86,10 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             frame[self._stare_column_name] = col
         elif hasattr(col, "ndim") and col.ndim != 1:
             raise ValueError("Must pass array with one dimension only.")
+        elif isinstance(col, str) and col in self.columns:            
+            self._stare_column_name = col
         else:
-            raise ValueError("Must pass array-like object")
+            raise ValueError("Must pass array-like object or column name")
 
         if not inplace:
             return frame
@@ -98,7 +100,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         containing the trixels referred by the STARE indices"""
         trixels_series = []
         if stare_column==None:
-            stare_column=self._stare_column_name
+            stare_column = self._stare_column_name
         for index_values in self[stare_column]:
             trixels = starepandas.to_trixels(index_values, as_multipolygon=True)
             trixels_series.append(trixels)        
@@ -146,13 +148,21 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         """
         
         if isinstance(other, (int, numpy.int64)):
+            # Other is a single STARE index value
             other = [other]
-            
-        if self.stare.dtype == numpy.int64:
-            data = pystare.intersects(other, self.stare, method)
+        elif isinstance(other, (numpy.ndarray, list)):
+            # Other is a collection/set of STARE index values
+            pass                
         else:
-            data = []
-            for srange in self.stare:                                
+            raise ValueError("Other must be array-like object or int64")
+            
+        if self[self._stare_column_name].dtype == numpy.int64:
+            # STARE column of self contains single STARE index values
+            data = pystare.intersects(other, self[self._stare_column_name], method)
+        else:
+            # STARE column of self contains collections/sets of STARE index values
+            data = []            
+            for srange in self[self._stare_column_name]:
                 data.append(pystare.intersects(srange, other, method).any())
         return pandas.Series(data, index=self.index)
     
@@ -170,7 +180,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             intersection with.
         """        
         data = []
-        for srange in self.stare:
+        for srange in self._stare_column_name:
             data.append(pystare.intersect(srange, other))
         return pandas.Series(data, index=self.index)
 

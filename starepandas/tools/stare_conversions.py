@@ -6,7 +6,7 @@ import pystare
 
 def stare_from_gdf(gdf, level=-1, nonconvex=True, force_ccw=True):
     """
-    Takes a GeoSeries or GeoDataFrame and returns a corresponding series of sets of trixel indices
+    Takes a GeoDataFrame and returns a corresponding series of sets of trixel indices
     """
     if not gdf._geometry_column_name in gdf.keys():
         print('no geom column set')
@@ -26,6 +26,20 @@ def stare_from_gdf(gdf, level=-1, nonconvex=True, force_ccw=True):
                 index_values.append(from_point(geom, level))
         return index_values        
     
+
+def stare_from_geoseries(series, level=-1, nonconvex=True, force_ccw=True):
+    """
+    Takes a GeoSeries and returns a corresponding series of sets of trixel indices
+    """
+    index_values = []
+    for geom in series:
+        if geom.type == 'Polygon':
+            index_values.append(from_polygon(geom, level, nonconvex, force_ccw))
+        elif geom.type == 'MultiPolygon':                
+            index_values.append(from_multipolygon(geom, level, nonconvex, force_ccw))
+        elif geom.type == 'Point':
+            index_values.append(from_point(geom, level))
+    return index_values      
     
 def stare_from_xy(lon, lat, level=-1, n_cores=1):
     return pystare.from_latlon(lat, lon, level)
@@ -95,10 +109,10 @@ def from_point(point, level=-1):
 def from_boundary(boundary, level=-1, nonconvex=True, force_ccw=False):
     """ 
     Return a range of indices covering the region circumscribed by the polygon. 
-    Node orientation is relevant and CW"    
+    Node orientation is relevant and CW
     """    
     if force_ccw and not boundary.is_ccw:
-        boundary.coords= list(boundary.coords)[::-1]
+        boundary.coords = list(boundary.coords)[::-1]
     latlon = boundary.coords.xy
     lon = latlon[0]
     lat = latlon[1]
