@@ -1,3 +1,4 @@
 .directory
 *.pyc
 *.ipynb_checkpoints*
+starepandas.egg-info/*
