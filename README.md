@@ -2,7 +2,7 @@
 STAREpandas adds [SpatioTemporal Adaptive Resolution Encoding
 (STARE)](https://github.com/SpatioTemporal) support to [pandas DataFrames](https://pandas.pydata.org/).
 
-![Example 1](figures/intersection.png)
+![Example 1](figures/resized_starepandas.png)
 
 ## Introduction
 STAREPandas provides high-level functions for users to explore and interact with STARE.
