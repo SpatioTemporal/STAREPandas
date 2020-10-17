@@ -23,7 +23,7 @@ data_files = []
 
 setup(
     name="starepandas",
-    version='0.2',
+    version='0.2.1',
     description="STARE pandas extensions",
     license="MIT",
     author="Niklas Griessbaum",

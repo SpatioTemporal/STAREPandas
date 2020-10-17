@@ -8,6 +8,7 @@ import glob
 import numpy
 import pystare
 import collections
+import re
 
 
 def get_hdfeos_metadata(file_path):    
@@ -66,13 +67,14 @@ def read_modis_base(file_path, sidecar=None,
     modis = {'lat': lat.flatten(), 'lon': lon.flatten()}
     if sidecar:
         sidecar_path = guess_sidecar_name(file_path)
-        modis['stare'] = read_sidecar(sidecar_path)    
+        modis['stare']       = read_mod05_sidecar_index(sidecar_path)
+        modis['stare_cover'] = read_mod05_sidecar_cover(sidecar_path)
     elif add_stare:
         stare = pystare.from_latlon2D(lat=lat, lon=lon, adapt_resolution=adapt_resolution)
         modis['stare'] = stare.flatten()
+        # modis['stare_cover']
     modis = starepandas.STAREDataFrame(modis)
     return modis
-
 
 def read_mod09(file_path, sidecar=None,
                track_first=False, add_stare=True, adapt_resolution=True, 
@@ -109,15 +111,22 @@ def guess_sidecar_name(file_path):
     else:
         return None
 
-def read_sidecar(file_path):
-    ds = netCDF4.Dataset(file_path)
-    stare = ds['STARE_index_1km'][:,:].flatten().astype(numpy.int64)
-    return stare
-
 
 def read_sidecar_cover(file_path):
+    if re.search('MOD05|MYD05',file_path,re.IGNORECASE):
+        return read_mod05_sidecar_cover(file_path)
+    else:
+        print('read_sidecar_cover cannot handle %s'%file_path)
+    return None
+
+def read_mod05_sidecar_index(file_path):
     ds = netCDF4.Dataset(file_path)
-    stare = ds['STARE_cover_1km'][:].flatten().astype(numpy.int64)
+    stare = ds['STARE_index_5km'][:,:].flatten().astype(numpy.int64)
+    return stare
+
+def read_mod05_sidecar_cover(file_path):
+    ds = netCDF4.Dataset(file_path)
+    stare = ds['STARE_cover_5km'][:].flatten().astype(numpy.int64)
     return stare
 
 # Below needs revision

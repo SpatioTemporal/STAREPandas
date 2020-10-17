@@ -23,7 +23,7 @@ def make_row(granule_name, add_sf=False):
     if not sidecar_name:
         print('no sidecar found for {}'.format(granule_name))
         return None
-    stare_cover = starepandas.read_sidecar(sidecar_name)
+    stare_cover = starepandas.read_sidecar_cover(sidecar_name)
     row = {}
     row['granule_name'] = granule_name
     row['sidecar_name'] = sidecar_name
