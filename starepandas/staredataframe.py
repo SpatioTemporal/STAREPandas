@@ -84,7 +84,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             frame = self
         else:
             frame = self.copy()
-                
+
         if isinstance(col, (pandas.Series, list, numpy.ndarray)):
             frame[self._stare_column_name] = col
         elif hasattr(col, "ndim") and col.ndim != 1:
