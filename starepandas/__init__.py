@@ -1,6 +1,7 @@
 from starepandas.staredataframe import STAREDataFrame
 from starepandas.stareseries import STARESeries
 
+from starepandas.io.s3 import *
 from starepandas.tools import stare_join
 from starepandas.io.file import *
 from starepandas.io.folder import *
