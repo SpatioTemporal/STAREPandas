@@ -71,6 +71,10 @@ def to_trixels(sids, as_multipolygon=False):
     if isinstance(sids, (numpy.int64, int)):
         # If single value was passed
         sids = [sids]
+    
+    if isinstance(sids, (numpy.ndarray)):
+        # This is not ideal, but when we read sidecars, we get unit64 and have to cast
+        sids = sids.astype(numpy.int64)
     latv, lonv = pystare._to_vertices_latlon(sids)
     for i in range(len(latv)):
         latv[i] = pystare.shiftarg_lat(latv[i])
