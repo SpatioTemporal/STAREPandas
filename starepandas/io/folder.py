@@ -60,7 +60,7 @@ def get_sf_cover(granule_name):
 
 
 def folder2catalogue(path, granule_extension='hdf', add_sf=False):
-    term = '{path}/*.{ext}'.format(path=path, ext=granule_extension)
+    term = '{path}/*[!_stare].{ext}'.format(path=path, ext=granule_extension)
     granule_names = glob.glob(term)    
     if not granule_names:
         print('no granules in folder')

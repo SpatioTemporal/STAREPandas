@@ -33,7 +33,9 @@ def parse_hdfeos_metadata(string):
     lines = []
     for line in lines0:
         if "=" in line:
-            key, value = line.split('=')
+            
+            key = line.split('=')[0]
+            value = '='.join(line.split('=')[1:])
             lines.append(key.strip()+'='+value.strip())
         else:
             lines.append(line)
@@ -42,14 +44,15 @@ def parse_hdfeos_metadata(string):
         i+=1
         line = lines[i]
         if "=" in line:
-            key, value = line.split('=')
+            key = line.split('=')[0]
+            value = '='.join(line.split('=')[1:])#.join('=')
             if key in ['GROUP', 'OBJECT']:
                 endIdx = lines[i+1:].index('END_{}={}'.format(key, value))
                 endIdx += i+1
                 out[value] = parse_hdfeos_metadata("\n".join(lines[i+1:endIdx]))
                 i = endIdx
             elif ('END_GROUP' not in key) and ('END_OBJECT' not in key):
-                    out[key] = str(value)
+                out[key] = str(value)
     return out
 
 def read_modis_base(file_path, sidecar=None,
