@@ -25,13 +25,13 @@ pip3 install git+git://github.com/SpatioTemporal/pystare.git
 Then install STAREPandas from github
 
 ```shell
-pip3 install git+git://github.com/NiklasPhabian/starepandas.git $STAREPandas
+pip3 install git+git://github.com/SpatioTemporal/starepandas.git $STAREPandas
 ```
 
 or from a local copy
 
 ```shell
-git clone https://github.com/NiklasPhabian/starepandas $STAREPandas
+git clone https://github.com/SpatioTemporal/starepandas $STAREPandas
 pip3 install $STAREPandas
 ```
     

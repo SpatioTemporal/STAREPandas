@@ -29,7 +29,10 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         
         # We need this to solve https://github.com/geopandas/geopandas/issues/1179
         # Should verify that it does not cause a performance hit
-        self._data = self._data.copy()
+        
+        # on a wing and a prayer
+        # self._data = self._data.copy()
+        # self.data = self.data.copy()
         
         # We carry over the geometry column name
         if args and isinstance(*args, geopandas.GeoDataFrame):
@@ -81,7 +84,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             frame = self
         else:
             frame = self.copy()
-                
+
         if isinstance(col, (pandas.Series, list, numpy.ndarray)):
             frame[self._stare_column_name] = col
         elif hasattr(col, "ndim") and col.ndim != 1:
