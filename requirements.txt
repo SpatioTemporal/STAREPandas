@@ -27,13 +27,11 @@ Pillow==8.0.1
 pyhdf==0.10.2
 pyparsing==2.4.7
 pyproj==2.6.1.post1
--e git+git@github.com:NiklasPhabian/pystare.git@b0631d992103a3207ac652a9ea46783f34ae0441#egg=pystare
 python-dateutil==2.8.1
 pytz==2020.4
 PyYAML==5.3.1
 s3transfer==0.3.3
 Shapely==1.7.1
 six==1.15.0
--e git+git@github.com:NiklasPhabian/STAREPandas.git@ef7d73ecb616e363b0fa322199071d83a19f6b24#egg=starepandas
 toolz==0.11.1
 urllib3==1.25.11
