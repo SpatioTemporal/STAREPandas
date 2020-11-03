@@ -84,6 +84,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             frame = self
         else:
             frame = self.copy()
+            
 
         if isinstance(col, (pandas.Series, list, numpy.ndarray)):
             frame[self._stare_column_name] = col
@@ -105,6 +106,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         if stare_column==None:
             stare_column = self._stare_column_name
         for index_values in self[stare_column]:
+            # This is maybe not ideal if every row has single SID
             trixels = starepandas.to_trixels(index_values, as_multipolygon=True)
             trixels_series.append(trixels)        
         return trixels_series
@@ -130,6 +132,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             df = self
         if boundary:
             df = df[df.geometry.is_empty==False]
+            df = starepandas.STAREDataFrame(df)
             df = df.set_geometry(df.geometry.boundary)
         return super(STAREDataFrame, df).plot(*args, **kwargs)
     

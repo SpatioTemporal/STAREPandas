@@ -7,7 +7,6 @@ import os
 import glob
 import numpy
 import pystare
-import collections
 import re
 
 
@@ -29,12 +28,14 @@ def get_metadata_group(hdf, group_name):
     return metadata_group
 
 def parse_hdfeos_metadata(string):
-    out = {} #collections.OrderedDict()
+    out = {} 
     lines0 = [i.replace('\t','') for i in string.split('\n')]
     lines = []
     for line in lines0:
         if "=" in line:
-            key, value = line.split('=')
+            
+            key = line.split('=')[0]
+            value = '='.join(line.split('=')[1:])
             lines.append(key.strip()+'='+value.strip())
         else:
             lines.append(line)
@@ -43,99 +44,128 @@ def parse_hdfeos_metadata(string):
         i+=1
         line = lines[i]
         if "=" in line:
-            key, value = line.split('=')
+            key = line.split('=')[0]
+            value = '='.join(line.split('=')[1:])#.join('=')
             if key in ['GROUP', 'OBJECT']:
                 endIdx = lines[i+1:].index('END_{}={}'.format(key, value))
                 endIdx += i+1
                 out[value] = parse_hdfeos_metadata("\n".join(lines[i+1:endIdx]))
                 i = endIdx
             elif ('END_GROUP' not in key) and ('END_OBJECT' not in key):
-                    out[key] = str(value)
+                out[key] = str(value)
     return out
 
-def read_modis_base(file_path, sidecar=None,
-               track_first=False, add_stare=True, adapt_resolution=True, 
-               row_min=None, row_max=None, col_min=None, col_max=None):
-    file_path = os.path.abspath(file_path)
-    hdf = starepandas.SD_wrapper(file_path)
-    lon = hdf.select('Longitude').get()[row_min:row_max, col_min:col_max].astype(numpy.double)
-    lat = hdf.select('Latitude').get()[row_min:row_max, col_min:col_max].astype(numpy.double)
-    if track_first:
-        lon = numpy.ascontiguousarray(lon.transpose())
-        lat = numpy.ascontiguousarray(lat.transpose())
+
+class Granule:
     
-    modis = {'lat': lat.flatten(), 'lon': lon.flatten()}
-    if sidecar:
-        sidecar_path = guess_sidecar_name(file_path)
-        modis['stare']       = read_mod05_sidecar_index(sidecar_path)
-        modis['stare_cover'] = read_mod05_sidecar_cover(sidecar_path)
-    elif add_stare:
-        stare = pystare.from_latlon2D(lat=lat, lon=lon, adapt_resolution=adapt_resolution)
-        modis['stare'] = stare.flatten()
-        # modis['stare_cover']
-    modis = starepandas.STAREDataFrame(modis)
-    return modis
+    def __init__(self, file_path):
+        self.file_path = file_path
+        self.sidecar_name = self.guess_sidecar_name()
+        #self.file_path = os.path.abspath(file_path)
+    
+    def guess_sidecar_name(self):
+        name =  '.'.join(self.file_path.split('.')[0:-1]) + '_stare.nc'
+        if 's3://' == self.file_path[0:5]:
+            tokens = starepandas.parse_s3_url(name)
+            names,_ = starepandas.s3_glob(name)
+            target = '{prefix}/{resource}'.format(prefix=tokens['prefix'],resource=tokens['resource'])            
+            if target in names:
+                return name
+        else:
+            if glob.glob(name):
+                return name
+        return None
+    
+    def add_stare(self, adapt_resolution=True):
+        self.stare = pystare.from_latlon2D(lat=self.lat, lon=self.lon, adapt_resolution=adapt_resolution)        
+    
+    def read_sidecar_index(self, sidecar_path=None):
+        if not sidecar_path:
+            sidecar_path = self.guess_sidecar_name()
+        ds = starepandas.nc4_Dataset_wrapper(sidecar_path)
+        self.stare = ds['STARE_index_{}'.format(self.nom_res)][:,:].astype(numpy.int64)
+        
+    def read_sidecar_cover(self, sidecar_path=None):
+        if not sidecar_path:
+            sidecar_path = self.guess_sidecar_name()
+        ds = starepandas.nc4_Dataset_wrapper(sidecar_path)        
+        self.stare_cover = ds['STARE_cover_{}'.format(self.nom_res)][:].astype(numpy.int64)        
+    
+    def to_df(self):
+        df = {}
+        df['lat']  = self.lat.flatten()
+        df['lon'] = self.lon.flatten()
+        df['stare'] = self.stare.flatten()
+        for key in self.data.keys():
+            df[key] = self.data[key].flatten()
+        return starepandas.STAREDataFrame(df)
 
-def read_mod09(file_path, sidecar=None,
-               track_first=False, add_stare=True, adapt_resolution=True, 
-               row_min=None, row_max=None, col_min=None, col_max=None):
-    modis = read_modis_base(file_path, sidecar, track_first, add_stare, adapt_resolution, 
-               row_min, row_max, col_min, col_max)
-    file_path = os.path.abspath(file_path)
-    hdf = starepandas.SD_wrapper(file_path)
-    for dataset_name in dict(filter(lambda elem: '1km' in elem[0], hdf.datasets().items())).keys():
-        modis[dataset_name] = hdf.select(dataset_name).get()[row_min:row_max, col_min:col_max].flatten()
-    return modis
 
+class Modis(Granule):
+    def __init__(self, file_path):                
+        super(Modis, self).__init__(file_path)
+        self.hdf = starepandas.SD_wrapper(file_path)        
+    
+    def read_latlon(self, track_first=False):
+        self.lon = self.hdf.select('Longitude').get().astype(numpy.double)
+        self.lat = self.hdf.select('Latitude').get().astype(numpy.double)
+        if track_first:
+            self.lon = numpy.ascontiguousarray(self.lon.transpose())
+            self.lat = numpy.ascontiguousarray(self.lat.transpose())
+            
 
-def read_mod05(file_path, sidecar=None,
-               track_first=False, add_stare=True, adapt_resolution=True, 
-               row_min=None, row_max=None, col_min=None, col_max=None):
-    modis = read_modis_base(file_path, sidecar, track_first, add_stare, adapt_resolution, 
-               row_min, row_max, col_min, col_max)    
-    file_path = os.path.abspath(file_path)
-    hdf = starepandas.SD_wrapper(file_path)
-    dataset_names = ['Scan_Start_Time', 'Solar_Zenith', 'Solar_Azimuth', 'Sensor_Zenith',
-                     'Sensor_Azimuth', 'Water_Vapor_Infrared']
-    dataset_names2 = ['Cloud_Mask_QA', 'Water_Vapor_Near_Infrared', 
-                      'Water_Vaport_Corretion_Factors', 'Quality_Assurance_Near_Infrared', 'Quality_Assurance_Infrared']
-    for dataset_name in dataset_names:
-        modis[dataset_name] = hdf.select(dataset_name).get()[row_min:row_max, col_min:col_max].flatten()
-    return modis
+class Mod09(Modis):
+    def __init__(self, file_path):
+        super(Mod09, self).__init__(file_path)
+        self.nom_res = '1km'
+    
+    def read_data(self):
+        self.data = {}
+        for dataset_name in dict(filter(lambda elem: '1km' in elem[0], self.hdf.datasets().items())).keys():
+            self.data[dataset_name] = self.hdf.select(dataset_name).get()
+
+class Mod05(Modis):
+    def __init__(self, file_path):
+        super(Mod05, self).__init__(file_path)
+        self.nom_res = '5km'
+        
+    def read_data(self):
+        dataset_names = ['Scan_Start_Time', 'Solar_Zenith', 'Solar_Azimuth', 
+                         'Sensor_Zenith', 'Sensor_Azimuth', 'Water_Vapor_Infrared']
+    
+        dataset_names2 = ['Cloud_Mask_QA', 'Water_Vapor_Near_Infrared', 
+                          'Water_Vaport_Corretion_Factors', 'Quality_Assurance_Near_Infrared', 'Quality_Assurance_Infrared']
+        self.data = {}
+        for dataset_name in dataset_names:
+            self.data[dataset_name] = self.hdf.select(dataset_name).get()
     
 
-def guess_sidecar_name(file_path):
-    name =  '.'.join(file_path.split('.')[0:-1]) + '_stare.nc'
-    # print('guessing name: ',name)
-    if 's3://' == file_path[0:5]:
-        tokens = starepandas.parse_s3_url(name)
-        names,_ = starepandas.s3_glob(name)
-        target = '{prefix}/{resource}'.format(prefix=tokens['prefix'],resource=tokens['resource'])
-        # print('found names:\n',names)
-        if target in names:
-            return name
+def read_mod09(file_path, sidecar=False, track_first=False, add_stare=True, adapt_resolution=True):
+    return read_granule(file_path, sidecar, track_first, add_stare, adapt_resolution)
+
+def read_mod05(file_path, sidecar=False, track_first=False, add_stare=True, adapt_resolution=True):
+    return read_granule(file_path, sidecar, track_first, add_stare, adapt_resolution)
+
+
+def read_granule(file_path, sidecar=False, track_first=False, add_stare=True, adapt_resolution=True):
+    
+    if re.search('MOD05|MYD05', file_path, re.IGNORECASE):
+        granule = Mod05(file_path)
+    elif re.search('MOD09|MYD09', file_path, re.IGNORECASE):
+        granule = Mod09(file_path)
     else:
-        if glob.glob(name):
-            return name
-    return None
-
-
-def read_sidecar_cover(file_path):
-    if re.search('MOD05|MYD05',file_path,re.IGNORECASE):
-        return read_mod05_sidecar_cover(file_path)
-    else:
-        print('read_sidecar_cover cannot handle %s'%file_path)
-    return None
-
-def read_mod05_sidecar_index(file_path):
-    ds = starepandas.nc4_Dataset_wrapper(file_path)
-    stare = ds['STARE_index_5km'][:,:].flatten().astype(numpy.int64)
-    return stare
-
-def read_mod05_sidecar_cover(file_path):
-    ds = starepandas.nc4_Dataset_wrapper(file_path)
-    stare = ds['STARE_cover_5km'][:].flatten().astype(numpy.int64)
-    return stare
+        print('read_granule() cannot handle %s'%file_path)
+    
+    granule.read_latlon()
+    granule.read_data()
+    
+    if sidecar:        
+        granule.read_sidecar_index()
+    elif add_stare:        
+        granule.add_stare(adapt_resolution)
+    
+    return granule.to_df()
+    
 
 # Below needs revision
 def guess_vnp03path(vnp02_path):

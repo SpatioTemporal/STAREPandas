@@ -4,6 +4,7 @@ from pyhdf.SD import SD
 import numpy
 import glob
 import datetime
+import re
 
 # from dask_gateway import Gateway
 # from dask_gateway import GatewayCluster
@@ -47,15 +48,21 @@ def get_timestamps(granule_name):
 
 # granule_name might be a url
 def make_row(granule_name, add_sf=False):
-    sidecar_name = starepandas.guess_sidecar_name(granule_name)
-    if not sidecar_name:
+    if re.search('MOD05|MYD05', granule_name, re.IGNORECASE):
+        granule = starepandas.io.file.Mod05(granule_name)
+    elif re.search('MOD09|MYD09', granule_name, re.IGNORECASE):
+        granule = starepandas.io.file.Mod09(granule_name)
+    else:
+        print('cannot handle %s'%granule_name)
+    
+    if not granule.sidecar_name:
         print('no sidecar found for {}'.format(granule_name))
         return None
-    stare_cover = starepandas.read_sidecar_cover(sidecar_name)
+    granule.read_sidecar_cover()
     row = {}
     row['granule_name'] = granule_name
-    row['sidecar_name'] = sidecar_name
-    row['stare_cover'] = stare_cover
+    row['sidecar_name'] = granule.sidecar_name
+    row['stare_cover'] = granule.stare_cover
     begining, end = get_timestamps(granule_name)
     row['begining'] = begining
     row['ending'] = end
@@ -86,8 +93,9 @@ def get_sf_cover(granule_name):
     return shapely.geometry.Polygon(zip(lon, lat))
 
 
-def folder2catalogue(path, granule_extension='hdf', add_sf=False, client = None):
-    term = '{path}/*.{ext}'.format(path=path, ext=granule_extension)
+def folder2catalogue(path, granule_trunk='*', granule_extension='*', add_sf=False, client = None):
+    term = '{path}/{granule_trunk}*[!_stare].{ext}'.format(path=path, granule_trunk=granule_trunk,
+                                                           ext=granule_extension)
     s3 = None
     if path[0:5] != 's3://':
         granule_names = glob.glob(term)
@@ -96,6 +104,8 @@ def folder2catalogue(path, granule_extension='hdf', add_sf=False, client = None)
     if not granule_names:
         print('no granules in folder')
         return None
+    
+    
     df = starepandas.STAREDataFrame()
     if client is None:
         for granule_name in granule_names:

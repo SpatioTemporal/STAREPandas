@@ -125,14 +125,14 @@ def nc4_dataset_from_s3(s3_client,bucket_name,key,filename='file.nc4'):
     buff.seek(0)
     return netCDF4.Dataset(filename,memory=buff.read(),diskless=True,mode='r')
 
-def nc4_Dataset_wrapper(file_path,mode='r',format=None):
+def nc4_Dataset_wrapper(file_path, mode='r', format=None):
     ds = None
     if 's3://' == file_path[0:5]:
         s3 = parse_s3_url(file_path)
         s3_client = boto3.client('s3')
         ds = nc4_dataset_from_s3(s3_client,s3['bucket_name'],s3['prefix']+s3['prefix_end']+s3['resource'],filename=s3['resource'])
     else:
-        ds = netCDF4.Dataset(file_path,mode,format)
+        ds = netCDF4.Dataset(file_path, mode, format)
     return ds
 
 def SD_wrapper(file_path):
