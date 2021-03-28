@@ -15,6 +15,8 @@ STAREPandas also extends the geopandas file I/O functionality to load some (rast
 
 
 ## Installation
+STARepandas depends on pyhdf, requiring libhdf4-dev to build.
+
 STAREPandas is built on top of [pystare](https://github.com/SpatioTemporal/pystare), which is not on PyPI yet. Therefore manually install pystare first.
 
 ```shell
