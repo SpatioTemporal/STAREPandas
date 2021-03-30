@@ -5,5 +5,5 @@ starepandas.egg-info/*
 build/
 dist/
 record.txt
+*.pyc
 *~
-
