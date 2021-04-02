@@ -186,7 +186,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             intersection with.
         """        
         data = []
-        for srange in self._stare_column_name:
+        for srange in self[self._stare_column_name]:
             data.append(pystare.intersect(srange, other))
         return pandas.Series(data, index=self.index)
 

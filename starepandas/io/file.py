@@ -7,7 +7,14 @@ import os
 import glob
 import numpy
 import pystare
+import datetime
 import re
+
+class UnsuportedFileError(Exception):
+    
+    def __init__(expression, message):
+        self.expression = expression
+        self.message = message
 
 
 def get_hdfeos_metadata(file_path):    
@@ -58,16 +65,19 @@ def parse_hdfeos_metadata(string):
 
 class Granule:
     
-    def __init__(self, file_path):
+    def __init__(self, file_path, sidecar_path=None):
         self.file_path = file_path
-        self.sidecar_name = self.guess_sidecar_name()
+        if sidecar_path:
+            self.sidecar_path = sidecar_path
+        else:
+            self.sidecar_path = self.guess_sidecar_path()
         self.data = {}
         self.lat = None
         self.lon = None
         self.stare = None
         #self.file_path = os.path.abspath(file_path)
     
-    def guess_sidecar_name(self):
+    def guess_sidecar_path(self):
         name =  '.'.join(self.file_path.split('.')[0:-1]) + '_stare.nc'
         if 's3://' == self.file_path[0:5]:
             tokens = starepandas.parse_s3_url(name)
@@ -85,13 +95,13 @@ class Granule:
     
     def read_sidecar_index(self, sidecar_path=None):
         if not sidecar_path:
-            sidecar_path = self.guess_sidecar_name()
+            sidecar_path = self.sidecar_path
         ds = starepandas.nc4_Dataset_wrapper(sidecar_path)
         self.stare = ds['STARE_index_{}'.format(self.nom_res)][:,:].astype(numpy.int64)
         
     def read_sidecar_cover(self, sidecar_path=None):
         if not sidecar_path:
-            sidecar_path = self.guess_sidecar_name()
+            sidecar_path = self.sidecar_path
         ds = starepandas.nc4_Dataset_wrapper(sidecar_path)        
         self.stare_cover = ds['STARE_cover_{}'.format(self.nom_res)][:].astype(numpy.int64)        
     
@@ -120,6 +130,16 @@ class Modis(Granule):
             self.lon = numpy.ascontiguousarray(self.lon.transpose())
             self.lat = numpy.ascontiguousarray(self.lat.transpose())
             
+    def read_timestamps(self):
+        meta = starepandas.get_hdfeos_metadata(self.file_path)
+        meta_group = meta['CoreMetadata']['INVENTORYMETADATA']['RANGEDATETIME']
+        begining_date = meta_group['RANGEBEGINNINGDATE']['VALUE']
+        begining_time = meta_group['RANGEBEGINNINGTIME']['VALUE']
+        end_date = meta_group['RANGEENDINGDATE']['VALUE']
+        end_time = meta_group['RANGEENDINGTIME']['VALUE']
+        self.ts_start= datetime.datetime.strptime(begining_date+begining_time, '"%Y-%m-%d""%H:%M:%S.%f"') 
+        self.ts_end = datetime.datetime.strptime(end_date+end_time, '"%Y-%m-%d""%H:%M:%S.%f"')         
+    
 
 class Mod09(Modis):
     
@@ -148,12 +168,22 @@ class Mod05(Modis):
             self.data[dataset_name] = self.hdf.select(dataset_name).get()
             
 
-class CLDMSK_L2_VIIRS(Granule):
+class VIIRS_L2(Granule):
     
     def __init__(self, file_path):
-        super(CLDMSK_L2_VIIRS, self).__init__(file_path)
+        super(VIIRS_L2, self).__init__(file_path)
         self.nom_res = '750m'
         self.netcdf = starepandas.nc4_Dataset_wrapper(self.file_path, 'r', format='NETCDF4')
+    
+    def read_timestamps(self):
+        self.ts_start = self.netcdf.time_coverage_start
+        self.ts_end = self.netcdf.time_coverage_end        
+            
+
+class CLDMSK_L2_VIIRS(VIIRS_L2):
+    
+    def __init__(self, file_path):
+        super(CLDMSK_L2_VIIRS, self).__init__(file_path)        
         
     def read_data(self):
         # 0 = cloudy, 1 = probably cloudy, 2 = probably clear, 3 = confident clear, -1 = no result
@@ -164,12 +194,10 @@ class CLDMSK_L2_VIIRS(Granule):
         self.lon = self.netcdf.groups['geolocation_data']['longitude'][:].data.astype(numpy.double)
 
 
-class VNP03DNB(Granule):
+class VNP03DNB(VIIRS_L2):
     
     def __init__(self, file_path):
-        super(VNP03DNB, self).__init__(file_path)
-        self.nom_res = '750m'
-        self.netcdf = starepandas.nc4_Dataset_wrapper(self.file_path, 'r', format='NETCDF4')
+        super(VNP03DNB, self).__init__(file_path)        
     
     def read_data(self):        
         self.data['moon_illumination_fraction'] = self.netcdf.groups['geolocation_data']['moon_illumination_fraction'][:].data
@@ -183,34 +211,38 @@ class VNP03DNB(Granule):
     def read_latlon(self):        
         self.lat = self.netcdf.groups['geolocation_data']['latitude'][:].data.astype(numpy.double)
         self.lon = self.netcdf.groups['geolocation_data']['longitude'][:].data.astype(numpy.double)
+        
+class VJ103DNB(VNP03DNB):
+    pass
     
             
-class VNP02DNB(Granule):
+class VNP02DNB(VIIRS_L2):
     
-    def __init__(self, vnp02_path, vnp03_path=None, vnp03_folder=None):
-        self.data = {}
-        self.lat = None
-        self.lon = None
-        self.stare = None
+    def __init__(self, vnp02_path, vnp03_path=None, vnp03_folder=None, sidecar_path=None):
+        super(VNP02DNB, self).__init__(vnp02_path)
         self.vnp02_path = vnp02_path
         if not vnp03_path:
             vnp03_path = self.guess_vnp03path(vnp03_folder) 
         self.vnp03 = VNP03DNB(vnp03_path)
-        self.sidecar_name = self.vnp03.guess_sidecar_name()
-        self.netcdf = starepandas.nc4_Dataset_wrapper(self.vnp02_path, 'r', format='NETCDF4')
+        if sidecar_path:
+            self.sidecar_path = sidecar_path
+        else:
+            self.sidecar_path = self.vnp03.guess_sidecar_path()
             
     def guess_vnp03path(self, vnp03_folder=None):
         name_trunk = self.vnp02_path
         if vnp03_folder:
             name_trunk = self.vnp02_path.split('/')[-1]
             name_trunk = vnp03_folder + '/' + name_trunk    
-        name_trunk = name_trunk.split('.')[0:-2]
-        pattern = '.'.join(name_trunk).replace('VNP02DNB', 'VNP03DNB') + '*[0-9].nc'
+        name_trunk = name_trunk.split('.')[0:-2]        
+        pattern = '.'.join(name_trunk).replace('02DNB', '03DNB') + '*[0-9].nc'
         matches = glob.glob(pattern)
         if len(matches) < 1:
-            print('did not find VNP03 companion')            
-        vnp03_path = matches[0]
-        return vnp03_path
+            print('did not find VNP03 companion')
+            return None
+        else:
+            vnp03_path = matches[0]
+            return vnp03_path
     
     def read_latlon(self):
         self.vnp03.read_latlon()
@@ -225,11 +257,11 @@ class VNP02DNB(Granule):
         self.vnp03.read_data()
         self.data = {**self.data, **self.vnp03.data}
         
-    def read_sidecar_cover(self):
-        self.vnp03.read_sidecar_cover()
+    def read_sidecar_cover(self, sidecar_path=None):
+        self.vnp03.read_sidecar_cover(sidecar_path)
         self.stare_cover = self.vnp03.stare_cover
         
-    def read_sidecar_index(self, sidecar_path):
+    def read_sidecar_index(self, sidecar_path=None):
         self.vnp03.read_sidecar_index(sidecar_path)
         self.stare = self.vnp03.stare
         
@@ -247,7 +279,8 @@ def read_granule(file_path, read_latlon=True, sidecar=False, sidecar_path=None, 
     elif re.search('CLDMSK_L2_VIIRS', file_path, re.IGNORECASE):
         granule = CLDMSK_L2_VIIRS(file_path, **kwargs)
     else:
-        print('read_granule() cannot handle %s'%file_path)
+        msg = 'read_granule() cannot handle %s'%file_path
+        raise UnsuportedFileError(msg)
         return None
     
     if read_latlon:
