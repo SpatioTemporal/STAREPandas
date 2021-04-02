@@ -115,6 +115,27 @@ class Granule:
         for key in self.data.keys():
             df[key] = self.data[key].flatten()
         return starepandas.STAREDataFrame(df)
+    
+
+class VNP03DNB(Granule):
+    def __init__(self, file_path):                
+        super(VNP03DNB, self).__init__(file_path)
+        self.nc = starepandas.nc4_Dataset_wrapper(file_path)
+        self.nom_res = '750m'
+        
+    def read_latlon(self):
+        self.lats = self.nc.groups['geolocation_data']['latitude'][:].data.astype(numpy.double)
+        self.lons = self.nc.groups['geolocation_data']['longitude'][:].data.astype(numpy.double)
+        
+    def read_data(self):
+        self.data = {}
+        self.data['moon_illumination_fraction'] = self.nc.groups['geolocation_data']['moon_illumination_fraction'][:].data.astype(numpy.int)
+        self.data['land_water_mask'] = self.nc.groups['geolocation_data']['land_water_mask'][:].data.astype(numpy.boolean)
+        land_water_mask
+        
+    def get_timestamps(self):
+        self.begining = self.nc.StartTime
+        self.end = self.nc.EndTime
 
 
 class Modis(Granule):
@@ -137,7 +158,7 @@ class Modis(Granule):
         begining_time = meta_group['RANGEBEGINNINGTIME']['VALUE']
         end_date = meta_group['RANGEENDINGDATE']['VALUE']
         end_time = meta_group['RANGEENDINGTIME']['VALUE']
-        self.ts_start= datetime.datetime.strptime(begining_date+begining_time, '"%Y-%m-%d""%H:%M:%S.%f"') 
+        self.ts_start = datetime.datetime.strptime(begining_date+begining_time, '"%Y-%m-%d""%H:%M:%S.%f"') 
         self.ts_end = datetime.datetime.strptime(end_date+end_time, '"%Y-%m-%d""%H:%M:%S.%f"')         
     
 
@@ -151,6 +172,7 @@ class Mod09(Modis):
         for dataset_name in dict(filter(lambda elem: '1km' in elem[0], self.hdf.datasets().items())).keys():
             self.data[dataset_name] = self.hdf.select(dataset_name).get()
             
+
 
 class Mod05(Modis):
     
