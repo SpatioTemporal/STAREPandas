@@ -4,7 +4,7 @@ import numpy
 import pystare
 
 
-def stare_from_gdf(gdf, level=-1, nonconvex=True, force_ccw=True):
+def stare_from_gdf(gdf, level=-1, nonconvex=True, force_ccw=True, n_workers=1):
     """
     Takes a GeoDataFrame and returns a corresponding series of sets of trixel indices
     """
@@ -12,34 +12,35 @@ def stare_from_gdf(gdf, level=-1, nonconvex=True, force_ccw=True):
         print('no geom column set')
     
     if set(gdf.geom_type) == {'Point'}:
+        # This might be a speedup since we don't need to iterate over python lists
         lat = gdf.geometry.y
         lon = gdf.geometry.x
         return pystare.from_latlon(lat, lon, level)    
     else: 
-        index_values = []
-        for geom in gdf.geometry:
-            if geom.type == 'Polygon':
-                index_values.append(from_polygon(geom, level, nonconvex, force_ccw))
-            elif geom.type == 'MultiPolygon':                
-                index_values.append(from_multipolygon(geom, level, nonconvex, force_ccw))
-            elif geom.type == 'Point':
-                index_values.append(from_point(geom, level))
-        return index_values        
+        stare = stare_from_geoseries(gdf.geometry, level=level, nonconvex=nonconvex, force_ccw=force_ccw, n_workers=n_workers)
     
 
-def stare_from_geoseries(series, level=-1, nonconvex=True, force_ccw=True):
+def stare_from_geoseries(series, level=-1, nonconvex=True, force_ccw=True, n_workers=1):
     """
     Takes a GeoSeries and returns a corresponding series of sets of trixel indices
-    """
-    index_values = []
-    for geom in series:
-        if geom.type == 'Polygon':
-            index_values.append(from_polygon(geom, level, nonconvex, force_ccw))
-        elif geom.type == 'MultiPolygon':                
-            index_values.append(from_multipolygon(geom, level, nonconvex, force_ccw))
-        elif geom.type == 'Point':
-            index_values.append(from_point(geom, level))
-    return index_values      
+    """    
+    if n_workers >= len(series):
+        # Cannot have more partitions than rows
+        n_workers = len(series) - 1    
+        
+    if n_workers==1:
+        stare = []    
+        for geom in series:        
+            sids = from_shapely(geom=geom, level=level, nonconvex=nonconvex, force_ccw=force_ccw)
+            stare.append(sids)
+    else:
+        ddf = dask.dataframe.from_pandas(series, npartitions=n_workers)
+        meta = {'stare': 'int64'}
+        res = ddf.map_partitions(lambda df: numpy.array(stare_from_geoseries(df, level, nonconvex, force_ccw, 1)), 
+                                 meta=meta)
+        stare = res.compute(scheduler='processes')
+    return stare
+    
     
 def stare_from_xy(lon, lat, level=-1, n_cores=1):
     return pystare.from_latlon(lat, lon, level)
@@ -67,6 +68,24 @@ def stare_from_xy_df(df, level=-1, n_cores=1):
         return pystare.from_latlon(df.lat, df.lon, level)
 
 
+def trixels_from_stareseries(sids_series, n_workers=1):
+    if n_workers >= len(sids_series):
+        # Cannot have more partitions than rows
+        n_workers = len(sids_series) - 1    
+    
+    if n_workers == 1:
+        trixels_series = []
+        for sids in sids_series:        
+            trixels = to_trixels(sids, as_multipolygon=True)
+            trixels_series.append(trixels)       
+    else:
+        ddf = dask.dataframe.from_pandas(sids_series, npartitions=n_workers)
+        meta = {'trixels': 'object'}
+        res = ddf.map_partitions(lambda df: numpy.array(trixels_from_stareseries(df, 1)), meta=meta)
+        trixels_series = res.compute(scheduler='processes')            
+    return trixels_series
+        
+
 def to_trixels(sids, as_multipolygon=False):
     if isinstance(sids, (numpy.int64, int)):
         # If single value was passed
@@ -75,32 +94,36 @@ def to_trixels(sids, as_multipolygon=False):
     if isinstance(sids, (numpy.ndarray)):
         # This is not ideal, but when we read sidecars, we get unit64 and have to cast
         sids = sids.astype(numpy.int64)
-    latv, lonv = pystare._to_vertices_latlon(sids)
-    for i in range(len(latv)):
-        latv[i] = pystare.shiftarg_lat(latv[i])
-        lonv[i] = pystare.shiftarg_lon(lonv[i])
+        
+    lons, lats, intmat = pystare.triangulate_indices(sids)
+
     i = 0    
     trixels = []
-    while i < len(latv):
-        geom = shapely.geometry.Polygon([[lonv[i], latv[i]], [lonv[i+1], latv[i+1]], [lonv[i+2], latv[i+2]]])
+    while i < len(lats):
+        geom = shapely.geometry.Polygon([[lons[i], lats[i]], [lons[i+1], lats[i+1]], [lons[i+2], lats[i+2]]])
         trixels.append(geom)
-        i += 4    
-    if i == 4:
+        i += 3    
+    
+    if i == 3:
         trixels = trixels[0]
     elif as_multipolygon:
-        trixels = shapely.geometry.MultiPolygon(trixels)        
+        trixels = shapely.geometry.MultiPolygon(trixels)
     return trixels   
 
        
 # Shapely 
-def from_shapely(geom, level=-1, force_ccw=False):
+
+def from_geom_row(row, level):
+    return from_shapely(row.geometry)
+
+def from_shapely(geom, level=-1, nonconvex=True, force_ccw=False):
     """ Wrapper"""
     if geom.geom_type == 'Point':
-        return from_point(geom, level)
+        return from_point(geom, level=level)
     if geom.geom_type == 'Polygon':
-        return from_polygon(geom, level)
+        return from_polygon(geom, level=level, nonconvex=nonconvex, force_ccw=force_ccw)
     if geom.geom_type == 'MultiPolygon':
-        return from_multipolygon(geom, level)
+        return from_multipolygon(geom, level=level, nonconvex=nonconvex, force_ccw=force_ccw)
     
     
 def from_point(point, level=-1):
@@ -135,15 +158,22 @@ def from_polygon(polygon, level=-1, nonconvex=True, force_ccw=False):
     if force_ccw:
         polygon = shapely.geometry.polygon.orient(polygon)
     sids_ext = from_boundary(polygon.exterior, level, nonconvex, force_ccw)
-    sids_int = []
-    for interior in polygon.interiors:
-        sids_int += list(from_boundary(interior, level, nonconvex, force_ccw))
+    
+    if len(polygon.interiors) > 0:
+        sids_int = []
+        for interior in polygon.interiors:
+            if interior.is_ccw:
+                interior.coords = list(interior.coords)[::-1]
+            sids_int.append(from_boundary(interior, level, nonconvex, force_ccw=False))    
+        sids_int = numpy.concatenate(sids_int)    
+        sids = pystare.intersect(sids_int, sids_ext)
     return sids_ext
         
     
 def from_multipolygon(multipolygon, level=-1, nonconvex=True, force_ccw=False):
     range_indices = []
     for polygon in multipolygon.geoms:
-        range_indices += list(from_polygon(polygon, level, nonconvex, force_ccw))
+        range_indices.append(from_polygon(polygon, level, nonconvex, force_ccw))
+    range_indices = numpy.concatenate(range_indices)
     return range_indices
 

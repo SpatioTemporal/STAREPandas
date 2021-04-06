@@ -23,8 +23,12 @@ class STAREDataFrame(geopandas.GeoDataFrame):
     _stare_column_name = 'stare'
     _trixel_column_name = 'trixels'
     
-    def __init__(self, *args, **kwargs):
-        stare = kwargs.pop("stare", None)
+    def __init__(self, *args, 
+                 stare=None, add_stare=False, level=-1,
+                 trixels=None, add_trixels=False, n_workers=1,
+                 **kwargs):
+        
+        
         super(STAREDataFrame, self).__init__(*args, **kwargs)
         
         # We need this to solve https://github.com/geopandas/geopandas/issues/1179
@@ -40,6 +44,15 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         
         if stare is not None:
             self.set_stare(stare, inplace=True)
+        elif add_stare:
+            stare = self.stare(level=level, n_workers=n_workers)                                
+            self.set_stare(stare, inplace=True)
+            
+        if trixels is not None:
+            self.set_trixels(trixels, inplace=True)
+        elif add_trixels:
+            trixels = self.trixels(n_workers=n_workers)
+            self.set_trixels(trixels, inplace=True)
             
             
     def __getitem__(self, key):
@@ -60,9 +73,14 @@ class STAREDataFrame(geopandas.GeoDataFrame):
     @property
     def _constructor(self):
         return STAREDataFrame
+    
+    
+    def stare(self, level=-1, nonconvex=True, force_ccw=True, n_workers=1):
+        stare = starepandas.stare_from_geoseries(self.geometry, level, nonconvex, force_ccw, n_workers)        
+        return stare
 
             
-    def set_stare(self, col, inplace=False):
+    def set_stare(self, col=None, inplace=False):
         """
         Set the StareDataFrame stare indices using either an existing column or
         the specified input. By default yields a new object.
@@ -84,7 +102,9 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             frame = self
         else:
             frame = self.copy()
-            
+        
+        if col is None:
+            col = self.stare()            
 
         if isinstance(col, (pandas.Series, list, numpy.ndarray)):
             frame[self._stare_column_name] = col
@@ -99,27 +119,31 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             return frame
 
 
-    def trixels(self, stare_column=None):
+    def trixels(self, stare_column=None, n_workers=1):
         """Returns a Polygon or Multipolygon GeoSeries 
         containing the trixels referred by the STARE indices"""
-        trixels_series = []
-        if stare_column==None:
-            stare_column = self._stare_column_name
-        for index_values in self[stare_column]:
-            # This is maybe not ideal if every row has single SID
-            trixels = starepandas.to_trixels(index_values, as_multipolygon=True)
-            trixels_series.append(trixels)        
+        if stare_column is None:
+            stare_column = self._stare_column_name            
+        trixels_series = starepandas.trixels_from_stareseries(self[self._stare_column_name], n_workers=n_workers)
         return trixels_series
             
             
-    def set_trixels(self, trixels=None, inplace=False):
-        if trixels is None:
-            trixels = self.trixels()
+    def set_trixels(self, col=None, inplace=False):        
         if inplace:
             frame = self
         else:
             frame = self.copy()
-        frame[self._trixel_column_name] = trixels
+        
+        if col is None:
+            col = self.trixels()
+            
+        if isinstance(col, (pandas.Series, list, numpy.ndarray)):
+            frame[self._trixel_column_name] = col
+        elif isinstance(col, str) and col in self.columns:            
+            self._trixel_column_name = col
+        else:
+            raise ValueError("Must pass array-like object or column name")
+            
         if not inplace:
             return frame
     
@@ -189,6 +213,40 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         for srange in self[self._stare_column_name]:
             data.append(pystare.intersect(srange, other))
         return pandas.Series(data, index=self.index)
+    
+    
+    def stare_dissolve(self, geom=True, by=None, aggfunc="first", as_index=True,  level=None, sort=True, observed=False, dropna=True,):
+        if by is None:            
+            sids = numpy.concatenate(self[self._stare_column_name])
+            sids = pystare.spatial_clear_to_resolution(sids)
+            sids = numpy.unique(sids)
+            s_range = pystare.to_compressed_range(sids)
+            sids = pystare.expand_intervals(s_range , -1, multi_resolution=True)
+            aggregated_data = self.agg(aggfunc)            
+        else:
+            groupby_kwargs = dict(by=by, sort=sort, observed=observed, dropna=dropna)
+            dissolve_kwargs = groupby_kwargs 
+            dissolve_kwargs['aggfunc'] = aggfunc
+            dissolve_kwargs['level'] = level
+            data = self.drop(columns=['stare', 'trixels'], errors='ignore')
+            if geom:
+                aggregated_data = data.dissolve(by=by, aggfunc=aggfunc, as_index=as_index)
+            else:
+                aggregated_data = data.groupby(by=by, level=level, sort=sort, observed=observed, dropna=dropna).agg(aggfunc)
+            
+        def merge_stare(block):        
+            sids = numpy.concatenate(list(block))          
+            sids = numpy.unique(sids)
+            s_range = pystare.to_compressed_range(sids)
+            sids = pystare.expand_intervals(s_range , -1, multi_resolution=True)
+            return list(sids)
+        
+        sids = self.groupby(group_keys=True, by='continent')[self._stare_column_name].agg(merge_stare)
+        sdf = starepandas.STAREDataFrame(sids, stare=self._stare_column_name)
+        
+        aggregated = sdf.join(aggregated_data)
+    
+        return aggregated
 
 
 
