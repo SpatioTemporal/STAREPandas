@@ -172,6 +172,8 @@ def from_polygon(polygon, level=-1, nonconvex=True, force_ccw=False):
             sids_int.append(from_boundary(interior, level, nonconvex, force_ccw=False))    
         sids_int = numpy.concatenate(sids_int)    
         sids = pystare.intersect(sids_int, sids_ext)
+    else:
+        sids = sids_ext
     return sids
         
     

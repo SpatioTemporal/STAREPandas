@@ -140,7 +140,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         if isinstance(col, (pandas.Series, list, numpy.ndarray)):
             frame[self._trixel_column_name] = col
         elif isinstance(col, str) and col in self.columns:            
-            self._trixel_column_name = col
+            self[_trixel_column_name] = col
         else:
             raise ValueError("Must pass array-like object or column name")
             
@@ -153,7 +153,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             boundary = True
             df = self.set_geometry(self._trixel_column_name)
         else:
-            df = self
+            df = self.copy()
         if boundary:
             df = df[df.geometry.is_empty==False]
             df = starepandas.STAREDataFrame(df)
@@ -215,7 +215,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         return pandas.Series(data, index=self.index)
     
     
-    def stare_dissolve(self, dissolve_sids=True, n_workers=1, n_chunks=1, geom=True, by=None, aggfunc="first", as_index=True,  level=None, sort=True, observed=False, dropna=True):
+    def stare_dissolve(self, dissolve_sids=True, n_workers=1, n_chunks=1, geom=False, by=None, aggfunc="first", as_index=True,  level=None, sort=True, observed=False, dropna=True):
         if by is None:            
             sids = starepandas.merge_stare(self[self._stare_column_name], dissolve_sids, n_workers, n_chunks)            
             return sids
