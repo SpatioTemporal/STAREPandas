@@ -124,7 +124,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         containing the trixels referred by the STARE indices"""
         if stare_column is None:
             stare_column = self._stare_column_name            
-        trixels_series = starepandas.trixels_from_stareseries(self[self._stare_column_name], n_workers=n_workers)
+        trixels_series = starepandas.trixels_from_stareseries(self[stare_column], n_workers=n_workers)
         return trixels_series
             
             
@@ -215,14 +215,10 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         return pandas.Series(data, index=self.index)
     
     
-    def stare_dissolve(self, geom=True, by=None, aggfunc="first", as_index=True,  level=None, sort=True, observed=False, dropna=True,):
+    def stare_dissolve(self, dissolve_sids=True, n_workers=1, n_chunks=1, geom=True, by=None, aggfunc="first", as_index=True,  level=None, sort=True, observed=False, dropna=True):
         if by is None:            
-            sids = numpy.concatenate(self[self._stare_column_name])
-            sids = pystare.spatial_clear_to_resolution(sids)
-            sids = numpy.unique(sids)
-            s_range = pystare.to_compressed_range(sids)
-            sids = pystare.expand_intervals(s_range , -1, multi_resolution=True)
-            aggregated_data = self.agg(aggfunc)            
+            sids = starepandas.merge_stare(self[self._stare_column_name], dissolve_sids, n_workers, n_chunks)            
+            return sids
         else:
             groupby_kwargs = dict(by=by, sort=sort, observed=observed, dropna=dropna)
             dissolve_kwargs = groupby_kwargs 
@@ -233,19 +229,11 @@ class STAREDataFrame(geopandas.GeoDataFrame):
                 aggregated_data = data.dissolve(by=by, aggfunc=aggfunc, as_index=as_index)
             else:
                 aggregated_data = data.groupby(by=by, level=level, sort=sort, observed=observed, dropna=dropna).agg(aggfunc)
-            
-        def merge_stare(block):        
-            sids = numpy.concatenate(list(block))          
-            sids = numpy.unique(sids)
-            s_range = pystare.to_compressed_range(sids)
-            sids = pystare.expand_intervals(s_range , -1, multi_resolution=True)
-            return list(sids)
         
-        sids = self.groupby(group_keys=True, by='continent')[self._stare_column_name].agg(merge_stare)
+        sids = self.groupby(group_keys=True, by=by)[self._stare_column_name].agg(starepandas.merge_stare, dissolve_sids, n_workers, n_chunks)
         sdf = starepandas.STAREDataFrame(sids, stare=self._stare_column_name)
         
-        aggregated = sdf.join(aggregated_data)
-    
+        aggregated = sdf.join(aggregated_data)    
         return aggregated
 
 

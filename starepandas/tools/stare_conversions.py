@@ -1,8 +1,13 @@
 import dask
 import shapely
+
+# https://github.com/numpy/numpy/issues/14868
+import os;
+os.environ["OMP_NUM_THREADS"] = "1"
+
 import numpy
 import pystare
-
+import multiprocessing
 
 def stare_from_gdf(gdf, level=-1, nonconvex=True, force_ccw=True, n_workers=1):
     """
@@ -26,7 +31,7 @@ def stare_from_geoseries(series, level=-1, nonconvex=True, force_ccw=True, n_wor
     """    
     if n_workers >= len(series):
         # Cannot have more partitions than rows
-        n_workers = len(series) - 1    
+        n_workers = len(series) 
         
     if n_workers==1:
         stare = []    
@@ -70,8 +75,8 @@ def stare_from_xy_df(df, level=-1, n_cores=1):
 
 def trixels_from_stareseries(sids_series, n_workers=1):
     if n_workers >= len(sids_series):
-        # Cannot have more partitions than rows
-        n_workers = len(sids_series) - 1    
+        # Cannot have more partitions than rows        
+        n_workers = len(sids_series) 
     
     if n_workers == 1:
         trixels_series = []
@@ -167,7 +172,7 @@ def from_polygon(polygon, level=-1, nonconvex=True, force_ccw=False):
             sids_int.append(from_boundary(interior, level, nonconvex, force_ccw=False))    
         sids_int = numpy.concatenate(sids_int)    
         sids = pystare.intersect(sids_int, sids_ext)
-    return sids_ext
+    return sids
         
     
 def from_multipolygon(multipolygon, level=-1, nonconvex=True, force_ccw=False):
@@ -176,4 +181,46 @@ def from_multipolygon(multipolygon, level=-1, nonconvex=True, force_ccw=False):
         range_indices.append(from_polygon(polygon, level, nonconvex, force_ccw))
     range_indices = numpy.concatenate(range_indices)
     return range_indices
+
+
+def _merge_stare(sids, coerce_sids=True):        
+    sids = numpy.concatenate(list(sids))          
+    sids = numpy.unique(sids)
+    if coerce_sids:
+        s_range = pystare.to_compressed_range(sids)
+        sids = pystare.expand_intervals(s_range , -1, multi_resolution=True)
+    return list(sids)
+
+
+def dissolve(sids):
+    s_range = pystare.to_compressed_range(sids)
+    expanded = pystare.expand_intervals(s_range, -1, multi_resolution=True)
+    return expanded 
+
+
+def merge_stare(sids, dissolve_sids=True, n_workers=1, n_chunks=1):
+    sids = numpy.concatenate(list(sids))    
+    dissolved = numpy.unique(sids)
+    
+    if dissolve_sids==False:
+        return list(dissolved)
+    
+    if n_workers==1 and n_chunks==1:
+        dissolved = dissolve(dissolved)            
+    else:        
+        if n_workers > 1:
+            chunks = numpy.array_split(dissolved, n_workers)
+            with multiprocessing.Pool(processes=n_workers) as pool:
+                dissolved = pool.map(dissolve, chunks)
+        elif n_chunks > 1:
+            chunks = numpy.array_split(dissolved, n_chunks)
+            dissolved = []
+            for chunk in chunks:
+                dissolved.append(dissolve(chunk))              
+        dissolved = numpy.concatenate(dissolved)
+        dissolved = numpy.unique(dissolved)
+        dissolved = dissolve(dissolved)
+        
+    return list(dissolved)
+        
 
