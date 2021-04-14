@@ -5,6 +5,7 @@ from starepandas.io.s3 import *
 from starepandas.tools import stare_join
 from starepandas.io.file import *
 from starepandas.io.folder import *
+from starepandas.io.database import *
 
 from starepandas.tools.stare_conversions import *
 

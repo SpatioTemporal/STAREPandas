@@ -22,7 +22,7 @@ def stare_from_gdf(gdf, level=-1, nonconvex=True, force_ccw=True, n_workers=1):
         lon = gdf.geometry.x
         return pystare.from_latlon(lat, lon, level)    
     else: 
-        stare = stare_from_geoseries(gdf.geometry, level=level, nonconvex=nonconvex, force_ccw=force_ccw, n_workers=n_workers)
+        return stare_from_geoseries(gdf.geometry, level=level, nonconvex=nonconvex, force_ccw=force_ccw, n_workers=n_workers)
     
 
 def stare_from_geoseries(series, level=-1, nonconvex=True, force_ccw=True, n_workers=1):
@@ -226,3 +226,33 @@ def merge_stare(sids, dissolve_sids=True, n_workers=1, n_chunks=1):
     return list(dissolved)
         
 
+
+def series_intersects(other, series, method=1, n_workers=1):
+    """ 
+    Returns a bool series of length len(series).
+    True for every row in which row intersects other.    
+    """
+    
+    if n_workers > len(series):
+        # Cannot have more partitions than rows        
+        n_workers = len(series) 
+        
+    if n_workers == 1:
+        if series.dtype == numpy.int64:     
+            # We have a series of sids; don't need to iterate. Can send the whole array to pystare/
+            intersects = pystare.intersects(other, series, method)
+        else:
+            intersects = []   
+            for sids in series:        
+                if len(sids) < len(other):
+                    # If we do method 1, larger item first is faster
+                    intersects.append(pystare.intersects(other, sids, method).any())
+                else:
+                    intersects.append(pystare.intersects(sids, other, method).any())
+            intersects = numpy.array(intersects)
+    else:
+        ddf = dask.dataframe.from_pandas(series, npartitions=n_workers)
+        meta = {'intersects': 'bool'}
+        res = ddf.map_partitions(lambda df: series_intersects(other, df, method, 1), meta=meta)
+        intersects = res.compute(scheduler='processes')    
+    return intersects

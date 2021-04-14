@@ -288,7 +288,7 @@ class VNP02DNB(VIIRS_L2):
         self.stare = self.vnp03.stare
         
 
-def read_granule(file_path, read_latlon=True, sidecar=False, sidecar_path=None, track_first=False, add_stare=True, adapt_resolution=True, **kwargs):
+def read_granule(file_path, read_latlon=True, sidecar=False, sidecar_path=None, track_first=False, add_stare=False, adapt_resolution=True, **kwargs):
     
     if re.search('MOD05|MYD05', file_path, re.IGNORECASE):
         granule = Mod05(file_path)

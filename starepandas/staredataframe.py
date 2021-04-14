@@ -165,7 +165,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         pass
         
             
-    def stare_intersects(self, other, method=1):
+    def stare_intersects(self, other, method=1, n_workers=1):
         """Returns a ``Series`` of ``dtype('bool')`` with value ``True`` for
         each geometry that intersects `other`.
         An object is said to intersect `other` if its `boundary` and `interior`
@@ -185,17 +185,10 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             pass                
         else:
             raise ValueError("Other must be array-like object or int64")
-            
-        if self[self._stare_column_name].dtype == numpy.int64:
-            # STARE column of self contains single STARE index values
-            data = pystare.intersects(other, self[self._stare_column_name], method)
-        else:
-            # STARE column of self contains collections/sets of STARE index values
-            data = []            
-            for srange in self[self._stare_column_name]:
-                data.append(pystare.intersects(srange, other, method).any())
-        return pandas.Series(data, index=self.index)
-    
+        
+        intersects = starepandas.series_intersects(other=other, series=self[self._stare_column_name], method=method, n_workers=n_workers)
+        return pandas.Series(intersects)
+        
     
     def stare_disjoint(self, other, method=1):
         return self.stare_intersects(other, method)==False
