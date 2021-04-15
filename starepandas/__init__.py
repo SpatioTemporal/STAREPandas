@@ -1,13 +1,13 @@
 from starepandas.staredataframe import STAREDataFrame
 from starepandas.stareseries import STARESeries
 
-from starepandas.io.s3 import *
 from starepandas.tools import stare_join
-from starepandas.io.file import *
-from starepandas.io.folder import *
-from starepandas.io.database import *
-
 from starepandas.tools.stare_conversions import *
+    
+from starepandas.io.granules import read_granule, granule_factory
+from starepandas.io.folder import folder2catalog
+from starepandas.io.database import read_sql_table
+
 
 
 from ._version import get_versions

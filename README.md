@@ -44,6 +44,12 @@ Some of the examples require Rtree-linux to be installed to run geopandas spatia
     
 This is likely related to [rtree issue 120](https://github.com/Toblerity/rtree/issues/120)
 
+
+## Tests
+
+    python3 -m unittest discover
+
+
     
 ## Features and usage
 The examples/ folder contains notebooks that highlight the usage.

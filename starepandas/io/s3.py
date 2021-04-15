@@ -1,18 +1,14 @@
 import starepandas
-
 import h5py
 import netCDF4
-import pyhdf
 from pyhdf.SD import SD, SDC
-
 import re
-
 from io import BytesIO
 import boto3
-
 # Why?
 import os
 import tempfile
+
 
 def parse_s3_url(url):
     """Parse an s3-ish URL. Assume the last bit after a / is a file. Force user to add / to end. Return a dictionary with the tokens {bucket_name, prefix, prefix_end(/), and the resource."""
@@ -39,6 +35,7 @@ def parse_s3_url(url):
         tokens['prefix_end'] = ''
         
     return tokens
+
 
 def get_s3_keys(bucket_name, s3_client, prefix = ''):
     """
@@ -71,6 +68,7 @@ def get_s3_keys(bucket_name, s3_client, prefix = ''):
         except KeyError:
             break
 
+
 def s3_glob(path,pattern=None,s3_client=None):
     if s3_client is None:
         s3_client = boto3.client('s3')
@@ -91,7 +89,8 @@ def s3_glob(path,pattern=None,s3_client=None):
         else:
             names.append(k)
     return names,(s3_tokens,s3_client,)
-        
+    
+    
 def h5_dataset_from_s3(s3_client,bucket_name,key,filename='file.h5'):
     buff=BytesIO()
     s3_client.download_fileobj(bucket_name,key,buff)
@@ -105,6 +104,7 @@ def hdf4_dataset_from_s3(s3_client,bucket_name,key,filename='file.hdf'):
     s3_client.download_file(bucket_name,key,fullFilename)
     return SD(fullFilename,SDC.READ),tmpdir,fullFilename # returns an SDS
 # Remember to cleanup! tmpdir.cleanup()
+
 
 def with_hdf4_get(hdf,var,attrs=None):
     sds = hdf.select(var)
@@ -125,6 +125,7 @@ def nc4_dataset_from_s3(s3_client,bucket_name,key,filename='file.nc4'):
     buff.seek(0)
     return netCDF4.Dataset(filename,memory=buff.read(),diskless=True,mode='r')
 
+
 def nc4_Dataset_wrapper(file_path, mode='r', format=None):
     ds = None
     if 's3://' == file_path[0:5]:
@@ -134,6 +135,7 @@ def nc4_Dataset_wrapper(file_path, mode='r', format=None):
     else:
         ds = netCDF4.Dataset(file_path, mode, format)
     return ds
+
 
 def SD_wrapper(file_path):
     ds = None

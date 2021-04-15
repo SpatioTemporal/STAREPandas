@@ -6,17 +6,6 @@ import glob
 import datetime
 import re
 
-# from dask_gateway import Gateway
-# from dask_gateway import GatewayCluster
-# from dask.distributed import Client
-
-class UnsuportedFileError(Exception):
-    
-    def __init__(self, file_path):
-        self.file_path = file_path
-        self.message = 'cannot handle {}'.format(file_path)
-        super().__init__(self.message)
-
 
 
 # Dask helpers
@@ -47,16 +36,7 @@ def slam(client,action,data,partition_factor=1.5,dbg=0):
 
 # granule_path might be a url
 def make_row(granule_path, add_sf=False):
-    if re.search('MOD05|MYD05', granule_path, re.IGNORECASE):
-        granule = starepandas.io.file.Mod05(granule_path)
-    elif re.search('MOD09|MYD09', granule_path, re.IGNORECASE):
-        granule = starepandas.io.file.Mod09(granule_path)
-    elif re.search('CLDMSK_L2_VIIRS', granule_path, re.IGNORECASE):
-        granule = starepandas.io.file.CLDMSK_L2_VIIRS(granule_path)
-    elif re.search('VNP03DNB|VJ103DNB', granule_path, re.IGNORECASE):
-        granule = starepandas.io.file.VNP03DNB(granule_path)
-    else:        
-        raise UnsuportedFileError(granule_path)
+    granule = starepandas.io.granules.granule_factory(granule_path)
     
     if not granule.sidecar_path:
         print('no sidecar found for {}'.format(granule_path))
@@ -77,7 +57,7 @@ def make_row(granule_path, add_sf=False):
     return row
 
 def get_sf_cover(granule_path):    
-    hdf = starepandas.SD_wrapper(granule_path)
+    hdf = starepandas.io.s3.SD_wrapper(granule_path)
     lon1 = hdf.select('Longitude').get()[0:-1, 0].astype(numpy.double)
     lat1 = hdf.select('Latitude').get()[0:-1, 0].astype(numpy.double)
 
@@ -99,16 +79,19 @@ def get_sf_cover(granule_path):
     return shapely.geometry.Polygon(zip(lon, lat))
 
 
-def folder2catalogue(path, granule_trunk='*', granule_extension='*', add_sf=False, client=None):
-    term = '{path}/{granule_trunk}*[!_stare].{ext}'.format(path=path, granule_trunk=granule_trunk, ext=granule_extension)
+def folder2catalog(path, granule_trunk='', granule_extension='*', add_sf=False, client=None):
+    term = '{path}/{granule_trunk}*.{ext}'.format(path=path, granule_trunk=granule_trunk, ext=granule_extension)
     s3 = None
     if path[0:5] != 's3://':
         granule_paths = glob.glob(term)
     else:
-        granule_paths,s3 = starepandas.s3_glob(path,'.*\.{ext}$'.format(ext=granule_extension))
+        granule_paths,s3 = starepandas.io.s3.s3_glob(path,'.*\.{ext}$'.format(ext=granule_extension))
     if not granule_paths:
         print('no granules in folder')
         return None
+    
+    pattern = '.*[^_stare]\.(nc|hdf|HDF5)'
+    granule_paths = list(filter(re.compile(pattern).match, granule_paths))        
     
     df = starepandas.STAREDataFrame()
     if client is None:
