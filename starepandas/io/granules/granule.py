@@ -32,31 +32,11 @@ class Granule:
                 return name
         return None
     
-    def guess_companion_path(self, companion_prefix=None, companion_folder=None):
-        '''
-        Tries to find a companion to the granule
-        The assumption being that granule file names are composed of
-        {Product}.{date}.{time}.{version}.{production_timestamp}.{extension}
-        '''
+    def guess_companion_path(self, companion_prefix=None, folder=None):
         if not companion_prefix:
             companion_prefix = self.companion_prefix
-        if companion_folder:
-            folder = companion_folder
-        else:
-            folder = '/'.join(self.file_path.split('/')[0:-1])
-        name = self.file_path.split('/')[-1]        
-        name_parts = name.split('.')
-        date = name_parts[1]
-        time = name_parts[2]        
-        pattern = folder + '/' + companion_prefix + '.' + date + '.' + time + '*'
-        matches = glob.glob(pattern)
-        pattern = '.*[^_stare]\.(nc|hdf|HDF5)'
-        granules = list(filter(re.compile(pattern).match, matches))        
-        if len(matches) < 1:
-            print('did not find companion')
-            return None
-        else:
-            return matches[0]
+        return starepandas.guess_companion_path(self.file_path, companion_prefix, folder)
+
         
     def add_stare(self, adapt_resolution=True):
         if self.lat is None:

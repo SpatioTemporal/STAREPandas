@@ -1,4 +1,5 @@
 import re
+import glob
 
 from starepandas.io.granules.modis import *
 from starepandas.io.granules.viirsl2 import *
@@ -10,6 +11,29 @@ class UnsuportedFileError(Exception):
         self.file_path = file_path
         self.message = 'cannot handle {}'.format(file_path)
         super().__init__(self.message)
+        
+
+def guess_companion_path(granule_path, prefix, folder=None):
+        '''
+        Tries to find a companion to the granule
+        The assumption being that granule file names are composed of
+        {Product}.{date}.{time}.{version}.{production_timestamp}.{extension}
+        '''
+        if not folder:
+            folder = '/'.join(granule_path.split('/')[0:-1])
+        name = granule_path.split('/')[-1]        
+        name_parts = name.split('.')
+        date = name_parts[1]
+        time = name_parts[2]        
+        pattern = folder + '/' + prefix + '.' + date + '.' + time + '*'
+        matches = glob.glob(pattern)
+        pattern = '.*[^_stare]\.(nc|hdf|HDF5)'
+        granules = list(filter(re.compile(pattern).match, matches))        
+        if len(matches) < 1:
+            print('did not find companion')
+            return None
+        else:
+            return matches[0]
 
 
 def granule_factory(file_path, sidecar_path=None):

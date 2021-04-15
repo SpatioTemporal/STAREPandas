@@ -34,6 +34,7 @@ class VNP03DNB(VIIRS_L2):
     
     def __init__(self, file_path, sidecar_path=None):
         super(VNP03DNB, self).__init__(file_path,sidecar_path)        
+        self.companion_prefix = 'VNP02DNB'
     
     def read_data(self):        
         self.data['moon_illumination_fraction'] = self.netcdf.groups['geolocation_data']['moon_illumination_fraction'][:].data
