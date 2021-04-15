@@ -8,12 +8,12 @@ click==7.1.2
 click-plugins==1.1.1
 cligj==0.7.0
 cycler==0.10.0
-dask==2.6.0
+h5py>=2.10.0
+dask>2.30.0
 descartes==1.1.0
 Fiona==1.8.17
-fsspec>=0.8
-geopandas==0.8.1
-h5py>=2.10.0
+fsspec==0.8.4
+geopandas==0.9
 jmespath==0.10.0
 kiwisolver>=1.1.1
 locket==0.2.0

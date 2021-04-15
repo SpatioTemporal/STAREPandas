@@ -60,6 +60,12 @@ pip3 install "rtree>=0.8,<0.9
     
 This is likely related to [rtree issue 120](https://github.com/Toblerity/rtree/issues/120)
 
+
+## Tests
+
+    python3 -m unittest discover
+
+
     
 ## Features and usage
 The examples/ folder contains notebooks that highlight the usage.

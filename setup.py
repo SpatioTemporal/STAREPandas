@@ -38,6 +38,7 @@ setup(
     ],
     python_requires=">=3.5",
     install_requires=install_requires,
+    test_suite='tests'
 ) 
 
 

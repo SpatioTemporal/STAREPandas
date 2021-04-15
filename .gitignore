@@ -5,5 +5,4 @@ starepandas.egg-info/*
 build/
 dist/
 record.txt
-*~
-
+examples/dask-worker-space/*
