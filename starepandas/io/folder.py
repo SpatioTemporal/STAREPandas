@@ -52,6 +52,8 @@ def make_row(granule_name, add_sf=False):
         granule = starepandas.io.file.Mod05(granule_name)
     elif re.search('MOD09|MYD09', granule_name, re.IGNORECASE):
         granule = starepandas.io.file.Mod09(granule_name)
+    elif re.search('CLDMSK_L2_VIIRS', granule_name, re.IGNORECASE):
+        granule = starepandas.io.file.CLDMSK_L2_VIIRS(granule_name)
     else:
         print('cannot handle %s'%granule_name)
     
@@ -93,7 +95,7 @@ def get_sf_cover(granule_name):
     return shapely.geometry.Polygon(zip(lon, lat))
 
 
-def folder2catalogue(path, granule_trunk='*', granule_extension='*', add_sf=False, client = None):
+def folder2catalogue(path, granule_trunk='*', granule_extension='*', add_sf=False, client=None):
     term = '{path}/{granule_trunk}*[!_stare].{ext}'.format(path=path, granule_trunk=granule_trunk,
                                                            ext=granule_extension)
     s3 = None

@@ -187,23 +187,23 @@ class VNP03DNB(Granule):
             
 class VNP02DNB(Granule):
     
-    def __init__(self, vnp02_path, vnp03_path=None, vnp03_folder=None):
+    def __init__(self, vnp02_path, vnp03_path=None, geoloaction_folder=None):
         self.data = {}
         self.lat = None
         self.lon = None
         self.stare = None
         self.vnp02_path = vnp02_path
         if not vnp03_path:
-            vnp03_path = self.guess_vnp03path(vnp03_folder) 
+            vnp03_path = self.guess_vnp03path(geoloaction_folder) 
         self.vnp03 = VNP03DNB(vnp03_path)
         self.sidecar_name = self.vnp03.guess_sidecar_name()
         self.netcdf = starepandas.nc4_Dataset_wrapper(self.vnp02_path, 'r', format='NETCDF4')
             
-    def guess_vnp03path(self, vnp03_folder=None):
+    def guess_vnp03path(self, geoloaction_folder=None):
         name_trunk = self.vnp02_path
-        if vnp03_folder:
+        if geoloaction_folder:
             name_trunk = self.vnp02_path.split('/')[-1]
-            name_trunk = vnp03_folder + '/' + name_trunk    
+            name_trunk = geoloaction_folder + '/' + name_trunk    
         name_trunk = name_trunk.split('.')[0:-2]
         pattern = '.'.join(name_trunk).replace('VNP02DNB', 'VNP03DNB') + '*[0-9].nc'
         matches = glob.glob(pattern)
