@@ -34,7 +34,7 @@ def slam(client,action,data,partition_factor=1.5,dbg=0):
     return results
 
 
-# granule_path might be a url
+
 def make_row(granule_path, add_sf=False):
     granule = starepandas.io.granules.granule_factory(granule_path)
     
@@ -77,6 +77,7 @@ def get_sf_cover(granule_path):
     lon = numpy.concatenate((lon1, lon2, lon3, lon4))
     lat = numpy.concatenate((lat1, lat2, lat3, lat4))
     return shapely.geometry.Polygon(zip(lon, lat))
+
 
 
 def folder2catalog(path, granule_trunk='', granule_extension='*', add_sf=False, client=None):
