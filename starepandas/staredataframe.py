@@ -7,6 +7,10 @@ import shapely.geometry
 import starepandas
 
 
+DEFAULT_STARE_COLUMN_NAME = 'stare'
+DEFAULT_TRIXEL_COLUMN_NAME = 'trixels'
+
+
 class STAREDataFrame(geopandas.GeoDataFrame):
     
     """
@@ -20,8 +24,11 @@ class STAREDataFrame(geopandas.GeoDataFrame):
     --------
     Constructing GeoDataFrame from a dictionary."""
     
-    _stare_column_name = 'stare'
-    _trixel_column_name = 'trixels'
+    _metadata = ['_stare_column_name', '_trixel_column_name', '_geometry_column_name', '_crs']
+    
+    _stare_column_name = DEFAULT_STARE_COLUMN_NAME
+    _trixel_column_name = DEFAULT_TRIXEL_COLUMN_NAME
+    
     
     def __init__(self, *args, 
                  stare=None, add_stare=False, level=-1,
@@ -31,15 +38,8 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         
         super(STAREDataFrame, self).__init__(*args, **kwargs)
         
-        # We need this to solve https://github.com/geopandas/geopandas/issues/1179
-        # Should verify that it does not cause a performance hit
         
-        # on a wing and a prayer
-        # self._data = self._data.copy()
-        # self.data = self.data.copy()
-        
-        # We carry over the geometry column name
-        if args and isinstance(*args, geopandas.GeoDataFrame):
+        if args and isinstance(args[0], STAREDataFrame):
             self._geometry_column_name = args[0]._geometry_column_name
         
         if stare is not None:
@@ -55,26 +55,29 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             self.set_trixels(trixels, inplace=True)
             
             
-    def __getitem__(self, key):
+    def __getitem__(self, key):        
         result = super(STAREDataFrame, self).__getitem__(key)
         stare_col = self._stare_column_name
         if isinstance(result, (geopandas.GeoDataFrame, pandas.DataFrame)) and stare_col in result:
             result.__class__ = STAREDataFrame
             result._stare_column_name = stare_col
-        elif  isinstance(result, geopandas.GeoSeries) and key==stare_col:            
-            pass
+        elif isinstance(result, (geopandas.GeoSeries, pandas.Series)):                                    
             #result.__class__ = starepandas.STARESeries
+            pass
         else:
             pass
             #result.__class__ = geopandas.GeoDataFrame
-
         return result
     
-    @property
-    def _constructor(self):
-        return STAREDataFrame
     
+    def __setattr__(self, attr, val):
+        # have to special case geometry b/c pandas tries to use as column...
+        if attr == "stare":
+            object.__setattr__(self, attr, val)
+        else:
+            super(STAREDataFrame, self).__setattr__(attr, val)
     
+        
     def stare(self, level=-1, nonconvex=True, force_ccw=True, n_workers=1):
         stare = starepandas.stare_from_geoseries(self.geometry, level, nonconvex, force_ccw, n_workers)        
         return stare
@@ -104,16 +107,19 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             frame = self.copy()
         
         if col is None:
-            col = self.stare()            
-
-        if isinstance(col, (pandas.Series, list, numpy.ndarray)):
-            frame[self._stare_column_name] = col
+            col = self.stare()
+                
+        stare_column_name = self._stare_column_name
+        
+        if isinstance(col, (list, numpy.ndarray, pandas.Series)):            
+            frame[frame._stare_column_name] = col
         elif hasattr(col, "ndim") and col.ndim != 1:
             raise ValueError("Must pass array with one dimension only.")
-        elif isinstance(col, str) and col in self.columns:            
-            self._stare_column_name = col
+        elif isinstance(col, str) and col in frame.columns:            
+            frame._stare_column_name = col
         else:
             raise ValueError("Must pass array-like object or column name")
+            
 
         if not inplace:
             return frame
@@ -138,27 +144,26 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             col = self.trixels()
             
         if isinstance(col, (pandas.Series, list, numpy.ndarray)):
-            frame[self._trixel_column_name] = col
+            frame[frame._trixel_column_name] = col
         elif isinstance(col, str) and col in self.columns:            
-            self[_trixel_column_name] = col
-        else:
+            frame._trixel_column_name = col
+        else:            
             raise ValueError("Must pass array-like object or column name")
             
         if not inplace:
             return frame
     
     
-    def plot(self, trixels=False, boundary=False, *args, **kwargs):
+    def plot(self, *args, trixels=False, boundary=False,  **kwargs):
         if trixels==True:
-            boundary = True
-            df = self.set_geometry(self._trixel_column_name)
+            boundary = True            
+            df = self.set_geometry(self._trixel_column_name, inplace=False)                        
         else:
             df = self.copy()
         if boundary:
             df = df[df.geometry.is_empty==False]
-            df = starepandas.STAREDataFrame(df)
             df = df.set_geometry(df.geometry.boundary)
-        return super(STAREDataFrame, df).plot(*args, **kwargs)
+        return geopandas.plotting.plot_dataframe(df, *args, **kwargs)
     
     
     def to_scidb(self, connection):
@@ -228,6 +233,22 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         
         aggregated = sdf.join(aggregated_data)    
         return aggregated
+    
+    @property
+    def _constructor(self):
+        return STAREDataFrame
 
 
 
+def _dataframe_set_stare(self, col, inplace=False):
+    if inplace:
+        raise ValueError(
+            "Can't do inplace setting when converting from (Geo)DataFrame to STAREDataFrame"
+        )
+    sdf = StareDataFrame(self)
+    # this will copy so that BlockManager gets copied    
+    return sdf.set_stare(col, inplace=False)
+
+
+geopandas.GeoDataFrame.set_stare = _dataframe_set_stare
+pandas.DataFrame.set_stare = _dataframe_set_stare

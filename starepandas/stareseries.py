@@ -1,7 +1,7 @@
-import pandas
+import geopandas
 
 
-class STARESeries(pandas.Series):
+class STARESeries(geopandas.GeoSeries):
     pass
 
 
