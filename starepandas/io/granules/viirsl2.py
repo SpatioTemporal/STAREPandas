@@ -25,10 +25,22 @@ class CLDMSK_L2_VIIRS(VIIRS_L2):
         super(CLDMSK_L2_VIIRS, self).__init__(file_path, sidecar_path)        
         
     def read_data(self):
-        # 0 = cloudy, 1 = probably cloudy, 2 = probably clear, 3 = confident clear, -1 = no result
-        self.data['Integer_Cloud_Mask'] = self.netcdf.groups['geophysical_data']['Integer_Cloud_Mask'][:].data
-        
+        '''
+        reads the data from a CLDMSK_L2_VIIRS granule into the self.data dictionary.
+        Only the Integer_Cloud_Mask is read. The values are to be interpreted as:
+        0 = cloudy, 1 = probably cloudy, 2 = probably clear, 3 = confident clear, -1 = no result
+                
+        :return: None
+        '''
 
+        self.data['Integer_Cloud_Mask'] = self.netcdf.groups['geophysical_data']['Integer_Cloud_Mask'][:].data
+
+        # There appear to be 10 QA dimensions which are nowhere documented. Leaving this open for now
+        # Cloud Mask QA (1km) Bit 1: 0 not useful 1 useful. Bit 2-7: confidence levels
+        # self.data['Quality_Assurance'] = self.netcdf.groups['geophysical_data']['Quality_Assurance'][:].data
+
+
+        
 
 class VNP03MOD(VIIRS_L2):
     

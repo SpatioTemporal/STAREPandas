@@ -29,7 +29,7 @@ def stare_from_geoseries(series, level=-1, nonconvex=True, force_ccw=True, n_wor
     """
     Takes a GeoSeries and returns a corresponding series of sets of trixel indices
     """    
-    if n_workers >= len(series):
+    if n_workers > len(series):
         # Cannot have more partitions than rows
         n_workers = len(series) - 1
         
@@ -74,7 +74,7 @@ def stare_from_xy_df(df, level=-1, n_cores=1):
 
 
 def trixels_from_stareseries(sids_series, n_workers=1):
-    if n_workers >= len(sids_series):
+    if n_workers > len(sids_series):
         # Cannot have more partitions than rows        
         n_workers = len(sids_series) - 1
     

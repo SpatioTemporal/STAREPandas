@@ -1,9 +1,8 @@
 import geopandas
+import geopandas.plotting
 import pystare
 import pandas
 import numpy
-import dask.dataframe
-import shapely.geometry
 import starepandas
 
 DEFAULT_STARE_COLUMN_NAME = 'stare'
@@ -50,13 +49,14 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             self.set_trixels(trixels, inplace=True)
 
     def __getitem__(self, key):
+
         result = super(STAREDataFrame, self).__getitem__(key)
         stare_col = self._stare_column_name
         if isinstance(result, (geopandas.GeoDataFrame, pandas.DataFrame)) and stare_col in result:
             result.__class__ = STAREDataFrame
             result._stare_column_name = stare_col
         elif isinstance(result, (geopandas.GeoSeries, pandas.Series)):
-            result.__class__ = starepandas.STARESeries
+            # result.__class__ = starepandas.STARESeries
             pass
         else:
             pass
@@ -86,10 +86,11 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             Modify the StareDataFrame  in place (do not create a new object)
         Examples
         --------
-        >>> df = df.set_stare([[4611686018427387903, 4611686018427387903, 4611686018427387903])  
+        >> df = df.set_stare([[4611686018427387903, 4611686018427387903, 4611686018427387903])
         Returns
         -------
-        StareDataFrame """
+        StareDataFrame
+        """
 
         # Most of the code here is taken from GeoDataFrame.set_geometry()
         if inplace:
@@ -99,8 +100,6 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
         if col is None:
             col = self.stare()
-
-        stare_column_name = self._stare_column_name
 
         if isinstance(col, (list, numpy.ndarray, pandas.Series)):
             frame[frame._stare_column_name] = col
@@ -148,10 +147,9 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         else:
             df = self.copy()
         if boundary:
-            df = df[df.geometry.is_empty == False]
-            # df = starepandas.STAREDataFrame(df)
+            df = df[df.geometry.is_empty is False]
             df = df.set_geometry(df.geometry.boundary)
-        return geopandas.plotting.plot_dataframe(self, *args, **kwargs)
+        return geopandas.plotting.plot_dataframe(df, *args, **kwargs)
 
     def to_scidb(self, connection):
         pass
@@ -166,6 +164,8 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         other: Collection of STARE indices 
             The STARE index collection representing the spatial object to test if is
             intersected.
+        method: Method for STARE intersects test {skiplist': 0, 'binsearch': 1, 'nn': 2}. Default: 1
+        n_workers: number of workers to be used for intersects tests
         """
 
         if isinstance(other, (int, numpy.int64)):
@@ -182,7 +182,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         return pandas.Series(intersects)
 
     def stare_disjoint(self, other, method=1):
-        return self.stare_intersects(other, method) == False
+        return self.stare_intersects(other, method) is False
 
     def stare_intersection(self, other):
         """Returns a ``STARESeries`` of the spatial intersection of self with `other`.
@@ -231,7 +231,7 @@ def _dataframe_set_stare(self, col, inplace=False):
         raise ValueError(
             "Can't do inplace setting when converting from (Geo)DataFrame to STAREDataFrame"
         )
-    sdf = StareDataFrame(self)
+    sdf = STAREDataFrame(self)
     # this will copy so that BlockManager gets copied    
     return sdf.set_stare(col, inplace=False)
 
