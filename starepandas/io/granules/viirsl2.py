@@ -28,13 +28,25 @@ class CLDMSK_L2_VIIRS(VIIRS_L2):
         # 0 = cloudy, 1 = probably cloudy, 2 = probably clear, 3 = confident clear, -1 = no result
         self.data['Integer_Cloud_Mask'] = self.netcdf.groups['geophysical_data']['Integer_Cloud_Mask'][:].data
         
+
+
+class VNP03MOD(VIIRS_L2):
+    
+    def __init__(self, file_path, sidecar_path=None):
+        super().__init__(file_path, sidecar_path)        
+        
+    def read_data(self):        
+        # 1: Shallow_Ocean 2: Land 3: Coastline 4: Shallow_Inland 5: Ephemeral 6: Deep_Inland 7: Continental 8: Deep_Ocean
+        self.data['land_water_mask'] = self.netcdf.groups['geolocation_data']['land_water_mask'][:].data
+        
+        # 1: Input_invalid 2: Pointing_bad 3: Terrain_bad
+        self.data['quality_flag'] = self.netcdf.groups['geolocation_data']['quality_flag'][:].data
     
 
 class VNP03DNB(VIIRS_L2):
     
     def __init__(self, file_path, sidecar_path=None):
-        super(VNP03DNB, self).__init__(file_path,sidecar_path)        
-        self.companion_prefix = 'VNP02DNB'
+        super().__init__(file_path,sidecar_path)        
     
     def read_data(self):        
         self.data['moon_illumination_fraction'] = self.netcdf.groups['geolocation_data']['moon_illumination_fraction'][:].data

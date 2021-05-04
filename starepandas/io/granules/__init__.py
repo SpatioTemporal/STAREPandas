@@ -45,6 +45,8 @@ def granule_factory(file_path, sidecar_path=None):
         granule = VNP02DNB(file_path, sidecar_path)        
     elif re.search('VNP03DNB|VJ103DNB', file_path, re.IGNORECASE):
         granule = VNP03DNB(file_path, sidecar_path)
+    elif re.search('VNP03MOD|VJ103MOD', file_path, re.IGNORECASE):
+        granule = VNP03MOD(file_path, sidecar_path)   
     elif re.search('CLDMSK_L2_VIIRS', file_path, re.IGNORECASE):
         granule = CLDMSK_L2_VIIRS(file_path, sidecar_path)
     else:        

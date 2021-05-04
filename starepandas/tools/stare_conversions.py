@@ -31,7 +31,7 @@ def stare_from_geoseries(series, level=-1, nonconvex=True, force_ccw=True, n_wor
     """    
     if n_workers >= len(series):
         # Cannot have more partitions than rows
-        n_workers = len(series) 
+        n_workers = len(series) - 1
         
     if n_workers==1:
         stare = []    
@@ -76,7 +76,7 @@ def stare_from_xy_df(df, level=-1, n_cores=1):
 def trixels_from_stareseries(sids_series, n_workers=1):
     if n_workers >= len(sids_series):
         # Cannot have more partitions than rows        
-        n_workers = len(sids_series) 
+        n_workers = len(sids_series) - 1
     
     if n_workers == 1:
         trixels_series = []
