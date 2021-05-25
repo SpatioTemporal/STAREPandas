@@ -11,6 +11,7 @@ class UnsuportedFileError(Exception):
         self.file_path = file_path
         self.message = 'cannot handle {}'.format(file_path)
         super().__init__(self.message)
+
         
 
 def guess_companion_path(granule_path, prefix=None, folder=None):
@@ -51,8 +52,8 @@ def granule_factory(file_path, sidecar_path=None):
         granule = VNP03DNB(file_path, sidecar_path)
     elif re.search('VNP03MOD|VJ103MOD', file_path, re.IGNORECASE):
         granule = VNP03MOD(file_path, sidecar_path)   
-    elif re.search('CLDMSK_L2_VIIRS', file_path, re.IGNORECASE):
-        granule = CLDMSK_L2_VIIRS(file_path, sidecar_path)
+    elif re.search('CLDMSKL2VIIRS', file_path, re.IGNORECASE):
+        granule = CLDMSKL2VIIRS(file_path, sidecar_path)
     else:        
         raise UnsuportedFileError(file_path)
         return None

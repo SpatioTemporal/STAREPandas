@@ -5,7 +5,7 @@ import starepandas
 class MainTest(unittest.TestCase):
     
     def test_read_cldmsk_viirsl2(self):
-        granule = starepandas.io.granules.CLDMSK_L2_VIIRS('tests/data/granules/CLDMSK_L2_VIIRS_SNPP.A2020219.0742.001.2020219190616.nc')
+        granule = starepandas.io.granules.CLDMSKL2VIIRS('tests/data/granules/CLDMSK_L2_VIIRS_SNPP.A2020219.0742.001.2020219190616.nc')
         granule.read_timestamps()
         with self.subTest():
             self.assertEqual(granule.ts_start, '2020-08-06T07:42:00.000Z')
