@@ -14,12 +14,22 @@ class STAREDataFrame(geopandas.GeoDataFrame):
     A STAREDataFrame object is a pandas.DataFrame that has a column
     with STARE indices. In addition to the standard DataFrame constructor arguments,
     STARE also accepts the following keyword arguments:
+
     Parameters
     ----------
     stare : value (optional)
+        a
+    add_stare :
+        a
+    trixels :
+        a
+    add_trixels :
+        a
+
     Examples
     --------
-    Constructing GeoDataFrame from a dictionary."""
+    >>>
+    """
 
     _metadata = ['_stare_column_name', '_trixel_column_name', '_geometry_column_name', '_crs']
 
@@ -39,13 +49,13 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         if stare is not None:
             self.set_stare(stare, inplace=True)
         elif add_stare:
-            stare = self.stare(level=level, n_workers=n_workers)
+            stare = self.make_stare(level=level, n_workers=n_workers)
             self.set_stare(stare, inplace=True)
 
         if trixels is not None:
             self.set_trixels(trixels, inplace=True)
         elif add_trixels:
-            trixels = self.trixels(n_workers=n_workers)
+            trixels = self.make_trixels(n_workers=n_workers)
             self.set_trixels(trixels, inplace=True)
 
     def __getitem__(self, key):
@@ -70,26 +80,49 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         else:
             super(STAREDataFrame, self).__setattr__(attr, val)
 
-    def stare(self, level=-1, nonconvex=True, force_ccw=True, n_workers=1):
-        stare = starepandas.stare_from_geoseries(self.geometry, level, nonconvex, force_ccw, n_workers)
+    def make_stare(self, level=-1, convex=False, force_ccw=True, n_workers=1):
+        """Generates and returns the STARE representation of each feauture.
+
+        :param level: STARE level to use for the STARE lookup
+        :param convex: Toggle if STARE indices for the convex hull rather than the G-Ring should be looked up
+        :param force_ccw: Toggle if a counter clockwise orientation of the geometries should be enforced
+        :param n_workers: Number of workers used to lookup STARE indices in parallel
+        :return: list/array of (set of) STARE index values
+        :rtype: numpy.ndarray
+
+        :Example:
+        From points
+        >>> import starepandas, geopandas
+        >>> lats = [-72.609177, -72.648590, -72.591286]
+        >>> lons = [-41.255402, -42.054047, -41.625336]
+        >>> geoms = geopandas.points_from_xy(lons, lats)
+        >>> sdf = starepandas.STAREDataFrame(geometry=geoms)
+        >>> sdf.make_stare(level=6, convex=False)
+        From polygons
+        >>> gdf = geopandas.read_file(geopandas.datasets.get_path("naturalearth_lowres"))
+        >>> sdf = starepandas.STAREDataFrame(gdf)
+        >>> sdf.make_stare(level=5), inplace=True)
+        """
+        stare = starepandas.stare_from_geoseries(self.geometry,
+                                                 level=level, convex=convex, force_ccw=force_ccw, n_workers=n_workers)
         return stare
 
     def set_stare(self, col=None, inplace=False):
-        """
-        Set the StareDataFrame stare indices using either an existing column or
+        """ Set the StareDataFrame stare indices using either an existing column or
         the specified input. By default yields a new object.
         The original stare column is replaced with the input.
-        Parameters
-        ----------
-        col : array-like of stare indices or column name
-        inplace : boolean, default False
-            Modify the StareDataFrame  in place (do not create a new object)
-        Examples
-        --------
-        >> df = df.set_stare([[4611686018427387903, 4611686018427387903, 4611686018427387903])
-        Returns
-        -------
-        StareDataFrame
+
+        :param col:  f stare indices or column name
+        :type col: array-like
+        :param inplace: Modify the StareDataFrame in place (do not create a new object)
+        :type  inplace: Bool
+        :return: df
+        :rtype: StareDataFrame
+
+        :Example:
+        >>> import starepandas
+        >>> sdf = starepandas.STAREDataFrame()
+        >>> sdf.set_stare([[4611686018427387903, 4611686018427387903, 4611686018427387903])
         """
 
         # Most of the code here is taken from GeoDataFrame.set_geometry()
@@ -99,7 +132,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             frame = self.copy()
 
         if col is None:
-            col = self.stare()
+            col = self.make_stare()
 
         if isinstance(col, (list, numpy.ndarray, pandas.Series)):
             frame[frame._stare_column_name] = col
@@ -113,22 +146,45 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         if not inplace:
             return frame
 
-    def trixels(self, stare_column=None, n_workers=1):
+    def make_trixels(self, stare_column=None, n_workers=1):
         """Returns a Polygon or Multipolygon GeoSeries 
-        containing the trixels referred by the STARE indices"""
+        containing the trixels referred by the STARE indices
+
+        :param stare_column: Column to use as STARE column. Default: 'stare'
+        :type stare_column: string
+        :param n_workers: number of (dask) workers to use to generate trixels
+        :type n_workers: integer
+        :return: returns array of polygons or multipolygons representing the trixels
+        :rtype:
+
+        >>> import starepandas
+        >>> sids = [4611686018427387903, 4611686018427387903, 4611686018427387903]
+        >>> sdf = starepandas.STAREDataFrame(stare=sids)
+        >>> sdf.make_trixels()
+
+        """
         if stare_column is None:
             stare_column = self._stare_column_name
         trixels_series = starepandas.trixels_from_stareseries(self[stare_column], n_workers=n_workers)
         return trixels_series
 
     def set_trixels(self, col=None, inplace=False):
+        """
+
+        :param col:
+        :type col:
+        :param inplace:
+        :type inplace:
+        :return:
+        :rtype:
+        """
         if inplace:
             frame = self
         else:
             frame = self.copy()
 
         if col is None:
-            col = self.trixels()
+            col = self.make_trixels()
 
         if isinstance(col, (pandas.Series, list, numpy.ndarray)):
             frame[frame._trixel_column_name] = col
@@ -147,7 +203,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         else:
             df = self.copy()
         if boundary:
-            df = df[df.geometry.is_empty is False]
+            df = df[df.geometry.is_empty == False]
             df = df.set_geometry(df.geometry.boundary)
         return geopandas.plotting.plot_dataframe(df, *args, **kwargs)
 
@@ -186,11 +242,11 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
     def stare_intersection(self, other):
         """Returns a ``STARESeries`` of the spatial intersection of self with `other`.
-        Parameters
-        ----------
-        other: Collection of STARE indices.
-            The STARE index collection representing the object to find the
-            intersection with.
+
+        :param other: The STARE index value collection representing the object to find the intersection with.
+        :type other: Array like or int
+        :return:
+        :rtype:
         """
         data = []
         for srange in self[self._stare_column_name]:
@@ -199,6 +255,33 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
     def stare_dissolve(self, dissolve_sids=True, n_workers=1, n_chunks=1, geom=False, by=None, aggfunc="first",
                        as_index=True, level=None, sort=True, observed=False, dropna=True):
+        """ Dissolves a dataframe subject to a parameter
+
+        :param dissolve_sids: Toggle if STARE index values get dissolved. If not, sids will be appended
+        :type dissolve_sids: bool
+        :param n_workers: workers to use for the dissolve
+        :type n_workers: int
+        :param n_chunks: Performance optimization; number of chunks to use for the stare dissolve.
+        :type n_chunks: int
+        :param geom: Toggle if the geometry column is to be dissolved
+        :type geom: bool
+        :param by: column to use the dissolve on
+        :type by: str
+        :param aggfunc: aggregation function
+        :type aggfunc: str
+        :param as_index: Toggle if 'by' column is to be the new index
+        :type as_index: bool
+        :param level:
+        :type level:
+        :param sort:
+        :type sort:
+        :param observed:
+        :type observed:
+        :param dropna:
+        :type dropna:
+        :return:
+        :rtype:
+        """
         if by is None:
             sids = starepandas.merge_stare(self[self._stare_column_name], dissolve_sids, n_workers, n_chunks)
             return sids
@@ -220,6 +303,73 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
         aggregated = sdf.join(aggregated_data)
         return aggregated
+
+    def to_stare_resolution(self, resolution, inplace=False, clear_to_resolution=False):
+        """ Forces resolution of STARE index values to resolution; optionally clears location bits up to resolution
+        :param inplace: If True, modifies the DataFrame in place (do not create a new object).
+        :type inplace: bool
+        :param resolution
+        :type int
+        :param clear_to_resolution: Toggle if the location bits below resolutions should be cleared
+        :type clear_to_resolution: bool
+        :return: if not inplace, returns stare index values, otherwise None
+        :rtype None or ndarray
+
+        :Example:
+        >>> import starepandas
+        >>> sids = [2299437706637111721, 2299435211084507593, 2299566194809236969]
+        >>> sdf = starepandas.STAREDataFrame(stare=sids)
+        >>> sdf.to_stare_resolution(resolution=6, clear_to_resolution=False)
+        """
+
+        if inplace:
+            sids = self[self._stare_column_name]
+        else:
+            sids = self[self._stare_column_name].copy()
+
+        sids = pystare.spatial_coerce_resolution(sids, resolution)
+        if clear_to_resolution:
+            # pystare_terminator_mask uses << operator, which requires us to cast to numpy array first
+            sids = pystare.spatial_clear_to_resolution(numpy.array(sids))
+
+        if inplace:
+            self[self._stare_column_name] = sids
+        else:
+            return sids
+
+    def to_stare_singleres(self, inplace=False):
+        """ Changes the STARE index values to single resolution representation.
+        :param inplace: If True, modifies the DataFrame in place (do not create a new object).
+        :type bool:
+        :return: if not inplace, returns stare index values, otherwise None
+        :rtype None or ndarray
+        """
+        if inplace:
+            sids = self[self._stare_column_name]
+        else:
+            sids = self[self._stare_column_name].copy()
+
+        sids = sids.apply(lambda row: pystare.intersect(row, row, False))
+
+        if inplace:
+            self[self._stare_column_name] = sids
+        else:
+            return sids
+
+    def write_pods(self, pod_root, level, pod_name):
+        """ Writes dataframe into a starepods hierarchy
+
+        :param pod_root: Root directory of starepods
+        :type pod_root: str
+        :param level: level of starepodspod
+        :type level: int
+        :param pod_name: name of the pod
+        :type pod_name: str
+        """
+        grouped = self.groupby(self.to_stare_resolution(resolution=level, clear_to_resolution=True))
+        for group in grouped.groups:
+            g = grouped.get_group(group)
+            g.to_pickle('{pod_root}/{pod}/{pod_name}'.format(pod_root=pod_root, pod=group, pod_name=pod_name))
 
     @property
     def _constructor(self):

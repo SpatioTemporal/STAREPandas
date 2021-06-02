@@ -5,13 +5,18 @@ STAREpandas adds [SpatioTemporal Adaptive Resolution Encoding
 ![Example 1](figures/resized_starepandas.png)
 
 ## Introduction
-STAREPandas provides high-level functions for users to explore and interact with STARE.
+STAREPandas is the STARE pendant to [GeoPandas](https://geopandas.org/). 
+It makes working with geospatial data in python easier. 
+It provides file and database I/O functionality and allows to easily perform STARE based 
+spatial operations that would otherwise require a (STARE-extended) spatial database or a geographic information system. 
 
-STAREPandas is the STARE pendant to [GeoPandas](https://geopandas.org/). It makes working with geospatial data in python easier. It provides file and database I/O functionality and allows to easily perform STARE based spatial operations that would otherwise require a (STARE-extended) spatial database or a geographic information system. 
+In STAREDataFrames, geometries are represented as sets of STARE triangles or ”trixels”; 
+analogously to GeoPandas geodataframes which represent geometries as WKT. In STARE dataframes, 
+points are represented as STARE trixels at the HTM tree’s leaf level. 
+Polygons are represented as sets of STARE trixels that cover the polygon. 
 
-In STAREDataFrames, geometries are represented as sets of STARE triangles or ”trixels”; analogously to GeoPandas geodataframes which represent geometries as WKT. In STARE dataframes, points are represented as STARE trixels at the HTM tree’s leaf level. Polygons are represented as sets of STARE trixels that cover the polygon. 
-
-STAREPandas also extends the geopandas file I/O functionality to load some (raster) formats of remote sensing granules and tiles (MOD09, MOD09GA, VNP03) through pyhdf and netcdf4.
+STAREPandas also extends the geopandas file I/O functionality to load some (raster) formats of 
+remote sensing granules and tiles (MOD09, MOD09GA, VNP03) through pyhdf and netcdf4.
 
 
 ## Installation
@@ -85,7 +90,7 @@ africa  = starepandas.STAREDataFrame(africa , stare=stare)
 STAREPandas extends the geopandas rich plotting abilities and provides a simple method to generate visualizations of trixels:
 
 ```python
-trixels = africa.trixels()
+trixels = africa.make_trixels()
 africa.set_trixels(trixels, inplace=True)
 africa.plot(ax=ax, trixels=True, boundary=True, column='name', linewidth=0.2)
 ```
@@ -129,13 +134,13 @@ STAREPandas further allows for STARE-bases intersections:
 
 ```python
 fname = 'zip://data/amapoly_ivb.zip'
-amazon = geopandas.read_file(fname) # Nice flex
+amazon = geopandas.read_file(fname)  # Nice flex
 amazon = amazon.to_crs('EPSG:4326')
-    
+
 stare = starepandas.stare_from_gdf(amazon, level=10, force_ccw=True)
 amazon = starepandas.STAREDataFrame(amazon, stare=stare)
 
-stare_amazon = samerica.stare_intersection(amazon.stare.iloc[0])
+stare_amazon = samerica.stare_intersection(amazon.make_stare.iloc[0])
 ```
     
     

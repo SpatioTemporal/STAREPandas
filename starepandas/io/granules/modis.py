@@ -5,7 +5,7 @@ import numpy
 
 
 def get_hdfeos_metadata(file_path):    
-    hdf= starepandas.io.s3.SD_wrapper(file_path)
+    hdf= starepandas.io.s3.sd_wrapper(file_path)
     metadata = {}
     metadata['ArchiveMetadata'] = get_metadata_group(hdf, 'ArchiveMetadata')
     metadata['StructMetadata']  = get_metadata_group(hdf, 'StructMetadata')
@@ -54,7 +54,7 @@ class Modis(Granule):
     
     def __init__(self, file_path, sidecar_path=None):                
         super(Modis, self).__init__(file_path, sidecar_path)
-        self.hdf = starepandas.io.s3.SD_wrapper(file_path)        
+        self.hdf = starepandas.io.s3.sd_wrapper(file_path)
     
     def read_latlon(self, track_first=False):
         self.lon = self.hdf.select('Longitude').get().astype(numpy.double)

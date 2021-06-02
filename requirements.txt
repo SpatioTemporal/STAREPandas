@@ -13,13 +13,13 @@ dask>2.30.0
 descartes==1.1.0
 Fiona==1.8.17
 fsspec==0.8.4
-geopandas==0.9
+geopandas>=0.9
 jmespath==0.10.0
 kiwisolver>=1.1.1
 locket==0.2.0
 matplotlib>=3.0.3
 munch==2.5.0
-netCDF4==1.5.4
+netCDF4>=1.5.6
 pandas>=1.1.4
 numpy>=1.18.5
 partd==1.1.0
