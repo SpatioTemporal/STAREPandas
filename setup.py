@@ -32,8 +32,7 @@ setup(
     long_description=LONG_DESCRIPTION,
     packages=[
         "starepandas",
-        "starepandas.io",
-        "starepandas.tests",
+        "starepandas.io",    
         "starepandas.tools",
     ],
     python_requires=">=3.5",
