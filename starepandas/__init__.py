@@ -2,7 +2,6 @@ from starepandas.tools import *
 from starepandas.io.folder import folder2catalog
 from starepandas.io.granules import read_granule
 from starepandas.io.pod import read_pods
-from starepandas.io.pod import write_pods
 
 import starepandas.io.s3
 
