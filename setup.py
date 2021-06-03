@@ -14,7 +14,7 @@ data_files = []
 
 setuptools.setup(
     name="starepandas",
-    version='0.4.0',
+    version='0.5.0',
     description="STARE pandas extensions",
     license="BSD-3",
     author="Niklas Griessbaum",
