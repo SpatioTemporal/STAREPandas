@@ -1,6 +1,6 @@
 import h5py
 import netCDF4
-import pyhdf
+import pyhdf.SD
 import re
 from io import BytesIO
 import boto3

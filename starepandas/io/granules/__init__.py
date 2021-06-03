@@ -34,13 +34,13 @@ def guess_companion_path(granule_path, prefix, folder=None):
         time = name_parts[2]        
         pattern = folder + '/' + prefix + '.' + date + '.' + time + '*'
         matches = glob.glob(pattern)
-        #pattern = '.*[^_stare]\\.(nc|hdf|HDF5)'
-        #granules = list(filter(re.compile(pattern).match, matches))
-        if len(matches) < 1:
+        pattern = '.*[^_stare]\\.(nc|hdf|HDF5)'
+        granules = list(filter(re.compile(pattern).match, matches))
+        if len(granules) < 1:
             print('did not find companion')
             return None
         else:
-            return matches[0]
+            return granules[0]
 
 
 def granule_factory(file_path, sidecar_path=None):
