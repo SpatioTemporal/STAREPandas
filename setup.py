@@ -16,7 +16,7 @@ setuptools.setup(
     name="starepandas",
     version='0.4.0',
     description="STARE pandas extensions",
-    license="MIT",
+    license="BSD-3",
     author="Niklas Griessbaum",
     author_email="griessbaum@ucsb.edu",
     url="https://github.com/SpatioTemporal/STAREPandas",
