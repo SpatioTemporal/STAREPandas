@@ -11,8 +11,12 @@ Welcome to STAREPandas's documentation!
 .. toctree::
    :maxdepth: 2
 
+   Readme README.md
+
+
    Reference <docs/reference>
    About <about>
+   Examples <examples/index>
 
 
 
