@@ -6,3 +6,5 @@ build/
 dist/
 record.txt
 examples/dask-worker-space/*
+*.egg-info/
+.eggs/*

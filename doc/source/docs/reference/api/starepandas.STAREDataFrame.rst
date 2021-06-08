@@ -123,6 +123,8 @@
       ~STAREDataFrame.lookup
       ~STAREDataFrame.lt
       ~STAREDataFrame.mad
+      ~STAREDataFrame.make_stare
+      ~STAREDataFrame.make_trixels
       ~STAREDataFrame.mask
       ~STAREDataFrame.max
       ~STAREDataFrame.mean
@@ -197,7 +199,6 @@
       ~STAREDataFrame.sort_values
       ~STAREDataFrame.squeeze
       ~STAREDataFrame.stack
-      ~STAREDataFrame.stare
       ~STAREDataFrame.stare_disjoint
       ~STAREDataFrame.stare_dissolve
       ~STAREDataFrame.stare_intersection
@@ -232,6 +233,8 @@
       ~STAREDataFrame.to_records
       ~STAREDataFrame.to_scidb
       ~STAREDataFrame.to_sql
+      ~STAREDataFrame.to_stare_resolution
+      ~STAREDataFrame.to_stare_singleres
       ~STAREDataFrame.to_stata
       ~STAREDataFrame.to_string
       ~STAREDataFrame.to_timestamp
@@ -242,7 +245,6 @@
       ~STAREDataFrame.transform
       ~STAREDataFrame.translate
       ~STAREDataFrame.transpose
-      ~STAREDataFrame.trixels
       ~STAREDataFrame.truediv
       ~STAREDataFrame.truncate
       ~STAREDataFrame.tshift
@@ -255,6 +257,7 @@
       ~STAREDataFrame.var
       ~STAREDataFrame.where
       ~STAREDataFrame.within
+      ~STAREDataFrame.write_pods
       ~STAREDataFrame.xs
    
    

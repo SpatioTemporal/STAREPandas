@@ -24,7 +24,7 @@ setuptools.setup(
     long_description_content_type="text/markdown",
     #package_dir={'': ''},
     #packages=setuptools.find_packages(where=''),
-    packages=["starepandas", "starepandas.io", "starepandas.tools"],
+    packages=["starepandas", "starepandas.io", "starepandas.tools", "starepandas.datasets"],
     python_requires=">=3.6",
     install_requires=install_requires,
     test_suite='tests'

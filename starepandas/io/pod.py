@@ -7,6 +7,7 @@ import pandas
 
 def read_pods(pod_root, sids, pattern, add_podname=False):
     """ Reads a STAREDataframe from a directory of STAREPods
+
     :param add_podname: toggle if the podname should be read as a parameter
     :type add_podname: bool
     :param pod_root: Root directory containing the pods

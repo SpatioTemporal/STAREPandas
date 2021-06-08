@@ -77,6 +77,21 @@ def get_sf_cover(granule_path):
 
 
 def folder2catalog(path, granule_trunk='', granule_extension='*', add_sf=False, client=None):
+    """ Reads a folder of granules into a STAREDataFrame catalog
+
+    :param path: Path of the folder containing granules
+    :type path: str
+    :param granule_trunk: Granule identifier (e.g. MOD09)
+    :type granule_trunk: str
+    :param granule_extension: Extension of the granule (e.g. hdf, nc, HDF5)
+    :type granule_extension: str
+    :param add_sf: toggle creating simple feature representation of the iFOVs
+    :type add_sf: bool
+    :param client:
+    :type client:
+    :return: catalog
+    :rtype: starepandas.STAREDataFrame
+    """
     term = '{path}/{granule_trunk}*.{ext}'.format(path=path, granule_trunk=granule_trunk, ext=granule_extension)
     s3 = None
     if path[0:5] != 's3://':

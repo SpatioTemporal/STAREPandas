@@ -11,15 +11,9 @@ Welcome to STAREPandas's documentation!
 .. toctree::
    :maxdepth: 2
 
-   Reference <reference/reference>
+   Reference <docs/reference>
    About <about>
 
-
-
-.. container:: button
-
-   :doc:`About <about>`
-   :doc:`Reference <reference/reference>`
 
 
 Indices and tables
