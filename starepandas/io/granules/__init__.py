@@ -21,8 +21,9 @@ class SidecarNotFoundError(Exception):
         super().__init__(self.message)
 
 
-def guess_companion_path(granule_path, prefix, folder=None):
-        ''' Tries to find a companion to the granule
+
+def guess_companion_path(granule_path, prefix=None, folder=None):
+        ''' Tries to find a companion to the granule.
         The assumption being that granule file names are composed of
         {Product}.{date}.{time}.{version}.{production_timestamp}.{extension}
         '''
@@ -32,9 +33,13 @@ def guess_companion_path(granule_path, prefix, folder=None):
         name_parts = name.split('.')
         date = name_parts[1]
         time = name_parts[2]        
-        pattern = folder + '/' + prefix + '.' + date + '.' + time + '*'
-        matches = glob.glob(pattern)
-        pattern = '.*[^_stare]\\.(nc|hdf|HDF5)'
+        if prefix:
+            pattern = folder + '/' + prefix + '.' + date + '.' + time + '*'
+            matches = glob.glob(pattern)
+            pattern = '.*[^_stare]\.(nc|hdf|HDF5)'
+        else:
+            pattern =  '.*\.{date}.{time}\..*[^_stare]\..*'
+            patern = pattern.format(date=date, time=time)
         granules = list(filter(re.compile(pattern).match, matches))
         if len(granules) < 1:
             print('did not find companion')

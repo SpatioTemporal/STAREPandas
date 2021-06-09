@@ -489,9 +489,11 @@ def series_intersects(other, series, method=1, n_workers=1):
     True for every row in which row intersects other.    
     """
 
+
     if n_workers > len(series):
         # Cannot have more partitions than rows        
         n_workers = len(series)
+
 
     if n_workers == 1:
         if series.dtype == numpy.int64:
@@ -507,6 +509,9 @@ def series_intersects(other, series, method=1, n_workers=1):
                     intersects.append(pystare.intersects(sids, other, method).any())
             intersects = numpy.array(intersects)
     else:
+        if n_workers > len(series):
+            # Cannot have more partitions than rows        
+            n_workers = len(series) 
         ddf = dask.dataframe.from_pandas(series, npartitions=n_workers)
         meta = {'intersects': 'bool'}
         res = ddf.map_partitions(lambda df: series_intersects(other, df, method, 1), meta=meta)
