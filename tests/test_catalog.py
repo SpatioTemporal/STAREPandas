@@ -1,13 +1,8 @@
-import unittest 
 import starepandas
- 
- 
-class MainTest(unittest.TestCase): 
-    
-    def test_makecatalog1(self):
-        catalog = starepandas.folder2catalog('tests/data/catalog/', granule_extension='hdf')        
-        self.assertEqual(15, catalog.size)
 
 
-if __name__ == '__main__':
-    unittest.main()
+def test_creation():
+    folder = 'tests/data/catalog/'
+    catalog = starepandas.folder2catalog(path=folder, granule_extension='hdf', add_sf=False)
+    print(catalog)
+    assert catalog.size == 15

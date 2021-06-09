@@ -8,7 +8,7 @@ class VIIRSL2(Granule):
     def __init__(self, file_path, sidecar_path=None):
         super(VIIRSL2, self).__init__(file_path, sidecar_path)
         self.nom_res = '750m'
-        self.netcdf = starepandas.io.s3.nc4_Dataset_wrapper(self.file_path, 'r', format='NETCDF4')
+        self.netcdf = starepandas.io.s3.nc4_dataset_wrapper(self.file_path, 'r', format='NETCDF4')
     
     def read_timestamps(self):
         self.ts_start = self.netcdf.time_coverage_start

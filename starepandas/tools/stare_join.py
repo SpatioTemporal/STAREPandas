@@ -3,12 +3,18 @@ import pandas
 
 
 def stare_join(left_df, right_df, how='left'):
-    """STARE join of two STAREDataFrames.
-    Parameters
-    ----------
-    left_df, right_df: STAREDataFrames """
-    
-           
+    """ STARE join of two STAREDataFrames.
+
+    :param left_df:
+    :type left_df:
+    :param right_df:
+    :type right_df:
+    :param how:
+    :type how:
+    :return:
+    :rtype:
+
+    """
     left_key = []
     right_key = []
 

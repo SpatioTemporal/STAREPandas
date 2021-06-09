@@ -30,15 +30,20 @@ class Granule:
             target = '{prefix}/{resource}'.format(prefix=tokens['prefix'], resource=tokens['resource'])
             if target in names:
                 return name
+            else:
+                return None
+                #raise SidecarNotFoundError(self.file_path)
         else:
             if glob.glob(name):
                 return name
-        return None
+            else:
+                return None
+                #raise SidecarNotFoundError(self.file_path)
 
     def guess_companion_path(self, companion_prefix=None, folder=None):
         if not companion_prefix:
             companion_prefix = self.companion_prefix
-        return starepandas.guess_companion_path(self.file_path, companion_prefix, folder)
+        return starepandas.io.granules.guess_companion_path(self.file_path, companion_prefix, folder)
 
     def add_stare(self, adapt_resolution=True):
         self.stare = pystare.from_latlon2D(lat=self.lat, lon=self.lon, adapt_resolution=adapt_resolution)
@@ -46,13 +51,13 @@ class Granule:
     def read_sidecar_index(self, sidecar_path=None):
         if not sidecar_path:
             sidecar_path = self.sidecar_path
-        ds = starepandas.io.s3.nc4_Dataset_wrapper(sidecar_path)
+        ds = starepandas.io.s3.nc4_dataset_wrapper(sidecar_path)
         self.stare = ds['STARE_index_{}'.format(self.nom_res)][:, :].astype(numpy.int64)
 
     def read_sidecar_cover(self, sidecar_path=None):
         if not sidecar_path:
             sidecar_path = self.sidecar_path
-        ds = starepandas.io.s3.nc4_Dataset_wrapper(sidecar_path)
+        ds = starepandas.io.s3.nc4_dataset_wrapper(sidecar_path)
         self.stare_cover = ds['STARE_cover_{}'.format(self.nom_res)][:].astype(numpy.int64)
 
     def to_df(self):

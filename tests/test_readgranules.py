@@ -1,7 +1,9 @@
-import unittest 
+import unittest
 import starepandas
- 
- 
+import os
+import pytest
+
+
 class MainTest(unittest.TestCase):
     
     def test_read_cldmsk_viirsl2(self):
@@ -12,7 +14,7 @@ class MainTest(unittest.TestCase):
             self.assertEqual(granule.ts_end, '2020-08-06T07:48:00.000Z')
         granule.read_data()
         granule.read_latlon()
-        granule.to_df()
+        #granule.to_df()
 
     def test_read_vnp02dnb(self):
         granule = starepandas.io.granules.VNP02DNB('tests/data/granules/VNP02DNB.A2020219.0742.001.2020219125654.nc')
@@ -21,9 +23,9 @@ class MainTest(unittest.TestCase):
             self.assertEqual(granule.ts_start, '2020-08-06T07:42:00.000Z')
             self.assertEqual(granule.ts_end, '2020-08-06T07:48:00.000Z')
         granule.read_data()
-        companion = granule.guess_companion_path()
+        companion = granule.guess_companion_path()        
         with self.subTest():
-            self.assertEqual(companion, 'tests/data/granules/VNP03DNB.A2020219.0742.001.2020219124651_stare.nc')
+            self.assertEqual(companion, 'tests/data/granules/VNP03DNB.A2020219.0742.001.2020219124651.nc')
         
     def test_read_vnp03dnb(self):
         granule = starepandas.io.granules.VNP03DNB('tests/data/granules/VNP03DNB.A2020219.0742.001.2020219124651.nc')        
@@ -58,18 +60,34 @@ class MainTest(unittest.TestCase):
         df = granule.to_df()
         with self.subTest():
             self.assertEqual(986580, df.size)
-            
+
     def test_read_granules(self):
         starepandas.read_granule('tests/data/granules/MOD05_L2.A2019336.0000.061.2019336211522.hdf')
         starepandas.read_granule('tests/data/granules/VNP02DNB.A2020219.0742.001.2020219125654.nc')
-        
+
+    def test_sidecar_not_found(self):
+        with self.assertRaises(Exception) as context:
+            fname = '../tests/data/granules/MYD05_L2.A2020060.1635.061.2020061153519.hdf'
+            starepandas.read_granule(fname, latlon=False, sidecar=True)
+            self.assertTrue('Could not find sidecar' in context.exception)
+
     def test_bootstrap(self):
         fname = 'tests/data/granules/MYD05_L2.A2020060.1635.061.2020061153519.hdf'
         modis = starepandas.read_granule(fname, add_stare=True, adapt_resolution=True, track_first=False)
-        #trixels = modis.trixels()
+        #trixels = modis.make_trixels()
         #modis.set_trixels(trixels, inplace=True)
-        
-        
-        
+
+
+def test_find_companions():
+    fpath = starepandas.datasets.get_path('MOD05_L2.A2019336.0000.061.2019336211522.hdf')
+    mod05 = starepandas.io.granules.Mod05(fpath)
+    sidecar_path = mod05.guess_sidecar_path()
+    assert os.path.exists(sidecar_path)
+
+
 if __name__ == '__main__':
     unittest.main()
+
+
+
+

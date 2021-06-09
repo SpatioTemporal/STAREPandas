@@ -1,8 +1,9 @@
-import re
-import glob
-
-from starepandas.io.granules.modis import *
 from starepandas.io.granules.viirsl2 import *
+import glob
+import re
+from .modis import *
+from .viirsl2 import *
+from .ssmis import SSMIS
 
 
 class UnsuportedFileError(Exception):
@@ -12,11 +13,17 @@ class UnsuportedFileError(Exception):
         self.message = 'cannot handle {}'.format(file_path)
         super().__init__(self.message)
 
-        
+
+class SidecarNotFoundError(Exception):
+    def __init__(self, file_path):
+        self.file_path = file_path
+        self.message = 'Could not find sidecar for {}'.format(file_path)
+        super().__init__(self.message)
+
+
 
 def guess_companion_path(granule_path, prefix=None, folder=None):
-        '''
-        Tries to find a companion to the granule
+        ''' Tries to find a companion to the granule.
         The assumption being that granule file names are composed of
         {Product}.{date}.{time}.{version}.{production_timestamp}.{extension}
         '''
@@ -34,11 +41,11 @@ def guess_companion_path(granule_path, prefix=None, folder=None):
             pattern =  '.*\.{date}.{time}\..*[^_stare]\..*'
             patern = pattern.format(date=date, time=time)
         granules = list(filter(re.compile(pattern).match, matches))
-        if len(matches) < 1:
+        if len(granules) < 1:
             print('did not find companion')
             return None
         else:
-            return matches[0]
+            return granules[0]
 
 
 def granule_factory(file_path, sidecar_path=None):
@@ -54,21 +61,52 @@ def granule_factory(file_path, sidecar_path=None):
         granule = VNP03MOD(file_path, sidecar_path)   
     elif re.search('CLDMSKL2VIIRS', file_path, re.IGNORECASE):
         granule = CLDMSKL2VIIRS(file_path, sidecar_path)
+    elif re.search('SSMIS', file_path, re.IGNORECASE):
+        granule = SSMIS(file_path, sidecar_path)
     else:        
         raise UnsuportedFileError(file_path)
         return None
     return granule
 
 
-def read_granule(file_path, read_latlon=False, sidecar=False, sidecar_path=None, track_first=False, add_stare=False, adapt_resolution=True, **kwargs):
+def read_granule(file_path, latlon=False, sidecar=False, sidecar_path=None, add_stare=False, adapt_resolution=True, **kwargs):
+    """ Reads a granule into a STAREDataFrame
+
+    :param file_path: path of the granule
+    :type file_path: string
+    :param latlon: toggle whether to read the latitude and longitude variables
+    :type latlon: bool
+    :param sidecar: toggle whether to read the sidecar file
+    :type sidecar: bool
+    :param sidecar_path: path of the sidecar file. If not provided, it is assumed to be ${file_path}_stare.nc
+    :type sidecar_path: string
+    :param add_stare: toggle whether to lookup stare indices
+    :type add_stare: bool
+    :param adapt_resolution: toggle whether to adapt the resolution
+    :type adapt_resolution: bool
+    :param kwargs:
+    :type kwargs:
+    :return: stare dataframe
+    :rtype: starepandas.STAREDataFrame
+
+    Examples
+    ----------
+    >>> fname = starepandas.datasets.get_path('MOD05_L2.A2019336.0000.061.2019336211522.hdf')
+    >>> modis = starepandas.read_granule(fname, latlon=True, sidecar=True)
+    """
+
     granule = granule_factory(file_path, sidecar_path)
     
-    if read_latlon:
+    if add_stare:
+        latlon = True
+        sidecar = False
+    
+    if latlon:
         granule.read_latlon()
         
     granule.read_data()
     
-    if sidecar:        
+    if sidecar:
         granule.read_sidecar_index(sidecar_path)
     elif add_stare:        
         granule.add_stare(adapt_resolution)
