@@ -23,8 +23,8 @@ def stare_from_gdf(gdf, level=-1, convex=False, force_ccw=True, n_workers=1):
     :return: A numpy array of length=len(gdf.index) holding the set of stare indices of each geometry
     :rtype: numpy.ndarray
 
-    Example::
-
+    Examples
+    ---------
     >>> import geopandas
     >>> import starepandas
     >>> world = geopandas.read_file(geopandas.datasets.get_path('naturalearth_lowres'))
@@ -59,13 +59,13 @@ def stare_from_geoseries(series, level=0, convex=False, force_ccw=True, n_worker
     :return: A numpy array of length=len(gdf.index) holding the set of stare indices of each geometry
     :rtype: numpy.ndarray
 
-    Example::
-
+    Examples
+    ------------
     >>> import geopandas
     >>> import starepandas
     >>> world = geopandas.read_file(geopandas.datasets.get_path('naturalearth_lowres'))
     >>> germany = world[world.name=='Germany']
-    >>> starepandas.stare_from_geoseries(germany.geometry, level=3, convex=True, force_ccw=True, n_workers=1)
+    >>> starepandas.stare_from_geoseries(germany.geometry, level=3, convex=True)
     [array([4251398048237748227, 4269412446747230211, 4278419646001971203,
            4539628424389459971, 4548635623644200963, 4566650022153682947])]
     """
@@ -96,8 +96,8 @@ def stare_from_xy(lon, lat, level=0):
     :return: Array of STARE index values
     :rtype: numpy.ndarray
 
-    Example::
-
+    Examples
+    ----------
     >>> import starepandas
     >>> x = [10.1, 20.9]
     >>> y = [55.3, 60.1]
@@ -126,8 +126,8 @@ def stare_from_xy_df(df, level=0, n_workers=1):
     :return: Array of STARE index values
     :rtype: numpy.ndarray
 
-    Example::
-
+    Examples
+    ------------
     >>> import starepandas
     >>> import pandas
     >>> x = [-119.42, 7.51]
@@ -158,8 +158,8 @@ def trixels_from_stareseries(sids_series, n_workers=1):
     :return: array like of trixels / triangle geometries
     :rtype: array-like
 
-    Example::
-
+    Examples
+    -------------
     >>> import starepandas
     >>> sids = [4611686018427387903, 4611686018427387903]
     >>> sdf = starepandas.STAREDataFrame(stare=sids)
@@ -193,8 +193,8 @@ def to_trixels(sids, as_multipolygon=False):
     :return: array like of trixels
     :rtype: array-like
 
-    Example::
-
+    Examples
+    ---------
     >>> import starepandas
     >>> sids = [4611686018427387903, 4611686018427387903]
     >>> trixels = starepandas.to_trixels(sids, as_multipolygon=True)
@@ -247,17 +247,24 @@ def from_shapely(geom, level=-1, convex=False, force_ccw=False):
     :return: collection of sids
     :rtype: array-like
 
-    Example::
-
+    Examples
+    ---------
     >>> import shapely
     >>> import starepandas
+
+    Point:
+
     >>> point = shapely.geometry.Point(10.5, 20)
     >>> starepandas.from_shapely(point)
     4611686018427387903
 
+    Polygon:
+
     >>> polygon1 = shapely.geometry.Polygon([(0, 0), (1, 1), (1, 0)])
     >>> starepandas.from_shapely(polygon1, force_ccw=True, level=6)
     array([4430697608402436102, 4430838345890791430, 4430979083379146758])
+
+    Multipolygon:
 
     >>> polygon2 = shapely.geometry.Polygon([(5, 5), (6, 6), (6, 5)])
     >>> multipolygon = shapely.geometry.MultiPolygon([polygon1, polygon2])
@@ -283,8 +290,8 @@ def from_point(point, level=-1):
     :return: collection of sids
     :rtype: array-like
 
-    Example::
-
+    Examples
+    ---------
     >>> import starepandas
     >>> import shapely
     >>> point = shapely.geometry.Point(10.5, 20)
@@ -298,24 +305,27 @@ def from_point(point, level=-1):
 
 
 def from_ring(ring, level=-1, convex=False, force_ccw=False):
-    """ Return a range of indices covering the region inside/outside ring.
+    """
+    Return a range of indices covering the region inside/outside ring.
     Node orientation is relevant!
 
-    :param ring: Ring to lookup sids for
-    :type ring: shapely.geometry.polygon.LinearRing
-    :param level: (Maximum) STARE level to use for lookup. Warning: default is maximum level (27)
-    :type level: int
-    :param convex: Toggle if the STARE lookup should be performed on the convex hull rather than the actual geometry
-        of the ring
-    :type convex: bool
-    :param force_ccw: toggle if orientation of ring should be overwritten and ring should be interpreted as outer
-        boundary.
-    :type force_ccw: bool
-    :return: collection of sids
-    :rtype: array-like
+    Parameters
+    ------------
+    ring: shapely.geometry.polygon.LinearRing
+        Ring to lookup sids for
+    level: int
+        (Maximum) STARE level to use for lookup. Warning: default is maximum level (27)
+    convex: bool
+        Toggle if the STARE lookup should be performed on the convex hull rather than the actual geometry of the ring
+    force_ccw: bool
+        toggle if orientation of ring should be overwritten and ring should be interpreted as outerboundary.
 
-    Example::
+    Returns
+    ---------
+    collection of sids
 
+    Examples
+    ---------
     >>> import starepandas
     >>> import shapely
     >>> # Note: the ring is clockwise!
@@ -354,8 +364,8 @@ def from_polygon(polygon, level=-1, convex=False, force_ccw=False):
     :return: collection of sids
     :rtype: array-like
 
-    Example::
-
+    Examples
+    ---------
     >>> import starepandas
     >>> import shapely
     >>> polygon = shapely.geometry.Polygon([(0, 0), (2, 0), (1, 1)])
@@ -396,7 +406,8 @@ def from_multipolygon(multipolygon, level=-1, convex=False, force_ccw=False):
     :return: collection of sids
     :rtype: array-like
 
-    Example::
+    Examples
+    ----------
 
     >>> import starepandas
     >>> import shapely
@@ -414,14 +425,16 @@ def from_multipolygon(multipolygon, level=-1, convex=False, force_ccw=False):
 
 
 def dissolve(sids):
-    """ Dissolve STARE index values.
+    """
+    Dissolve STARE index values.
 
     :param sids:
     :type sids:
     :return: dissolved
     :rtype: array-like
 
-
+    Notes
+    --------
     .. image:: ../../../_static/dissolve.png
 
     """
@@ -431,6 +444,20 @@ def dissolve(sids):
 
 
 def merge_stare(sids, dissolve_sids=True, n_workers=1, n_chunks=1):
+    """
+    Combines a collection of sids. I.e. removes duplicate, and optionally combines ancestor sids into the parent sids.
+
+    Parameters
+    -----------
+    sids: array-like /  list
+        the collection of SIDs to merge
+    dissolve_sids: bool
+        toggle if sids should be dissolved. I.e. combining ancestors into parent sids when possible
+    n_workers: int
+        number of workers to use. (only relevant for dissolve / if dissolve=True)
+    n_chunks: int
+         Performance parameter. If n_chunks >1, the sid collection will be split into n_chunks for the dissolve.
+    """
     sids = numpy.concatenate(list(sids))
     dissolved = numpy.unique(sids)
 

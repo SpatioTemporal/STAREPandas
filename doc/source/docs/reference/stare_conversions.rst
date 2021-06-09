@@ -8,7 +8,6 @@
 
     dissolve
     from_ring
-    from_geom_row
     from_multipolygon
     from_point
     from_polygon
@@ -19,7 +18,6 @@
     stare_from_geoseries
     stare_from_xy
     stare_from_xy_df
-    stare_row
     to_trixels
     trixels_from_stareseries
 

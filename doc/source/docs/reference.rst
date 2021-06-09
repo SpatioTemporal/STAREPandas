@@ -10,7 +10,7 @@ namespace plus those listed in the reference are public.
 
 
 .. toctree::
-    :maxdepth: 2
+    :maxdepth: 1
 
     STAREDataFrame <reference/staredataframe>
     stare_conversion <reference/stare_conversions>

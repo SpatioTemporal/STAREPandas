@@ -31,9 +31,27 @@ release = '2021-05-20'
 # ones.
 extensions = ['sphinx.ext.autodoc',
               'sphinx.ext.autosummary',
+              'sphinx.ext.autodoc',
               'myst_parser',  # markdown parsing
-              'nbsphinx'  # Notebook integration
+              'nbsphinx',  # Notebook integration
+              "numpydoc",   # Syntax/schema for docstrings!
+              #'m2r2'
               ]
+
+# continue doc build and only print warnings/errors in examples
+ipython_warning_is_error = False
+ipython_exec_lines = [
+    # ensure that dataframes are not truncated in the IPython code blocks
+    "import pandas as _pd",
+    '_pd.set_option("display.max_columns", 20)',
+    '_pd.set_option("display.width", 100)',
+]
+
+numpydoc_show_class_members = False
+
+# If true, the current module name will be prepended to all description
+# unit titles (such as .. function::).
+add_module_names = False
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']

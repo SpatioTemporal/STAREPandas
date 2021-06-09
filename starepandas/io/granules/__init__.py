@@ -84,8 +84,8 @@ def read_granule(file_path, latlon=False, sidecar=False, sidecar_path=None, add_
     :return: stare dataframe
     :rtype: starepandas.STAREDataFrame
 
-    Example::
-
+    Examples
+    ----------
     >>> fname = starepandas.datasets.get_path('MOD05_L2.A2019336.0000.061.2019336211522.hdf')
     >>> modis = starepandas.read_granule(fname, latlon=True, sidecar=True)
     """

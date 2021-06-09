@@ -7,11 +7,10 @@ Welcome to STAREPandas's documentation!
 =======================================
 
 
-
 .. toctree::
-   :maxdepth: 2
+   :maxdepth: 1
 
-   Readme README.md
+   Readme <readme/README.md>
 
 
    Reference <docs/reference>

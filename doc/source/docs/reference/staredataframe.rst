@@ -7,10 +7,8 @@ Constructor
 -----------
 
 
-.. autosummary::
-   :toctree: api/
+.. autoclass:: STAREDataFrame
 
-   STAREDataFrame
 
 Bootstrapping
 ---------------
@@ -41,6 +39,7 @@ STARE manipulation
     :toctree: api/
 
     STAREDataFrame.to_stare_resolution
+    STAREDataFrame.clear_to_resolution
     STAREDataFrame.to_stare_singleres
 
 IO
