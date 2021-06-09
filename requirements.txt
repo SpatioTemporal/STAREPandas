@@ -11,7 +11,7 @@ cycler==0.10.0
 h5py>=2.10.0
 dask>2.30.0
 descartes==1.1.0
-Fiona>=1.8.2
+Fiona>=1.8.20
 fsspec==0.8.4
 geopandas==0.9
 jmespath==0.10.0
