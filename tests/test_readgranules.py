@@ -23,7 +23,7 @@ class MainTest(unittest.TestCase):
             self.assertEqual(granule.ts_start, '2020-08-06T07:42:00.000Z')
             self.assertEqual(granule.ts_end, '2020-08-06T07:48:00.000Z')
         granule.read_data()
-        companion = granule.guess_companion_path()        
+        companion = granule.guess_companion_path(prefix='VNP03DNB')
         with self.subTest():
             self.assertEqual(companion, 'tests/data/granules/VNP03DNB.A2020219.0742.001.2020219124651.nc')
         
@@ -78,15 +78,16 @@ class MainTest(unittest.TestCase):
         #modis.set_trixels(trixels, inplace=True)
 
 
-def test_find_companions():
+def test_find_sidecar():
     fpath = starepandas.datasets.get_path('MOD05_L2.A2019336.0000.061.2019336211522.hdf')
     mod05 = starepandas.io.granules.Mod05(fpath)
     sidecar_path = mod05.guess_sidecar_path()
     assert os.path.exists(sidecar_path)
 
 
+
 if __name__ == '__main__':
-    unittest.main()
+    test_find_companion()
 
 
 

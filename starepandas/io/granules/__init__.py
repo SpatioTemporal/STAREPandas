@@ -7,7 +7,7 @@ from .ssmis import SSMIS
 
 
 class UnsuportedFileError(Exception):
-    
+
     def __init__(self, file_path):
         self.file_path = file_path
         self.message = 'cannot handle {}'.format(file_path)
@@ -21,31 +21,42 @@ class SidecarNotFoundError(Exception):
         super().__init__(self.message)
 
 
-
 def guess_companion_path(granule_path, prefix=None, folder=None):
-        ''' Tries to find a companion to the granule.
-        The assumption being that granule file names are composed of
-        {Product}.{date}.{time}.{version}.{production_timestamp}.{extension}
-        '''
-        if not folder:
-            folder = '/'.join(granule_path.split('/')[0:-1])
-        name = granule_path.split('/')[-1]        
-        name_parts = name.split('.')
-        date = name_parts[1]
-        time = name_parts[2]        
-        if prefix:
-            pattern = folder + '/' + prefix + '.' + date + '.' + time + '*'
-            matches = glob.glob(pattern)
-            pattern = '.*[^_stare]\.(nc|hdf|HDF5)'
-        else:
-            pattern =  '.*\.{date}.{time}\..*[^_stare]\..*'
-            patern = pattern.format(date=date, time=time)
-        granules = list(filter(re.compile(pattern).match, matches))
-        if len(granules) < 1:
-            print('did not find companion')
-            return None
-        else:
-            return granules[0]
+    """
+    Tries to find a companion to the granule.
+    The assumption being that granule file names are composed of
+    {Product}.{date}.{time}.{version}.{production_timestamp}.{extension}
+
+    Parameters
+    -----------
+    granule_path: str
+        The path of the granule to find the companion for
+    prefix: str
+        The pri
+    """
+
+    if not folder:
+        folder = '/'.join(granule_path.split('/')[0:-1])
+    name = granule_path.split('/')[-1]
+    name_parts = name.split('.')
+    date = name_parts[1]
+    time = name_parts[2]
+    if prefix:
+        pattern = '{folder}/{prefix}.*\\.{date}.{time}\\..*[^_stare]\\.(nc|hdf|HDF5)'
+        pattern = pattern.format(folder=folder, prefix=prefix, date=date, time=time)
+    else:
+        pattern = '{folder}/.*\\.{date}.{time}\\..*[^_stare]\\.(nc|hdf|HDF5)'
+        pattern = pattern.format(folder=folder, date=date, time=time)
+    matches = glob.glob(folder + '/*')
+    granules = list(filter(re.compile(pattern).match, matches))
+    if len(granules) < 1 or granules[0] == granule_path:
+        print('did not find companion')
+        return None
+    if len(granules) > 1:
+        print('more than one possible match found. Specify the prefix!')
+        print(granules)
+    else:
+        return granules[0]
 
 
 def granule_factory(file_path, sidecar_path=None):
@@ -54,22 +65,23 @@ def granule_factory(file_path, sidecar_path=None):
     elif re.search('MOD09|MYD09', file_path, re.IGNORECASE):
         granule = Mod09(file_path, sidecar_path)
     elif re.search('VNP02DNB|VJ102DNB', file_path, re.IGNORECASE):
-        granule = VNP02DNB(file_path, sidecar_path)        
+        granule = VNP02DNB(file_path, sidecar_path)
     elif re.search('VNP03DNB|VJ103DNB', file_path, re.IGNORECASE):
         granule = VNP03DNB(file_path, sidecar_path)
     elif re.search('VNP03MOD|VJ103MOD', file_path, re.IGNORECASE):
-        granule = VNP03MOD(file_path, sidecar_path)   
+        granule = VNP03MOD(file_path, sidecar_path)
     elif re.search('CLDMSKL2VIIRS', file_path, re.IGNORECASE):
         granule = CLDMSKL2VIIRS(file_path, sidecar_path)
     elif re.search('SSMIS', file_path, re.IGNORECASE):
         granule = SSMIS(file_path, sidecar_path)
-    else:        
+    else:
         raise UnsuportedFileError(file_path)
         return None
     return granule
 
 
-def read_granule(file_path, latlon=False, sidecar=False, sidecar_path=None, add_stare=False, adapt_resolution=True, **kwargs):
+def read_granule(file_path, latlon=False, sidecar=False, sidecar_path=None, add_stare=False, adapt_resolution=True,
+                 **kwargs):
     """ Reads a granule into a STAREDataFrame
 
     :param file_path: path of the granule
@@ -96,19 +108,19 @@ def read_granule(file_path, latlon=False, sidecar=False, sidecar_path=None, add_
     """
 
     granule = granule_factory(file_path, sidecar_path)
-    
+
     if add_stare:
         latlon = True
         sidecar = False
-    
+
     if latlon:
         granule.read_latlon()
-        
+
     granule.read_data()
-    
+
     if sidecar:
         granule.read_sidecar_index(sidecar_path)
-    elif add_stare:        
+    elif add_stare:
         granule.add_stare(adapt_resolution)
-    
+
     return granule.to_df()

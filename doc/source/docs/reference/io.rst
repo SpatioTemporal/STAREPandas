@@ -10,3 +10,4 @@ io
     read_granule
     read_pods
     read_sql_table
+    guess_companion_path

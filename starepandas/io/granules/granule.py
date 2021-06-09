@@ -40,10 +40,10 @@ class Granule:
                 return None
                 #raise SidecarNotFoundError(self.file_path)
 
-    def guess_companion_path(self, companion_prefix=None, folder=None):
-        if not companion_prefix:
-            companion_prefix = self.companion_prefix
-        return starepandas.io.granules.guess_companion_path(self.file_path, companion_prefix, folder)
+    def guess_companion_path(self, prefix=None, folder=None):
+        if not prefix:
+            prefix = self.companion_prefix
+        return starepandas.io.granules.guess_companion_path(self.file_path, prefix, folder)
 
     def add_stare(self, adapt_resolution=True):
         self.stare = pystare.from_latlon2D(lat=self.lat, lon=self.lon, adapt_resolution=adapt_resolution)
