@@ -41,6 +41,7 @@ STARE manipulation
     STAREDataFrame.to_stare_resolution
     STAREDataFrame.clear_to_resolution
     STAREDataFrame.to_stare_singleres
+    STAREDataFrame.hex
 
 IO
 ------------

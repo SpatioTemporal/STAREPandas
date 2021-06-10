@@ -476,7 +476,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         Changes the STARE index values to single resolution representation (in contrary to multiresolution).
 
         Parameters
-        -------------
+        -----------
         resolution: int
             resolution to change thre
         inplace: bool
@@ -484,11 +484,10 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
         Returns
         ------------
-        :return: if not inplace, returns stare index values, otherwise None
-
+        if not inplace, returns stare index values, otherwise None
 
         Examples
-        -------
+        ---------
         >>> import geopandas
         >>> world = geopandas.read_file(geopandas.datasets.get_path('naturalearth_lowres'))
         >>> germany  = world[world.name=='Germany']
@@ -519,20 +518,52 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         else:
             return new_sids_col
 
-    def write_pods(self, pod_root, level, pod_name):
+    def hex(self):
+        """
+        Returns the hex16 representation of the stare column
+
+        Examples
+        ---------
+        >>> sdf = starepandas.STAREDataFrame(stare=[2251799813685252, 4503599627370500])
+        >>> sdf.hex()
+        ['0x0008000000000004', '0x0010000000000004']
+
+        >>> sdf = starepandas.STAREDataFrame(stare=[[2251799813685252, 4503599627370500], [4604930618986332164, 4607182418800017412]])
+        >>> sdf.hex()
+        [['0x0008000000000004', '0x0010000000000004'], ['0x3fe8000000000004', '0x3ff0000000000004']]
+        """
+
+        sids = []
+        for row in self[self._stare_column_name]:
+            try:
+                # Ducktyping collection of sids
+                sids.append(list(map(starepandas.int2hex, row)))
+            except TypeError:
+                sids.append(starepandas.int2hex(row))
+        return sids
+
+    def write_pods(self, pod_root, level, chunk_name, hex=True):
         """ Writes dataframe into a starepods hierarchy
 
-        :param pod_root: Root directory of starepods
-        :type pod_root: str
-        :param level: level of starepods
-        :type level: int
-        :param pod_name: name of the pod
-        :type pod_name: str
+        Parameters
+        --------------
+        pod_root: str
+            Root directory of starepods
+        level: str
+            level of starepods
+        chunk_name: str
+            name of the pod
+        hex: bool
+            toggle pods being hex vs int
         """
         grouped = self.groupby(self.to_stare_resolution(resolution=level, clear_to_resolution=True))
         for group in grouped.groups:
             g = grouped.get_group(group)
-            g.to_pickle('{pod_root}/{pod}/{pod_name}'.format(pod_root=pod_root, pod=group, pod_name=pod_name))
+            if hex:
+                pod = starepandas.int2hex(group)
+            else:
+                pod = group
+            g.to_pickle('{pod_root}/{pod}/{chunk_name}'.format(pod_root=pod_root, pod=pod, chunk_name=chunk_name))
 
     @property
     def _constructor(self):

@@ -136,7 +136,7 @@ def stare_from_xy_df(df, level=0, n_workers=1):
     >>> starepandas.stare_from_xy_df(df, level=20)
     array([3331752989521980116, 4271829667422230484])
     """
-    rename_dict = {'Latitude': 'lat', 'latitude': 'lat', 'y': 'lat',
+    rename_dict = {'Latitude' : 'lat', 'latitude': 'lat', 'y': 'lat',
                    'Longitude': 'lon', 'longitude': 'lon', 'x': 'lon'}
     df = df.rename(columns=rename_dict)
     if n_workers > 1:
@@ -489,11 +489,9 @@ def series_intersects(other, series, method=1, n_workers=1):
     True for every row in which row intersects other.    
     """
 
-
     if n_workers > len(series):
         # Cannot have more partitions than rows        
         n_workers = len(series)
-
 
     if n_workers == 1:
         if series.dtype == numpy.int64:
@@ -511,9 +509,23 @@ def series_intersects(other, series, method=1, n_workers=1):
     else:
         if n_workers > len(series):
             # Cannot have more partitions than rows        
-            n_workers = len(series) 
+            n_workers = len(series)
         ddf = dask.dataframe.from_pandas(series, npartitions=n_workers)
         meta = {'intersects': 'bool'}
         res = ddf.map_partitions(lambda df: series_intersects(other, df, method, 1), meta=meta)
         intersects = res.compute(scheduler='processes')
     return intersects
+
+
+def int2hex(sid):
+    """
+    Converts int sid to hex
+    """
+    return "0x%016x" % sid
+
+
+def hex2int(sid):
+    """
+    Converts hex sid to int
+    """
+    return int(sid, 16)

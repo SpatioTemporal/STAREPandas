@@ -1,7 +1,6 @@
 #!/usr/bin/env/python
 
 import setuptools
-import os
 
 with open('requirements.txt') as f:
     install_requires = f.read().splitlines()
@@ -9,10 +8,6 @@ with open('requirements.txt') as f:
 with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
-
-# get all data dirs in the datasets module
-
-            
 
 setuptools.setup(
     name="starepandas",
@@ -24,8 +19,6 @@ setuptools.setup(
     url="https://github.com/SpatioTemporal/STAREPandas",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    #package_dir={'': ''},
-    #packages=setuptools.find_packages(where=''),
     packages=["starepandas", "starepandas.io", "starepandas.io.granules", "starepandas.tools", "starepandas.datasets"],
     python_requires=">=3.6",
     install_requires=install_requires,    

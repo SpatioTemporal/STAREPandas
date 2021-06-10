@@ -20,6 +20,8 @@
     stare_from_xy_df
     to_trixels
     trixels_from_stareseries
+    int2hex
+    hex2int
 
 
 
