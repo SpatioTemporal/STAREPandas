@@ -1,5 +1,7 @@
 import unittest
 import starepandas
+import os
+import pytest
 
 
 class MainTest(unittest.TestCase):
@@ -74,6 +76,13 @@ class MainTest(unittest.TestCase):
         modis = starepandas.read_granule(fname, add_stare=True, adapt_resolution=True, track_first=False)
         #trixels = modis.make_trixels()
         #modis.set_trixels(trixels, inplace=True)
+
+
+def test_find_companions():
+    fpath = starepandas.datasets.get_path('MOD05_L2.A2019336.0000.061.2019336211522.hdf')
+    mod05 = starepandas.io.granules.Mod05(fpath)
+    sidecar_path = mod05.guess_sidecar_path()
+    assert os.path.exists(sidecar_path)
 
 
 if __name__ == '__main__':

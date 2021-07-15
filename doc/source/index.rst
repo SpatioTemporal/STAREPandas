@@ -7,19 +7,16 @@ Welcome to STAREPandas's documentation!
 =======================================
 
 
-
 .. toctree::
-   :maxdepth: 2
+   :maxdepth: 1
 
-   Reference <reference/reference>
+   Readme <readme/README.md>
+
+
+   Reference <docs/reference>
    About <about>
+   Examples <examples/index>
 
-
-
-.. container:: button
-
-   :doc:`About <about>`
-   :doc:`Reference <reference/reference>`
 
 
 Indices and tables

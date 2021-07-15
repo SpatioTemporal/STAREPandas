@@ -20,30 +20,48 @@ remote sensing granules and tiles (MOD09, MOD09GA, VNP03) through pyhdf and netc
 
 
 ## Installation
-STAREPandas depends on pyhdf, requiring libhdf4-dev, libhdf5-dev to build.
+
+## pyhdf
+STAREPandas depends on pyhdf to read hdf4-eos granules, requiring libhdf4-dev, to build.
 
 Tested on python 3.7.6
 
 On Ubuntu 20.04:
 
 ```shell
-apt install pyhdf libhdf4-dev libhdf5-dev
+apt install libhdf4-dev 
 ```
 
-pyhdf can also be found on conda
+On Centos7:
+
+```shell
+yum install hdf-devel.x86_64
+
+```
+
+Alternatively, pyhdf can also be found on conda
 
 ```shell
 conda install -c conda-forge pyhdf
 ```
-
-
-STAREPandas is built on top of [pystare](https://github.com/SpatioTemporal/pystare), which is not on PyPI yet. Therefore manually install pystare first.
+## pystare
+STAREPandas is built on top of [pystare](https://github.com/SpatioTemporal/pystare), which is not on PyPI yet. 
+Therefore manually install pystare first.
 
 ```shell
 pip3 install git+git://github.com/SpatioTemporal/pystare.git
 ```
 
-Then install STAREPandas from github
+## STAREPandas
+It is recommendable to install pip packages in a [Virtual Environment](https://pip.pypa.io/warnings/venv)
+
+```
+mkvirtualevironment starepandas
+```
+
+Make sure pip is up-to-date.
+
+Then install STAREPandas from github.
 
 ```shell
 pip3 install git+git://github.com/SpatioTemporal/starepandas.git $STAREPandas
@@ -53,11 +71,12 @@ or from a local copy
 
 ```shell
 git clone https://github.com/SpatioTemporal/starepandas $STAREPandas
-pip3 install $STAREPandas
+pip3 install $STAREPandas/
 ```
     
 ## Note
-Some of the examples require Rtree-linux to be installed to run geopandas spatial joins. As of 2020-08-20, I could not make this work on Centos7 with rtree>0.9 (9.4) as it requires GLIBCXX_3.4.21. I therefor downgrade rtree to rtree-0.8.3 on Centos7 
+Some of the examples require Rtree-linux to be installed to run geopandas spatial joins. 
+As of 2020-08-20, I could not make this work on Centos7 with rtree>0.9 (9.4) as it requires GLIBCXX_3.4.21. I therefor downgrade rtree to rtree-0.8.3 on Centos7 
 
 ```shell
 pip3 install "rtree>=0.8,<0.9
@@ -67,10 +86,10 @@ This is likely related to [rtree issue 120](https://github.com/Toblerity/rtree/i
 
 
 ## Tests
-
-
-    python3 -m unittest discover
-
+```shell
+cd starepandas/
+pytests
+```
 
     
 ## Features and usage

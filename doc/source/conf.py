@@ -12,6 +12,7 @@
 #
 import os
 import sys
+
 sys.path.insert(0, os.path.abspath('../'))
 
 # -- Project information -----------------------------------------------------
@@ -23,13 +24,34 @@ author = 'Niklas Griessbaum'
 # The full version, including alpha/beta/rc tags
 release = '2021-05-20'
 
-
 # -- General configuration ---------------------------------------------------
 
 # Add any sph extension module names here, as strings. They can be
 # extensions coming with sph (named 'sphinx.ext.*') or your custom
 # ones.
-extensions = ['sphinx.ext.autodoc', 'sphinx.ext.autosummary', 'myst_parser']
+extensions = ['sphinx.ext.autodoc',
+              'sphinx.ext.autosummary',
+              'sphinx.ext.autodoc',
+              'myst_parser',  # markdown parsing
+              'nbsphinx',  # Notebook integration
+              "numpydoc",   # Syntax/schema for docstrings!
+              #'m2r2'
+              ]
+
+# continue doc build and only print warnings/errors in examples
+ipython_warning_is_error = False
+ipython_exec_lines = [
+    # ensure that dataframes are not truncated in the IPython code blocks
+    "import pandas as _pd",
+    '_pd.set_option("display.max_columns", 20)',
+    '_pd.set_option("display.width", 100)',
+]
+
+numpydoc_show_class_members = False
+
+# If true, the current module name will be prepended to all description
+# unit titles (such as .. function::).
+add_module_names = False
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']
@@ -39,18 +61,18 @@ templates_path = ['_templates']
 # This pattern also affects html_static_path and html_extra_path.
 exclude_patterns = []
 
-
 # -- Options for HTML output -------------------------------------------------
 
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
 #
-#html_theme = 'alabaster'
-#html_theme = 'sphinx_rtd_theme'
+# html_theme = 'alabaster'
+# html_theme = 'sphinx_rtd_theme'
 html_theme = "pydata_sphinx_theme"
-
 
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
 html_static_path = ['_static']
+
+autosummary_generate = True
