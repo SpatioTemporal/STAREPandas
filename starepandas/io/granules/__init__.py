@@ -4,6 +4,7 @@ import re
 from .modis import *
 from .viirsl2 import *
 from .ssmis import SSMIS
+from .atms import ATMS
 
 
 class UnsuportedFileError(Exception):
@@ -74,6 +75,8 @@ def granule_factory(file_path, sidecar_path=None):
         granule = CLDMSKL2VIIRS(file_path, sidecar_path)
     elif re.search('SSMIS', file_path, re.IGNORECASE):
         granule = SSMIS(file_path, sidecar_path)
+    elif re.search('ATMS', file_path, re.IGNORECASE):
+        granule = ATMS(file_path, sidecar_path)
     else:
         raise UnsuportedFileError(file_path)
         return None
