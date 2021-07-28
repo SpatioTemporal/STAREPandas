@@ -165,6 +165,8 @@ stare_amazon = samerica.stare_intersection(amazon.make_stare.iloc[0])
     
 ![Example 3](figures/amazon.png)
 
+# Acknowledgments
+2018-2021 STARE development supported by NASA/ACCESS-17 grant 80NSSC18M0118.
 
 
 
