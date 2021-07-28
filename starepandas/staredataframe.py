@@ -227,7 +227,223 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         if not inplace:
             return frame
 
-    def plot(self, *args, trixels=False, boundary=False, **kwargs):
+    def trixel_vertices(self):
+        """ Returns the vertices and centerpoints of the trixels.
+        Requires stare column to be set. Vertices are a tuple of:
+
+        1. the latitudes of the corners
+        2. the longitudes of the corners
+        3. the latitudes of the centers
+        4. the longitudes of the centers
+
+        Returns
+        ---------
+        vertices : tuple
+            A vertices data structure
+
+        Examples
+        ---------
+        >>> sids = numpy.array([3458764513820540928])
+        >>> df = starepandas.STAREDataFrame(stare=sids)
+        >>> df.trixel_vertices()
+        (array([29.9999996 , 45.00000069, 29.9999996 ]),
+        array([189.73560999, 315.        ,  80.26439001]),
+        array([80.264389]),
+        array([135.]))
+        """
+        return starepandas.to_vertices(self[self._stare_column_name])
+
+    def trixel_centers(self, vertices=None):
+        """ Returns the trixel centers.
+
+        If vertices is set, the trixel centers are extracted from the vertices (c.f. :func:`~trixel_vertices`).
+        If not, they are generated from the stare column.
+
+        Parameters
+        --------------
+        vertices: vertices data structure
+            If set, the centers are extracted from the vertices data structure.
+
+        Returns
+        ---------
+        trixel_centers : numpy.array
+            Trixel centers. First dimension are the SIDs, second dimension lon/lat.
+
+        Examples
+        ---------
+        >>> sids = numpy.array([3458764513820540928])
+        >>> df = starepandas.STAREDataFrame(stare=sids)
+        >>> df.trixel_centers()
+        array([[135.      ,  80.264389]])
+        """
+
+        if vertices:
+            return starepandas.vertices2centers(vertices)
+        else:
+            return starepandas.to_centers(self[self._stare_column_name])
+
+    def trixel_centers_ecef(self, vertices=None):
+        """ Returns the trixel centers as ECEF vectors.
+
+        If vertices is set, the trixel centers are extracted from the vertices (c.f. :func:`~trixel_vertices`).
+        If not, they are generated from the stare column.
+
+        Parameters
+        --------------
+        vertices: vertices data structure
+            If set, the centers are extracted from the vertices data structure.
+
+        Returns
+        ---------
+        trixel_centers : numpy.array
+            Trixel centers. First dimension are the sids, second dimension are x/y/z.
+
+        Examples
+        ---------
+        >>> sids = numpy.array([3458764513820540928])
+        >>> df = starepandas.STAREDataFrame(stare=sids)
+        >>> df.trixel_centers_ecef()
+        array([[-0.11957316,  0.11957316,  0.98559856]])
+        """
+        if vertices:
+            return starepandas.vertices2centers_ecef(vertices)
+        else:
+            return starepandas.to_centers_ecef(self[self._stare_column_name])
+
+    def trixel_centerpoints(self, vertices=None):
+        """ Returns the trixel centers as shapely points.
+
+        If vertices is set, the trixel centers are extracted from the vertices (c.f. :func:`~trixel_vertices`).
+        If not, they are generated from the stare column.
+
+        Parameters
+        ----------------
+        vertices: tuple (vertices data structure)
+            If set, the centers are extracted from the vertices.
+
+        Returns
+        ---------
+        trixel_centerpoints: Geometery Array
+            Series of shapely trixel center points
+
+        Examples
+        ---------
+        >>> sids = numpy.array([3458764513820540928])
+        >>> df = starepandas.STAREDataFrame(stare=sids)
+        >>> centers = df.trixel_centerpoints()
+        >>> print(centers[0])
+        POINT (135 80.26438899520529)
+        """
+        if vertices:
+            return starepandas.vertices2centerpoints(vertices)
+        else:
+            return starepandas.to_centerpoints(self[self._stare_column_name])
+
+    def trixel_corners(self, vertices=None, from_trixels=False):
+        """ Returns corners of trixels as lon/lat.
+
+        If vertices is set, the trixel corners are extracted from vertices  (c.f. :func:`~trixel_vertices`).
+        If from_trixels is True and dataframe contains trixel column, corners are extracted from trixels.
+        If not, corners are generated from stare column
+
+        Parameters
+        ----------
+        vertices : tuple (vertices data structure)
+            If set, the centers are extracted from the vertices.
+
+        from_trixels: bool
+            If true and dataframe contains trixel column, corners are extracted from trixels.
+
+        Returns
+        ----------
+        corners : numpy array
+            Corners of the trixels in lon/lat representation. First dimension are the SIDs,
+            second dimension the corners (1 through 3), third dimension lon/lat.
+
+        Examples
+        ----------
+        >>> sids = numpy.array([3458764513820540928])
+        >>> df = starepandas.STAREDataFrame(stare=sids)
+        >>> df.trixel_corners()
+        array([[[189.73560999,  29.9999996 ],
+                [315.        ,  45.00000069],
+                [ 80.26439001,  29.9999996 ]]])
+        """
+
+        if vertices:
+            corners = starepandas.vertices2corners(vertices)
+        elif from_trixels and self._trixel_column_name in self.columns:
+            corners = []
+            for trixel in self[self._trixel_column_name]:
+                # Trixel is a polygon. Its first element is the outer ring.
+                corners.append(tuple(trixel[0].boundary.coords)[0:3])
+        else:
+            corners = starepandas.to_corners(self[self._stare_column_name])
+
+        return corners
+
+    def trixel_corners_ecef(self, vertices=None):
+        """ Returns ECEF norm vectors of great circles constraining the trixels.
+
+        If vertices is set, the trixel corners are extracted from vertices  (c.f. :func:`~trixel_vertices`).
+        If not, corners are generated from stare column.
+
+        Parameters
+        ----------
+        vertices : tuple (vertices data structure)
+            If set, the centers are extracted from the vertices.
+
+        Returns
+        ----------
+        corners : numpy array
+            Corners of the trixels in ECEF representation. First dimension are the sids, second
+            dimension the great circles, third dimension x/y/z
+
+        Examples
+        ----------
+        >>> sids = numpy.array([3458764513820540928])
+        >>> df = starepandas.STAREDataFrame(stare=sids)
+        >>> df.trixel_corners_ecef()
+        array([[[-0.85355339, -0.14644661,  0.49999999],
+                [ 0.49999999, -0.49999999,  0.70710679],
+                [ 0.14644661,  0.85355339,  0.49999999]]])
+        """
+        corners = self.trixel_corners(vertices)
+        corners_ecef = starepandas.corners2ecef(corners)
+        return corners_ecef
+
+    def trixel_grings(self, vertices=None):
+        """ Returns corners of trixels as ECEF.
+
+        If vertices is set, the trixel corners are extracted from vertices  (c.f. :func:`~trixel_vertices`).
+        If not, corners are generated from stare column
+
+        Parameters
+        ----------
+        vertices : tuple (vertices data structure)
+            If set, the centers are extracted from the vertices.
+
+        Returns
+        ----------
+        corners : numpy array
+            ECEF norm vectors of great circles constraining the trixels. First dimension are the sids, second
+            dimension the great circles, third dimension x/y/z
+
+        Examples
+        ----------
+        >>> sids = numpy.array([3458764513820540928])
+        >>> df = starepandas.STAREDataFrame(stare=sids)
+        >>> df.trixel_grings()
+        array([[[ 0.14644661,  0.85355339,  0.49999999],
+                [-0.85355339, -0.14644661,  0.49999999],
+                [ 0.49999999, -0.49999999,  0.70710679]]])
+        """
+
+        corners = self.trixel_corners_ecef(vertices)
+        gring = starepandas.corners2gring(corners)
+        return gring
+
+    def plot(self, *args, trixels=True, boundary=False, **kwargs):
         """ Generate a plot with matplotlib.
         Seminal method to
         `GeoDataFrame.plot() <https://geopandas.org/docs/reference/api/geopandas.GeoDataFrame.plot.html>`_
@@ -260,18 +476,20 @@ class STAREDataFrame(geopandas.GeoDataFrame):
     def to_scidb(self, connection):
         pass
 
-    def stare_intersects(self, other, method=1, n_workers=1):
+    def stare_intersects(self, other, method='binsearch', n_workers=1):
         """Returns a ``Series`` of ``dtype('bool')`` with value ``True`` for
         each geometry that intersects `other`.
         An object is said to intersect `other` if its `ring` and `interior`
         intersects in any way with those of the other.
 
-        :param other: The STARE index collection representing the spatial object to test if is intersected.
-        :type other: Collection of STARE indices
-        :param method: Method for STARE intersects test {skiplist': 0, 'binsearch': 1, 'nn': 2}. Default: 1
-        :type method: str
-        :param n_workers: number of workers to be used for intersects tests
-        :type n_workers: int
+        Parameters
+        -------------
+        other: int or listlike
+            The SID collection representing the spatial object to test if is intersected.
+        method: str
+            Method for STARE intersects test 'skiplist', 'binsearch' or 'nn'. Default: 'binsearch'.
+        n_workers: int
+            number of workers to be used for intersects tests
 
         Examples
         --------
@@ -337,6 +555,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         >>> polygon2 = shapely.geometry.Polygon(nodes2)
         >>> sids1 = starepandas.from_polygon(polygon1, level=5, force_ccw=True)
         >>> sids2 = starepandas.from_polygon(polygon2, level=5, force_ccw=True)
+
         >>> df = starepandas.STAREDataFrame(stare=[sids1])
         >>> df.stare_intersection(sids2).iloc[0]
         array([694117292568477701, 701435641962954757, 701998591916376069])
@@ -386,7 +605,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         else:
             data = self.drop(columns=['stare', 'trixels'], errors='ignore')
             if geom:
-                aggregated_data = data.dissolve(by=by, aggfunc=aggfunc, **kwargs)
+                aggregated_data = data.dissolve_stare(by=by, aggfunc=aggfunc, **kwargs)
             else:
                 aggregated_data = data.groupby(by=by, **kwargs).agg(
                     aggfunc)

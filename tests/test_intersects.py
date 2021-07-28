@@ -1,8 +1,18 @@
 import starepandas
 import geopandas
+import pandas
+import numpy
 
 countries = geopandas.read_file(geopandas.datasets.get_path('naturalearth_lowres'))
 countries = starepandas.STAREDataFrame(countries)
+
+
+def test_types():
+    # Can we send: int, list and array to intersects?
+    series = pandas.Series([[4035225266123964416], [4254212798004854789, 4255901647865118724]])
+    assert 2 == starepandas.series_intersects(series, 4035225266123964416).sum()
+    assert 2 == starepandas.series_intersects(series, [4035225266123964416]).sum()
+    assert 2 == starepandas.series_intersects(series, numpy.array([4035225266123964416])).sum()
 
 
 def test_polygon():

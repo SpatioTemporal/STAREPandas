@@ -31,7 +31,7 @@ release = '2021-05-20'
 # ones.
 extensions = ['sphinx.ext.autodoc',
               'sphinx.ext.autosummary',
-              'sphinx.ext.autodoc',
+              'sphinx_automodapi.automodapi',
               'myst_parser',  # markdown parsing
               'nbsphinx',  # Notebook integration
               "numpydoc",   # Syntax/schema for docstrings!

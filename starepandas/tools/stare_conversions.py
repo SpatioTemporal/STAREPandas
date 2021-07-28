@@ -1,5 +1,7 @@
 import dask.dataframe
 import shapely
+import math
+import pandas
 
 # https://github.com/numpy/numpy/issues/14868
 import os
@@ -9,6 +11,7 @@ os.environ["OMP_NUM_THREADS"] = "1"
 import numpy
 import pystare
 import multiprocessing
+import geopandas
 
 
 def stare_from_gdf(gdf, level=-1, convex=False, force_ccw=True, n_workers=1):
@@ -165,6 +168,7 @@ def trixels_from_stareseries(sids_series, n_workers=1):
     >>> sdf = starepandas.STAREDataFrame(stare=sids)
     >>> trixels = starepandas.trixels_from_stareseries(sdf.stare)
     """
+
     if n_workers > len(sids_series):
         # Cannot have more partitions than rows        
         n_workers = len(sids_series) - 1
@@ -177,9 +181,444 @@ def trixels_from_stareseries(sids_series, n_workers=1):
     else:
         ddf = dask.dataframe.from_pandas(sids_series, npartitions=n_workers)
         meta = {'trixels': 'object'}
-        res = ddf.map_partitions(lambda df: numpy.array(trixels_from_stareseries(df, 1)), meta=meta)
+        res = ddf.map_partitions(lambda df: numpy.array(trixels_from_stareseries(df, 1)).flatten(), meta=meta)
         trixels_series = res.compute(scheduler='processes')
     return trixels_series
+
+
+def to_vertices(sids):
+    """ Converts a (collection of) sid(s) into vertices. Vertices are a tuple of:
+
+    1. the latitudes of the corners
+    2. the longitudes of the corners
+    3. the latitudes of the centers
+    4. the longitudes of the centers
+
+    The longitudes and latitudes of the corners are serialized i.e. they are 3 times the length of the length of sids
+
+    Parameters
+    ----------
+    sids: int or collection of ints
+        sids to covert to vertices
+
+    Returns
+    ---------
+    vertices: (list of) tuple(s)
+        (Collection of) trixel corner vertices; Three corner points per trixel.
+
+    Examples
+    -----------
+    >>> import starepandas
+    >>> import numpy
+    >>> sids = numpy.array([3])
+    >>> starepandas.to_vertices(sids)
+    (array([-29.9999996 , -38.92792794, -23.13179401]),
+     array([ 9.73560999, 18.06057651, 19.71049975]),
+     array([-30.75902492]),
+     array([15.84277554]))
+    """
+
+    return pystare.to_vertices_latlon(sids)
+
+
+def vertices2centers(vertices):
+    """ Converts trixel vertices datastructure (c.f. :func:`~to_vertices`)
+    into trixel centers in lon/lat representation.
+
+    Parameters
+    -----------
+    vertices: tuple
+        vertices data structure
+
+    Returns
+    ------------
+    corners: numpy.array
+        First dimension are sids, second dimension longitude/latitude
+
+    Examples
+    --------------
+    >>> import starepandas
+    >>> import numpy
+    >>> sids = numpy.array([18014398509481987])
+    >>> vertices = starepandas.to_vertices(sids)
+    >>> starepandas.vertices2centers(vertices)
+    array([[ 25.66446757, -23.46672972]])
+    """
+
+    lat_center = vertices[2]
+    lon_center = vertices[3]
+    centers = numpy.array([lon_center, lat_center]).transpose()
+    return centers
+
+
+def vertices2centers_ecef(vertices):
+    """ Converts trixel vertices datastructure (c.f. :func:`~to_vertices`)
+    into trixel centers in ECEF representation.
+
+    Parameters
+    -----------
+    vertices: tuple
+        vertices data structure
+
+    Returns
+    -----------
+    centers: numpy.array
+         First dimension are sids, second dimension x/y/z
+
+    Examples
+    ----------
+    >>> import starepandas
+    >>> import numpy
+    >>> sids = numpy.array([1729382256910270464])
+    >>> vertices = starepandas.to_vertices(sids)
+    >>> starepandas.vertices2centers_ecef(vertices)
+    array([[ 0.11957316, -0.11957316, -0.98559856]])
+    """
+
+    lat = vertices[2]
+    lon = vertices[3]
+    x = numpy.cos(lon / 360 * math.pi * 2) * numpy.cos(lat / 360 * math.pi * 2)
+    y = numpy.sin(lon / 360 * math.pi * 2) * numpy.cos(lat / 360 * math.pi * 2)
+    z = numpy.sin(lat / 360 * math.pi * 2)
+    centers = numpy.array([x, y, z]).transpose()
+    return centers
+
+
+def vertices2centerpoints(vertices):
+    """ Converts trixel vertices datastructure (c.f. :func:`~to_vertices`)
+    into trixel centers in shapley point representation.
+
+    Parameters
+    -----------
+    vertices: tuple
+        vertices data structure
+
+    Returns
+    ---------
+    centerpoints: list
+        A (collection of) trixel center shapely point(s)
+
+    Examples
+    ----------
+    >>> import starepandas
+    >>> import numpy
+    >>> sids = numpy.array([2882303761517117440])
+    >>> vertices = starepandas.to_vertices(sids)
+    >>> points = starepandas.vertices2centerpoints(vertices)
+    >>> print(points[0])
+    POINT (251.5650509020583 24.09484285959212)
+    """
+
+    lat_center = vertices[2]
+    lon_center = vertices[3]
+    return geopandas.points_from_xy(lon_center, lat_center)
+
+
+def vertices2corners(vertices):
+    """ Converts trixel vertices datastructure (c.f. :func:`~to_vertices`) into
+    trixel corners in lon/lat representation.
+
+    Parameters
+    -----------
+    vertices: tuple
+        vertices data structure
+
+    Returns
+    ------------
+    corners: numpy.array
+        First dimension are the sids
+        Second dimension the corers
+        Third dimension longitude/latitude
+
+    Examples
+    --------------
+    >>> import starepandas
+    >>> import numpy
+    >>> sids = numpy.array([3458764513820540928])
+    >>> vertices = starepandas.to_vertices(sids)
+    >>> starepandas.vertices2corners(vertices)
+    array([[[189.73560999,  29.9999996 ],
+            [315.        ,  45.00000069],
+            [ 80.26439001,  29.9999996 ]]])
+    """
+
+    lats = vertices[0]
+    lons = vertices[1]
+
+    corners = []
+    i = 0
+    while i < len(lons):
+        corner = ((lons[i], lats[i]), (lons[i + 1], lats[i + 1]), (lons[i + 2], lats[i + 2]))
+        corners.append(corner)
+        i += 3
+    corners = numpy.array(corners)
+    return corners
+
+
+def corners2ecef(corners):
+    """ Converts corners lon/lat array (as returned by  :func:`~vertices2corners`) to ECEF representation.
+
+    Parameters
+    -----------
+    corners: array
+        corners lon/lat array
+
+    Returns
+    --------
+    corners: numpy.array
+        First dimension are the sids (same as input first dimension).
+        Second dimension the corners (1,2,3).
+        Third dimension x,y,z.
+    """
+
+    corners = numpy.array(corners)
+    lon = corners[:, :, 0]
+    lat = corners[:, :, 1]
+    length = lat.shape[0]
+
+    x = numpy.cos(lon / 360 * math.pi * 2) * numpy.cos(lat / 360 * math.pi * 2)
+    y = numpy.sin(lon / 360 * math.pi * 2) * numpy.cos(lat / 360 * math.pi * 2)
+    z = numpy.sin(lat / 360 * math.pi * 2)
+
+    corners_ecef = numpy.array([x, y, z]).transpose()
+    corners_ecef = corners_ecef.reshape(length, 3, 3)
+    return corners_ecef
+
+
+def vertices2corners_ecef(vertices):
+    """ Converts trixel vertices datastructure (c.f. :func:`~to_vertices`) to trixel corners in ECEF representation.
+
+    Parameters
+    ----------
+    vertices: tuple
+        vertices data structure
+
+    Returns
+    -------
+    corners: numpy.array
+        First dimension are the sids (same as input first dimension).
+        Second dimension the corners (1,2,3).
+        Third dimension x,y,z.
+
+    Examples
+    ----------
+    >>> import starepandas
+    >>> import numpy
+    >>> sids = numpy.array([3458764513820540928])
+    >>> vertices = starepandas.to_vertices(sids)
+    >>> starepandas.vertices2corners_ecef(vertices)
+    array([[[-0.85355339, -0.14644661,  0.49999999],
+            [ 0.49999999, -0.49999999,  0.70710679],
+            [ 0.14644661,  0.85355339,  0.49999999]]])
+    """
+
+    corners = vertices2corners(vertices)
+    corners_ecef = corners2ecef(corners)
+    return corners_ecef
+
+
+def vertices2gring(vertices):
+    """" Converts trixel vertices datastructure (c.f. :func:`~to_vertices`) to
+    the 3 great circles constraining the trixel(s).
+
+    Parameters
+    -----------
+    vertices: tuple
+        vertices data structure
+
+    Returns
+    ---------
+    grings: numpy.array
+        The great circles constraining the trixels given by their ECEF norm vectors.
+    """
+    corners = vertices2corners(vertices)
+    return corners2gring(corners)
+
+
+def to_centers(sids):
+    """ Converts a (collection of) sid(s) into a (collection of) trixel center longitude, latitude pairs.
+
+    Parameters
+    ----------
+    sids: int or collection of ints
+        sids to covert to vertices
+
+    Returns
+    --------
+    Centers: (list of) tuple(s)
+        List of centers. A center is a pair of longitude/latitude.
+
+    Examples
+    ----------
+    >>> import starepandas
+    >>> sids = [4611263805962321926, 4611404543450677254]
+    >>> starepandas.to_centers(sids)
+    array([[19.50219018, 23.29074702],
+           [18.65957821, 25.34384175]])
+    """
+    vertices = to_vertices(sids)
+    centers = vertices2centers(vertices)
+    return centers
+
+
+def to_centers_ecef(sids):
+    """ Converts a (collection of) sid(s) into a (collection of) trixel centers in ECEF represenation.
+
+    Parameters
+    ----------
+    sids: int or collection of ints
+        sids to covert to vertices
+
+    Returns
+    --------
+    Centers: (list of) tuple(s)
+        List of centers. A center is a pair of longitude/latitude.
+
+    Examples
+    ----------
+    >>> import starepandas
+    >>> sids = [4611263805962321926, 4611404543450677254]
+    >>> starepandas.to_centers_ecef(sids)
+    array([[0.86581415, 0.30663812, 0.39539717],
+           [0.8562505 , 0.28915168, 0.42804953]])
+
+    """
+    vertices = to_vertices(sids)
+    centers = vertices2centers_ecef(vertices)
+    return centers
+
+
+def to_centerpoints(sids):
+    """ Converts a (collection of) sid(s) into a (collection of) trixel center shapely points.
+
+    Parameters
+    ----------
+    sids: int or collection of ints
+        sids to covert to vertices
+
+    Returns
+    --------
+    Centers: (list of) tuple(s)
+        List of centers. A center is a pair of longitude/latitude.
+
+    Examples
+    ----------
+    >>> import starepandas
+    >>> sids = [4611263805962321926, 4611404543450677254]
+    >>> centerpoints = starepandas.to_centerpoints(sids)
+    >>> print(centerpoints[0])
+    POINT (19.50219017924583 23.29074702177385)
+    """
+
+    vertices = to_vertices(sids)
+    centerpoints = vertices2centerpoints(vertices)
+    return centerpoints
+
+
+def to_corners(sids):
+    """ Converts a (collection of) sid(s) into (collection of) corners in lon/lat representation.
+
+    Parameters
+    ----------
+    sids: int or collection of ints
+        sids to covert to corners
+
+    Returns
+    ---------
+    corners: numpy.array
+        (Collection of) trixel corners in lon/lat representations; Three corner points per trixel.
+        First dimension are the SIDs, second dimension the corners (1 through 3), third dimensio lon/lat.
+
+    Examples
+    -----------
+    >>> import starepandas
+    >>> sids = [4611263805962321926, 4611404543450677254]
+    >>> starepandas.to_corners(sids)
+    array([[[20.55604548, 22.47991609],
+            [19.73607532, 24.53819039],
+            [18.21460548, 22.84521749]],
+            [[18.88878121, 26.59188366],
+            [17.35402492, 24.89163021],
+            [19.73607532, 24.53819039]]])
+    """
+
+    vertices = to_vertices(sids)
+    corners = vertices2corners(vertices)
+    return corners
+
+
+def to_corners_ecef(sids):
+    """ Converts a (collection of) sid(s) into (collection of) trixel corners in ECEF representation.
+
+    Parameters
+    ----------
+    sids: int or collection of ints
+        sids to covert to corners
+
+    Returns
+    ---------
+    corners: numpy.array
+        (Collection of) trixel corners in ECEF representations; Three corner points per trixel.
+        First dimension are the SIDs, second dimension the corners (1 through 3), third dimensio x/y/z.
+
+    Examples
+    -----------
+    >>> import starepandas
+    >>> sids = [4611263805962321926, 4611404543450677254]
+    >>> starepandas.to_corners_ecef(sids)
+    array([[[0.86518091, 0.32444285, 0.38235956],
+            [0.84606293, 0.28948702, 0.44763242],
+            [0.85624806, 0.30718957, 0.41529968]],
+           [[0.86581405, 0.27056689, 0.42090331],
+            [0.87538003, 0.2880576 , 0.38824299],
+            [0.85624806, 0.30718957, 0.41529968]]])
+    """
+
+    vertices = to_vertices(sids)
+    corners_ecef = vertices2corners_ecef(vertices)
+    return corners_ecef
+
+
+def to_gring(sids):
+    """ Converts a (collection of) sid(s) to (a collection of) the 3 great circles constraining the trixel(s).
+
+    Parameters
+    -----------
+    sids: int or collection of ints
+        sids to covert to great circles
+
+    Returns
+    ----------
+    great_circles: numpy.array
+        Great circles constraining the trixels. Three great circles per trixel defined by their ECEF norm vector.
+        First dimensions are SIDs, second dimension are the 3 great circle (1 through 3), third dimension are x/y/z.
+
+    Examples
+    ---------
+    >>> import starepandas
+    >>> sids = [4611263805962321926, 4611404543450677254]
+    >>> starepandas.to_gring(sids)
+    array([[[ 0.01728414, -0.03191472, -0.01202901],
+            [ 0.00073153,  0.03145575, -0.02172531],
+            [-0.00036603,  0.03111274, -0.02225885]],
+           [[-0.01693076,  0.00082534,  0.03429666],
+            [-0.01582108,  0.0011905 ,  0.03478885],
+            [ 0.01728414, -0.03191472, -0.01202901]]])
+    """
+
+    corners = to_corners_ecef(sids)
+    return corners2gring(corners)
+
+
+def corners2gring(corners):
+    corners = numpy.array(corners)
+    length = corners.shape[0]
+    corners = corners.reshape(3, length, 3)
+    gc1 = numpy.cross(corners[0], corners[1])
+    gc2 = numpy.cross(corners[1], corners[2])
+    gc3 = numpy.cross(corners[2], corners[0])
+    gcs = numpy.array([gc1, gc2, gc3]).reshape(length, 3, 3)
+    return gcs
 
 
 def to_trixels(sids, as_multipolygon=False):
@@ -207,16 +646,13 @@ def to_trixels(sids, as_multipolygon=False):
         # This is not ideal, but when we read sidecars, we get unit64 and have to cast
         sids = sids.astype(numpy.int64)
 
-    lons, lats, intmat = pystare.triangulate_indices(sids)
-
-    i = 0
     trixels = []
-    while i < len(lats):
-        geom = shapely.geometry.Polygon([[lons[i], lats[i]], [lons[i + 1], lats[i + 1]], [lons[i + 2], lats[i + 2]]])
+    vertices = to_corners(sids)
+    for vertex in vertices:
+        geom = shapely.geometry.Polygon(vertex)
         trixels.append(geom)
-        i += 3
 
-    if i == 3:
+    if len(trixels) == 1:
         trixels = trixels[0]
     elif as_multipolygon:
         trixels = shapely.geometry.MultiPolygon(trixels)
@@ -424,70 +860,149 @@ def from_multipolygon(multipolygon, level=-1, convex=False, force_ccw=False):
     return range_indices
 
 
-def dissolve(sids):
-    """
-    Dissolve STARE index values.
+def dissolve_stare(sids):
+    """ Dissolve STARE index values.
+    Combine/dissolve sibiling sids into the parent sids. That is:
+        1. Any 4 siblings with the same parent in the collection get replaced by the parent. And
+        2. Any child whose parents is in the collection will be removed
 
-    :param sids:
-    :type sids:
-    :return: dissolved
-    :rtype: array-like
+    Parameters
+    -----------
+    sids: array-like
+        A collection of SIDs to dissolve
+
+    Returns
+    --------
+    dissolved: numpy.array
+        Dissolved SIDs
+
+    See Also
+    ---------
+    merge_stare
+
+    Examples
+    --------
+    >>> import starepandas
+    >>> # The two latter SIDs are contained in the first SID
+    >>> sids = [4035225266123964416, 4254212798004854789, 4255901647865118724]
+    >>> starepandas.dissolve_stare(sids)
+    array([4035225266123964416])
 
     Notes
     --------
     .. image:: ../../../_static/dissolve.png
 
     """
+    sids = numpy.unique(sids)
     s_range = pystare.to_compressed_range(sids)
     expanded = pystare.expand_intervals(s_range, -1, multi_resolution=True)
     return expanded
 
 
 def merge_stare(sids, dissolve_sids=True, n_workers=1, n_chunks=1):
-    """
-    Combines a collection of sids. I.e. removes duplicate, and optionally combines ancestor sids into the parent sids.
+    """ Merges a collection (of a collection) of sids. I.e.
+
+    1. Flatten the colection
+    2. Remove duplicates
+    3. Combine/dissolve sibiling sids into the parent sids.  C.f. :func:`~dissolve_stare`
+
+    See Also
+    ----------
+    dissolve_stare
 
     Parameters
     -----------
-    sids: array-like /  list
-        the collection of SIDs to merge
+    sids: array / list
+        a list of collections of SIDs; such as a Series of sids
     dissolve_sids: bool
         toggle if sids should be dissolved. I.e. combining ancestors into parent sids when possible
     n_workers: int
         number of workers to use. (only relevant for dissolve / if dissolve=True)
     n_chunks: int
          Performance parameter. If n_chunks >1, the sid collection will be split into n_chunks for the dissolve.
+
+    Returns
+    --------
+    sids: numpy.array
+        merged SIDs
+
+    Examples
+    ----------
+    >>> import starepandas
+    >>> import pandas
+    >>> sids = pandas.Series([[4035225266123964416],
+    ...                       [4254212798004854789, 4255901647865118724]])
+    >>> starepandas.merge_stare(sids)
+    [4035225266123964416]
+
+    >>> sids = [4035225266123964416, 4254212798004854789, 4255901647865118724]
+    >>> starepandas.merge_stare(sids)
+    [4035225266123964416]
     """
-    sids = numpy.concatenate(list(sids))
+
+    if isinstance(sids, pandas.Series):
+        # If we receive a series of SID collections we merge all sids into a single 1D array
+        sids = numpy.concatenate(sids.array)
+
+    # Remove duplicate SIDs
     dissolved = numpy.unique(sids)
 
     if not dissolve_sids:
         return list(dissolved)
 
     if n_workers == 1 and n_chunks == 1:
-        dissolved = dissolve(dissolved)
+        dissolved = dissolve_stare(dissolved)
     else:
         if n_workers > 1:
             chunks = numpy.array_split(dissolved, n_workers)
             with multiprocessing.Pool(processes=n_workers) as pool:
-                dissolved = pool.map(dissolve, chunks)
+                dissolved = pool.map(dissolve_stare, chunks)
         elif n_chunks > 1:
             chunks = numpy.array_split(dissolved, n_chunks)
             dissolved = []
             for chunk in chunks:
-                dissolved.append(dissolve(chunk))
+                dissolved.append(dissolve_stare(chunk))
         dissolved = numpy.concatenate(dissolved)
         dissolved = numpy.unique(dissolved)
-        dissolved = dissolve(dissolved)
+        dissolved = dissolve_stare(dissolved)
 
     return list(dissolved)
 
 
-def series_intersects(other, series, method=1, n_workers=1):
-    """ 
-    Returns a bool series of length len(series).
-    True for every row in which row intersects other.    
+def series_intersects(series, other, method='skiplist', n_workers=1):
+    """  Returns a bool series of length len(series).
+    True for every row in which row intersects other.
+
+    Parameters
+    -----------
+    series: pandas.Series (like)
+        The series to evaluate intersects with other
+    other: (Collection of) SID(s)
+        The collection of SIDs to test intersections of the series with
+    method: str
+        either 'skiplist', 'binsearch', or 'nn'
+    n_workers: int
+        number of workers to use.
+
+    Returns
+    --------
+    intersects: bool numpy.array
+        Array of len(series).
+
+    Examples
+    ---------
+    >>> import starepandas
+    >>> import pandas
+    >>> series = pandas.Series([[4035225266123964416],
+    ...                         [4254212798004854789, 4255901647865118724]])
+    >>> starepandas.series_intersects(series, 4035225266123964416)
+    array([ True,  True])
+
     """
+    method = {'skiplist': 0, 'binsearch': 1, 'nn': 2}[method]
+
+    # Make sure other is iterable
+    other = numpy.array([other]).flatten()
 
     if n_workers > len(series):
         # Cannot have more partitions than rows        
@@ -495,16 +1010,16 @@ def series_intersects(other, series, method=1, n_workers=1):
 
     if n_workers == 1:
         if series.dtype == numpy.int64:
-            # We have a series of sids; don't need to iterate. Can send the whole array to pystare/
+            # If we have a series of sids; don't need to iterate. Can send the whole array to pystare/
             intersects = pystare.intersects(other, series, method)
         else:
             intersects = []
             for sids in series:
-                if len(sids) < len(other):
-                    # If we do method 1, larger item first is faster
-                    intersects.append(pystare.intersects(other, sids, method).any())
-                else:
+                if len(sids) > len(other):
+                    # For method 1, larger item first is faster
                     intersects.append(pystare.intersects(sids, other, method).any())
+                else:
+                    intersects.append(pystare.intersects(other, sids, method).any())
             intersects = numpy.array(intersects)
     else:
         if n_workers > len(series):
@@ -512,20 +1027,61 @@ def series_intersects(other, series, method=1, n_workers=1):
             n_workers = len(series)
         ddf = dask.dataframe.from_pandas(series, npartitions=n_workers)
         meta = {'intersects': 'bool'}
-        res = ddf.map_partitions(lambda df: series_intersects(other, df, method, 1), meta=meta)
+        res = ddf.map_partitions(lambda df: series_intersects(df, other, method, 1), meta=meta)
         intersects = res.compute(scheduler='processes')
     return intersects
 
 
-def int2hex(sid):
+def int2hex(sids):
+    """ Converts int sids to hex sids
+
+    Parameters
+    -----------
+    sids: array-like or int64
+        int representations of SIDs
+
+    Returns
+    --------
+    sid: array-like or str
+        hex representations of SIDs
+
+    Examples
+    -----------
+    >>> import starepandas
+    >>> sid = 3458764513820540928
+    >>> starepandas.int2hex(sid)
+    '0x3000000000000000'
     """
-    Converts int sid to hex
-    """
-    return "0x%016x" % sid
+
+    if hasattr(sids, "__len__"):
+        return ["0x%016x" % sid for sid in sids]
+    else:
+        return "0x%016x" % sids
 
 
-def hex2int(sid):
+def hex2int(sids):
+    """ Converts hex SIDs to int SIDs
+
+    Parameters
+    -----------
+    sids: array-like or str
+        hex representations of SIDs
+
+    Returns
+    ----------
+    sid: array-like or int64
+        int representation of SIDs
+
+
+    Examples
+    -----------
+    >>> import starepandas
+    >>> sid = '0x3000000000000000'
+    >>> starepandas.hex2int(sid)
+    3458764513820540928
     """
-    Converts hex sid to int
-    """
-    return int(sid, 16)
+
+    if isinstance(sids, str):
+        return int(sids, 16)
+    else:
+        return [int(sid, 16) for sid in sids]

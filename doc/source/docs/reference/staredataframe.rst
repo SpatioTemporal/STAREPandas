@@ -5,9 +5,10 @@ STAREDataFrame
 
 Constructor
 -----------
+.. autosummary::
+    :toctree: api/
 
-
-.. autoclass:: STAREDataFrame
+    STAREDataFrame.__init__
 
 
 Bootstrapping
@@ -20,7 +21,6 @@ Bootstrapping
     STAREDataFrame.set_stare
     STAREDataFrame.make_trixels
     STAREDataFrame.set_trixels
-
 
 Geoprocessing
 ---------------
@@ -43,6 +43,18 @@ STARE manipulation
     STAREDataFrame.to_stare_singleres
     STAREDataFrame.hex
 
+Trixel Functions
+--------------------
+.. autosummary::
+    :toctree: api/
+
+    STAREDataFrame.trixel_vertices
+    STAREDataFrame.trixel_centers
+    STAREDataFrame.trixel_centers_ecef
+    STAREDataFrame.trixel_centerpoints
+    STAREDataFrame.trixel_corners
+    STAREDataFrame.trixel_corners_ecef
+    STAREDataFrame.trixel_grings
 IO
 ------------
 .. autosummary::

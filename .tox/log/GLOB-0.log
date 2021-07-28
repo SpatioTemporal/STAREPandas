@@ -1,0 +1,10 @@
+action: GLOB, msg: packaging
+cwd: /home/griessbaum/Dropbox/UCSB/STARE_Project/STAREPandas
+cmd: /usr/bin/python3 setup.py sdist --formats=zip --dist-dir /home/griessbaum/Dropbox/UCSB/STARE_Project/STAREPandas/.tox/dist
+running sdist
+running egg_info
+writing starepandas.egg-info/PKG-INFO
+writing dependency_links to starepandas.egg-info/dependency_links.txt
+writing requirements to starepandas.egg-info/requires.txt
+writing top-level names to starepandas.egg-info/top_level.txt
+error: package directory 'starepandas/tests' does not exist
