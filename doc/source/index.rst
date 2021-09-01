@@ -11,8 +11,6 @@ Welcome to STAREPandas's documentation!
    :maxdepth: 1
 
    Readme <readme/README.md>
-
-
    Reference <docs/reference>
    About <about>
    Examples <examples/index>

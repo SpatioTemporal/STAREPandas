@@ -35,5 +35,4 @@ Shapely==1.7.1
 six>=1.15.0
 toolz==0.11.1
 urllib3>=1.25.11
-#git+git://github.com/SpatioTemporal/pystare@0.6.0
-pystare==0.6.0
+pystare>=0.8.0

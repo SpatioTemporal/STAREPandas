@@ -4,6 +4,7 @@ import pystare
 import pandas
 import numpy
 import starepandas
+import starepandas.tools.trixel_conversions
 
 DEFAULT_STARE_COLUMN_NAME = 'stare'
 DEFAULT_TRIXEL_COLUMN_NAME = 'trixels'
@@ -186,7 +187,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
         if stare_column is None:
             stare_column = self._stare_column_name
-        trixels_series = starepandas.trixels_from_stareseries(self[stare_column], n_workers=n_workers)
+        trixels_series = starepandas.tools.trixel_conversions.trixels_from_stareseries(self[stare_column], n_workers=n_workers)
         return trixels_series
 
     def set_trixels(self, col=None, inplace=False):
@@ -251,7 +252,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         array([80.264389]),
         array([135.]))
         """
-        return starepandas.to_vertices(self[self._stare_column_name])
+        return starepandas.tools.trixel_conversions.to_vertices(self[self._stare_column_name])
 
     def trixel_centers(self, vertices=None):
         """ Returns the trixel centers.
@@ -278,9 +279,9 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         """
 
         if vertices:
-            return starepandas.vertices2centers(vertices)
+            return starepandas.tools.trixel_conversions.vertices2centers(vertices)
         else:
-            return starepandas.to_centers(self[self._stare_column_name])
+            return starepandas.tools.trixel_conversions.to_centers(self[self._stare_column_name])
 
     def trixel_centers_ecef(self, vertices=None):
         """ Returns the trixel centers as ECEF vectors.
@@ -306,9 +307,9 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         array([[-0.11957316,  0.11957316,  0.98559856]])
         """
         if vertices:
-            return starepandas.vertices2centers_ecef(vertices)
+            return starepandas.tools.trixel_conversions.vertices2centers_ecef(vertices)
         else:
-            return starepandas.to_centers_ecef(self[self._stare_column_name])
+            return starepandas.tools.trixel_conversions.to_centers_ecef(self[self._stare_column_name])
 
     def trixel_centerpoints(self, vertices=None):
         """ Returns the trixel centers as shapely points.
@@ -335,9 +336,9 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         POINT (135 80.26438899520529)
         """
         if vertices:
-            return starepandas.vertices2centerpoints(vertices)
+            return starepandas.tools.trixel_conversions.vertices2centerpoints(vertices)
         else:
-            return starepandas.to_centerpoints(self[self._stare_column_name])
+            return starepandas.tools.trixel_conversions.to_centerpoints(self[self._stare_column_name])
 
     def trixel_corners(self, vertices=None, from_trixels=False):
         """ Returns corners of trixels as lon/lat.
@@ -371,14 +372,14 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         """
 
         if vertices:
-            corners = starepandas.vertices2corners(vertices)
+            corners = starepandas.tools.trixel_conversions.vertices2corners(vertices)
         elif from_trixels and self._trixel_column_name in self.columns:
             corners = []
             for trixel in self[self._trixel_column_name]:
                 # Trixel is a polygon. Its first element is the outer ring.
                 corners.append(tuple(trixel[0].boundary.coords)[0:3])
         else:
-            corners = starepandas.to_corners(self[self._stare_column_name])
+            corners = starepandas.tools.trixel_conversions.to_corners(self[self._stare_column_name])
 
         return corners
 
@@ -409,7 +410,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
                 [ 0.14644661,  0.85355339,  0.49999999]]])
         """
         corners = self.trixel_corners(vertices)
-        corners_ecef = starepandas.corners2ecef(corners)
+        corners_ecef = starepandas.tools.trixel_conversions.corners2ecef(corners)
         return corners_ecef
 
     def trixel_grings(self, vertices=None):
@@ -440,7 +441,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         """
 
         corners = self.trixel_corners_ecef(vertices)
-        gring = starepandas.corners2gring(corners)
+        gring = starepandas.tools.trixel_conversions.corners2gring(corners)
         return gring
 
     def plot(self, *args, trixels=True, boundary=False, **kwargs):
@@ -553,8 +554,8 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         >>> nodes2 = [[102, 34], [106, 35], [106, 33], [102, 33.5], [102, 34]]
         >>> polygon1 = shapely.geometry.Polygon(nodes1)
         >>> polygon2 = shapely.geometry.Polygon(nodes2)
-        >>> sids1 = starepandas.from_polygon(polygon1, level=5, force_ccw=True)
-        >>> sids2 = starepandas.from_polygon(polygon2, level=5, force_ccw=True)
+        >>> sids1 = starepandas.stare_from_polygon(polygon1, level=5, force_ccw=True)
+        >>> sids2 = starepandas.stare_from_polygon(polygon2, level=5, force_ccw=True)
 
         >>> df = starepandas.STAREDataFrame(stare=[sids1])
         >>> df.stare_intersection(sids2).iloc[0]
