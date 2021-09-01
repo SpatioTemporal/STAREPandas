@@ -12,3 +12,4 @@ nbsphinx
 numpydoc
 pydata-sphinx-theme
 pystare
+git+git://https://github.com/SpatioTemporal/STAREPandas@master
