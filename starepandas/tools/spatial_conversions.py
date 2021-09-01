@@ -351,25 +351,25 @@ def stare_from_multipolygon(multipolygon, level=-1, convex=False, force_ccw=Fals
 def dissolve_stare(sids):
     """ Dissolve STARE index values.
     Combine/dissolve sibiling sids into the parent sids. That is:
-        1. Any 4 siblings with the same parent in the collection get replaced by the parent. And
-        2. Any child whose parents is in the collection will be removed
+    1. Any 4 siblings with the same parent in the collection get replaced by the parent. And
+    2. Any child whose parents is in the collection will be removed
 
     Parameters
-    -----------
+    ------------
     sids: array-like
         A collection of SIDs to dissolve
 
     Returns
-    --------
+    ---------
     dissolved: numpy.array
         Dissolved SIDs
 
     See Also
-    ---------
+    ----------
     merge_stare
 
     Examples
-    --------
+    ---------
     >>> import starepandas
     >>> # The two latter SIDs are contained in the first SID
     >>> sids = [4035225266123964416, 4254212798004854789, 4255901647865118724]
