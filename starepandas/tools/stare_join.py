@@ -4,26 +4,37 @@ import pandas
 
 def stare_join(left_df, right_df, how='left'):
     """ STARE join of two STAREDataFrames.
+    Seminal function to geopandas.sjoin().
+    At the moment, only the *interesects* predicate is supported.
 
-    :param left_df:
-    :type left_df:
-    :param right_df:
-    :type right_df:
-    :param how:
-    :type how:
-    :return:
-    :rtype:
+    Parameters
+    ---------------
+    left_df: STAREDataFrame
+        left dataframe to join
+    right_df: STAREDataFrame
+        right dataframe to join
+    how: str
+        either left or innter
+
+    Returns
+    ---------
+    joined: STAREDataFrame
+        Joined data Frame
+
+    Examples
+    ----------
 
     """
     left_key = []
     right_key = []
 
-    for i, row in right_df.iterrows():  
+    for row in right_df.itertuples():
         k = left_df.index[left_df.stare_intersects(row.stare)]
         left_key.extend(list(k))
-        right_key.extend([i]*len(k))
+        right_key.extend([row.Index]*len(k))
 
-    index_map = pandas.DataFrame({'key_left': left_key, 'key_right': right_key})
+    index_map = pandas.DataFrame({'key_left': left_key,
+                                  'key_right': right_key})
 
     if how == 'left':
         joined = left_join(left_df, right_df, index_map)
@@ -47,7 +58,7 @@ def left_join(left_df, right_df, index_map):
     
     joined = left_df
     joined = joined.merge(index_map, left_index=True, right_index=True, how="left")
-    joined = joined.merge(right_df.drop(right_df.geometry.name, axis=1),
+    joined = joined.merge(right_df,
                           how="left", left_on="key_right",
                           right_index=True, suffixes=("_left", "_right"))
     return joined

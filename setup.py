@@ -1,6 +1,8 @@
 #!/usr/bin/env/python
 
 import setuptools
+import versioneer
+
 
 with open('requirements.txt') as f:
     install_requires = f.read().splitlines()
@@ -9,9 +11,13 @@ with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
 
+version=versioneer.get_version(),
+cmdclass=versioneer.get_cmdclass()
+
 setuptools.setup(
     name="starepandas",
-    version='0.5.0',
+    version=version,
+    cmdclass=cmdclass,
     description="STARE pandas extensions",
     license="BSD-3",
     author="Niklas Griessbaum",
