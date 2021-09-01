@@ -12,4 +12,4 @@ nbsphinx
 numpydoc
 pydata-sphinx-theme
 pystare
-git+git://github.com/SpatioTemporal/STAREPandas@master
+git+git://github.com/SpatioTemporal/STAREPandas@master --no-binary=starepandas
