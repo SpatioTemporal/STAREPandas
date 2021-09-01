@@ -5,5 +5,8 @@ starepandas.egg-info/*
 build/
 dist/
 record.txt
-*~
-
+examples/dask-worker-space/*
+*.egg-info/
+.eggs/*
+*.kate-swp
+doc/source/docs/reference/api/*

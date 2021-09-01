@@ -1,15 +1,21 @@
-from starepandas.staredataframe import STAREDataFrame
-from starepandas.stareseries import STARESeries
+from starepandas.tools import *
+from starepandas.io.folder import folder2catalog
+from starepandas.io.granules import read_granule
+from starepandas.io.pod import read_pods
+from starepandas.io.database import read_sql_table
 
-from starepandas.io.s3 import *
-from starepandas.tools import stare_join
-from starepandas.io.file import *
-from starepandas.io.folder import *
+import starepandas.datasets  
 
-from starepandas.tools.stare_conversions import *
+import starepandas.io.s3
 
+import starepandas.io.granules
+
+from .staredataframe import STAREDataFrame
 
 from ._version import get_versions
 
 __version__ = get_versions()["version"]
 del get_versions
+
+from . import _version
+__version__ = _version.get_versions()['version']

@@ -1,70 +1,60 @@
-import starepandas 
+import starepandas
 import shapely
-from pyhdf.SD import SD
 import numpy
 import glob
-import datetime
+import re
 
-# from dask_gateway import Gateway
-# from dask_gateway import GatewayCluster
-# from dask.distributed import Client
 
 # Dask helpers
-def slam(client,action,data,partition_factor=1.5,dbg=0):
+def slam(client, action, data, partition_factor=1.5, dbg=0):
     np = sum(client.nthreads().values())
-    if dbg>0:
-        print('slam: np = %i'%np)
-    shard_bounds = [int(i*len(data)/(1.0*partition_factor*np)) for i in range(int(partition_factor*np))] 
+    if dbg > 0:
+        print('slam: np = %i' % np)
+    shard_bounds = [int(i * len(data) / (1.0 * partition_factor * np)) for i in range(int(partition_factor * np))]
     if shard_bounds[-1] != len(data):
-        if dbg>0:
-            print('a sb[-1]: ',shard_bounds[-1],len(data))
+        if dbg > 0:
+            print('a sb[-1]: ', shard_bounds[-1], len(data))
         shard_bounds = shard_bounds + [len(data)]
-    if dbg>0:
-        print('sb: ',shard_bounds)
-    data_shards = [data[shard_bounds[i]:shard_bounds[i+1]] for i in range(len(shard_bounds)-1)]
-    if dbg>0:
-        print('ds len:        ',len(data_shards))
-        print('ds item len:   ',len(data_shards[0]))
-        print('ds type:       ',type(data_shards[0]))
+    if dbg > 0:
+        print('sb: ', shard_bounds)
+    data_shards = [data[shard_bounds[i]:shard_bounds[i + 1]] for i in range(len(shard_bounds) - 1)]
+    if dbg > 0:
+        print('ds len:        ', len(data_shards))
+        print('ds item len:   ', len(data_shards[0]))
+        print('ds type:       ', type(data_shards[0]))
         try:
-            print('ds dtype:      ',data_shards[0].dtype)
+            print('ds dtype:      ', data_shards[0].dtype)
         except:
             pass
     big_future = client.scatter(data_shards)
-    results    = client.map(action,big_future)
+    results = client.map(action, big_future)
     return results
 
-def get_timestamps(granule_name):
-    meta = starepandas.get_hdfeos_metadata(granule_name)
-    meta_group = meta['CoreMetadata']['INVENTORYMETADATA']['RANGEDATETIME']
-    begining_date = meta_group['RANGEBEGINNINGDATE']['VALUE']
-    begining_time = meta_group['RANGEBEGINNINGTIME']['VALUE']
-    end_date = meta_group['RANGEENDINGDATE']['VALUE']
-    end_time = meta_group['RANGEENDINGTIME']['VALUE']
-    begining= datetime.datetime.strptime(begining_date+begining_time, '"%Y-%m-%d""%H:%M:%S.%f"') 
-    end = datetime.datetime.strptime(end_date+end_time, '"%Y-%m-%d""%H:%M:%S.%f"') 
-    return begining, end
 
-# granule_name might be a url
-def make_row(granule_name, add_sf=False):
-    sidecar_name = starepandas.guess_sidecar_name(granule_name)
-    if not sidecar_name:
-        print('no sidecar found for {}'.format(granule_name))
+def make_row(granule_path, add_sf=False):
+    granule = starepandas.io.granules.granule_factory(granule_path)
+
+    if not granule.sidecar_path:
+        print('no sidecar found for {}'.format(granule_path))
         return None
-    stare_cover = starepandas.read_sidecar_cover(sidecar_name)
+    granule.read_sidecar_cover()
+
     row = {}
-    row['granule_name'] = granule_name
-    row['sidecar_name'] = sidecar_name
-    row['stare_cover'] = stare_cover
-    begining, end = get_timestamps(granule_name)
-    row['begining'] = begining
-    row['ending'] = end
+    row['granule_path'] = granule_path
+    row['sidecar_path'] = granule.sidecar_path
+    row['stare_cover'] = granule.stare_cover
+
+    granule.read_timestamps()
+    row['begining'] = granule.ts_start
+    row['ending'] = granule.ts_end
+
     if add_sf:
-        row['geom'] = get_sf_cover(granule_name)
+        row['geom'] = get_sf_cover(granule_path)
     return row
 
-def get_sf_cover(granule_name):    
-    hdf = starepandas.SD_wrapper(granule_name)
+
+def get_sf_cover(granule_path):
+    hdf = starepandas.io.s3.sd_wrapper(granule_path)
     lon1 = hdf.select('Longitude').get()[0:-1, 0].astype(numpy.double)
     lat1 = hdf.select('Latitude').get()[0:-1, 0].astype(numpy.double)
 
@@ -86,23 +76,43 @@ def get_sf_cover(granule_name):
     return shapely.geometry.Polygon(zip(lon, lat))
 
 
-def folder2catalogue(path, granule_extension='hdf', add_sf=False, client = None):
-    term = '{path}/*.{ext}'.format(path=path, ext=granule_extension)
+def folder2catalog(path, granule_trunk='', granule_extension='*', add_sf=False, client=None):
+    """ Reads a folder of granules into a STAREDataFrame catalog
+
+    :param path: Path of the folder containing granules
+    :type path: str
+    :param granule_trunk: Granule identifier (e.g. MOD09)
+    :type granule_trunk: str
+    :param granule_extension: Extension of the granule (e.g. hdf, nc, HDF5)
+    :type granule_extension: str
+    :param add_sf: toggle creating simple feature representation of the iFOVs
+    :type add_sf: bool
+    :param client:
+    :type client:
+    :return: catalog
+    :rtype: starepandas.STAREDataFrame
+    """
+    term = '{path}/{granule_trunk}*.{ext}'.format(path=path, granule_trunk=granule_trunk, ext=granule_extension)
     s3 = None
     if path[0:5] != 's3://':
-        granule_names = glob.glob(term)
+        granule_paths = glob.glob(term)
     else:
-        granule_names,s3 = starepandas.s3_glob(path,'.*\.{ext}$'.format(ext=granule_extension))
-    if not granule_names:
+        granule_paths, s3 = starepandas.io.s3.s3_glob(path, '.*\.{ext}$'.format(ext=granule_extension))
+    if not granule_paths:
         print('no granules in folder')
         return None
+
+    pattern = '.*[^_stare]\.(nc|hdf|HDF5)'
+    granule_paths = list(filter(re.compile(pattern).match, granule_paths))
+
     df = starepandas.STAREDataFrame()
     if client is None:
-        for granule_name in granule_names:
+        for granule_path in granule_paths:
             if s3 is not None:
-                granule_url = 's3://{bucket_name}/{granule}'.format(bucket_name=s3[0]['bucket_name'],granule=granule_name)
+                granule_url = 's3://{bucket_name}/{granule}'.format(bucket_name=s3[0]['bucket_name'],
+                                                                    granule=granule_path)
             else:
-                granule_url = granule_name
+                granule_url = granule_path
             row = make_row(granule_url, add_sf)
             df = df.append(row, ignore_index=True)
     else:
@@ -113,5 +123,3 @@ def folder2catalogue(path, granule_extension='hdf', add_sf=False, client = None)
     if add_sf:
         df.set_geometry('geom', inplace=True)
     return df
-
-

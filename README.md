@@ -5,42 +5,91 @@ STAREpandas adds [SpatioTemporal Adaptive Resolution Encoding
 ![Example 1](figures/resized_starepandas.png)
 
 ## Introduction
-STAREPandas provides high-level functions for users to explore and interact with STARE.
+STAREPandas is the STARE pendant to [GeoPandas](https://geopandas.org/). 
+It makes working with geospatial data in python easier. 
+It provides file and database I/O functionality and allows to easily perform STARE based 
+spatial operations that would otherwise require a (STARE-extended) spatial database or a geographic information system. 
 
-STAREPandas is the STARE pendant to [GeoPandas](https://geopandas.org/). It makes working with geospatial data in python easier. It provides file and database I/O functionality and allows to easily perform STARE based spatial operations that would otherwise require a (STARE-extended) spatial database or a geographic information system. 
+In STAREDataFrames, geometries are represented as sets of STARE triangles or ”trixels”; 
+analogously to GeoPandas geodataframes which represent geometries as WKT. In STARE dataframes, 
+points are represented as STARE trixels at the HTM tree’s leaf level. 
+Polygons are represented as sets of STARE trixels that cover the polygon. 
 
-In STAREDataFrames, geometries are represented as sets of STARE triangles or ”trixels”; analogously to GeoPandas geodataframes which represent geometries as WKT. In STARE dataframes, points are represented as STARE trixels at the HTM tree’s leaf level. Polygons are represented as sets of STARE trixels that cover the polygon. 
-
-STAREPandas also extends the geopandas file I/O functionality to load some (raster) formats of remote sensing granules and tiles (MOD09, MOD09GA, VNP03) through pyhdf and netcdf4.
+STAREPandas also extends the geopandas file I/O functionality to load some (raster) formats of 
+remote sensing granules and tiles (MOD09, MOD09GA, VNP03) through pyhdf and netcdf4.
 
 
 ## Installation
-STAREPandas is built on top of [pystare](https://github.com/SpatioTemporal/pystare), which is not on PyPI yet. Therefore manually install pystare first.
+
+## pyhdf
+STAREPandas depends on pyhdf to read hdf4-eos granules, requiring libhdf4-dev, to build.
+
+Tested on python 3.7.6
+
+On Ubuntu 20.04:
 
 ```shell
-mkvirtualenv --python=/usr/bin/python3 $STAREPANDAS_ENV
+apt install libhdf4-dev 
+```
+
+On Centos7:
+
+```shell
+yum install hdf-devel.x86_64
+
+```
+
+Alternatively, pyhdf can also be found on conda
+
+```shell
+conda install -c conda-forge pyhdf
+```
+## pystare
+STAREPandas is built on top of [pystare](https://github.com/SpatioTemporal/pystare), which is not on PyPI yet. 
+Therefore manually install pystare first.
+
+```shell
 pip3 install git+git://github.com/SpatioTemporal/pystare.git
 ```
 
-Then install STAREPandas from github
+## STAREPandas
+It is recommendable to install pip packages in a [Virtual Environment](https://pip.pypa.io/warnings/venv)
+
+```
+mkvirtualevironment starepandas
+```
+
+Make sure pip is up-to-date.
+
+Then install STAREPandas from github.
 
 ```shell
-pip3 install git+git://github.com/NiklasPhabian/starepandas.git $STAREPandas
+pip3 install git+git://github.com/SpatioTemporal/starepandas.git $STAREPandas
 ```
 
 or from a local copy
 
 ```shell
-git clone https://github.com/NiklasPhabian/starepandas $STAREPandas
-pip3 install $STAREPandas
+git clone https://github.com/SpatioTemporal/starepandas $STAREPandas
+pip3 install $STAREPandas/
 ```
     
 ## Note
-Some of the examples require Rtree-linux to be installed to run geopandas spatial joins. As of 2020-08-20, I could not make this work on Centos7 with rtree>0.9 (9.4) as it requires GLIBCXX_3.4.21. I therefor downgrade rtree to rtree-0.8.3 on Centos7 
+Some of the examples require Rtree-linux to be installed to run geopandas spatial joins. 
+As of 2020-08-20, I could not make this work on Centos7 with rtree>0.9 (9.4) as it requires GLIBCXX_3.4.21. I therefor downgrade rtree to rtree-0.8.3 on Centos7 
 
-    pip3 install "rtree>=0.8,<0.9
+```shell
+pip3 install "rtree>=0.8,<0.9
+```
     
 This is likely related to [rtree issue 120](https://github.com/Toblerity/rtree/issues/120)
+
+
+## Tests
+```shell
+cd starepandas/
+pytests
+```
 
     
 ## Features and usage
@@ -60,7 +109,7 @@ africa  = starepandas.STAREDataFrame(africa , stare=stare)
 STAREPandas extends the geopandas rich plotting abilities and provides a simple method to generate visualizations of trixels:
 
 ```python
-trixels = africa.trixels()
+trixels = africa.make_trixels()
 africa.set_trixels(trixels, inplace=True)
 africa.plot(ax=ax, trixels=True, boundary=True, column='name', linewidth=0.2)
 ```
@@ -104,18 +153,20 @@ STAREPandas further allows for STARE-bases intersections:
 
 ```python
 fname = 'zip://data/amapoly_ivb.zip'
-amazon = geopandas.read_file(fname) # Nice flex
+amazon = geopandas.read_file(fname)  # Nice flex
 amazon = amazon.to_crs('EPSG:4326')
-    
+
 stare = starepandas.stare_from_gdf(amazon, level=10, force_ccw=True)
 amazon = starepandas.STAREDataFrame(amazon, stare=stare)
 
-stare_amazon = samerica.stare_intersection(amazon.stare.iloc[0])
+stare_amazon = samerica.stare_intersection(amazon.make_stare.iloc[0])
 ```
     
     
 ![Example 3](figures/amazon.png)
 
+# Acknowledgments
+2018-2021 STARE development supported by NASA/ACCESS-17 grant 80NSSC18M0118.
 
 
 
