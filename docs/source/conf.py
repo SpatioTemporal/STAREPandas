@@ -36,7 +36,11 @@ extensions = ['sphinx.ext.autodoc',
               'nbsphinx',  # Notebook integration
               "numpydoc",   # Syntax/schema for docstrings!
               #'m2r2'
+              'sphinx_markdown_tables'
+
               ]
+
+#source_suffix = ['.rst', '.py']
 
 # continue doc build and only print warnings/errors in examples
 ipython_warning_is_error = False
