@@ -59,28 +59,45 @@ def guess_companion_path(granule_path, prefix=None, folder=None):
     else:
         return granules[0]
 
+granule_factory_library = {
+    'MOD05|MYD05'       : Mod05,
+    'MOD09|MYD09'       : Mod09,
+    'VNP02DNB|VJ102DNB' : VNP02DNB,
+    'VNP03DNB|VJ103DNB' : VNP03DNB,
+    'VNP03MOD|VJ103MOD' : VNP03MOD,
+    'CLDMSKL2VIIRS'     : CLDMSKL2VIIRS,
+    'SSMIS'             : SSMIS,
+    'ATMS'              : ATMS
+}
 
 def granule_factory(file_path, sidecar_path=None):
-    if re.search('MOD05|MYD05', file_path, re.IGNORECASE):
-        granule = Mod05(file_path, sidecar_path)
-    elif re.search('MOD09|MYD09', file_path, re.IGNORECASE):
-        granule = Mod09(file_path, sidecar_path)
-    elif re.search('VNP02DNB|VJ102DNB', file_path, re.IGNORECASE):
-        granule = VNP02DNB(file_path, sidecar_path)
-    elif re.search('VNP03DNB|VJ103DNB', file_path, re.IGNORECASE):
-        granule = VNP03DNB(file_path, sidecar_path)
-    elif re.search('VNP03MOD|VJ103MOD', file_path, re.IGNORECASE):
-        granule = VNP03MOD(file_path, sidecar_path)
-    elif re.search('CLDMSKL2VIIRS', file_path, re.IGNORECASE):
-        granule = CLDMSKL2VIIRS(file_path, sidecar_path)
-    elif re.search('SSMIS', file_path, re.IGNORECASE):
-        granule = SSMIS(file_path, sidecar_path)
-    elif re.search('ATMS', file_path, re.IGNORECASE):
-        granule = ATMS(file_path, sidecar_path)
-    else:
-        raise UnsuportedFileError(file_path)
-        return None
-    return granule
+    for regex,make_granule in granule_factory_library.items():
+        if re.search(regex, file_path, re.IGNORECASE):
+            return make_granule(file_path,make_granule(file_path,sidecar_path))
+    raise UnsuportedFileError(file_path)
+    return None
+
+# def granule_factory(file_path, sidecar_path=None):
+#     if re.search('MOD05|MYD05', file_path, re.IGNORECASE):
+#         granule = Mod05(file_path, sidecar_path)
+#     elif re.search('MOD09|MYD09', file_path, re.IGNORECASE):
+#         granule = Mod09(file_path, sidecar_path)
+#     elif re.search('VNP02DNB|VJ102DNB', file_path, re.IGNORECASE):
+#         granule = VNP02DNB(file_path, sidecar_path)
+#     elif re.search('VNP03DNB|VJ103DNB', file_path, re.IGNORECASE):
+#         granule = VNP03DNB(file_path, sidecar_path)
+#     elif re.search('VNP03MOD|VJ103MOD', file_path, re.IGNORECASE):
+#         granule = VNP03MOD(file_path, sidecar_path)
+#     elif re.search('CLDMSKL2VIIRS', file_path, re.IGNORECASE):
+#         granule = CLDMSKL2VIIRS(file_path, sidecar_path)
+#     elif re.search('SSMIS', file_path, re.IGNORECASE):
+#         granule = SSMIS(file_path, sidecar_path)
+#     elif re.search('ATMS', file_path, re.IGNORECASE):
+#         granule = ATMS(file_path, sidecar_path)
+#     else:
+#         raise UnsuportedFileError(file_path)
+#         return None
+#     return granule
 
 
 def read_granule(file_path, latlon=False, sidecar=False, sidecar_path=None, add_stare=False, adapt_resolution=True,
