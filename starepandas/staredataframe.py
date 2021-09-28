@@ -176,6 +176,12 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         if not inplace:
             return frame
 
+    def has_trixels(self):
+        return self._trixel_column_name in self
+
+    def has_sids(self):
+        return self._sid_column_name in self
+
     def make_trixels(self, sid_column=None, n_workers=1):
         """
         Returns a Polygon or Multipolygon GeoSeries
@@ -203,7 +209,8 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
         if sid_column is None:
             sid_column = self._sid_column_name
-        trixels_series = starepandas.tools.trixel_conversions.trixels_from_stareseries(self[sid_column], n_workers=n_workers)
+        trixels_series = starepandas.tools.trixel_conversions.trixels_from_stareseries(self[sid_column],
+                                                                                       n_workers=n_workers)
         return trixels_series
 
     def set_trixels(self, col=None, inplace=False):
@@ -481,12 +488,14 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         >>> ax = germany.plot(trixels=True, boundary=True, color='y', zorder=0)
         """
         if trixels:
+            if not self.has_trixels():
+                raise AttributeError('No trixels set (expected in "{}" column)'.format(self._trixel_column_name))
             boundary = True
             df = self.set_geometry(self._trixel_column_name, inplace=False)
         else:
             df = self.copy()
         if boundary:
-            df = df[df.geometry.is_empty==False]
+            df = df[not df.geometry.is_empty]
             df = df.set_geometry(df.geometry.boundary)
         return geopandas.plotting.plot_dataframe(df, *args, **kwargs)
 

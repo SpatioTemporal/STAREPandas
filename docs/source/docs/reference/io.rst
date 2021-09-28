@@ -5,6 +5,7 @@ I/O
 
 .. autosummary::
     :toctree: api/
+    :nosignatures:
 
     folder2catalog
     read_granule

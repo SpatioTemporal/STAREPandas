@@ -1,6 +1,7 @@
 import starepandas
 import pandas
 import geopandas
+import pytest
 
 
 cities = ['Buenos Aires', 'Brasilia', 'Santiago', 'Bogota', 'Caracas']
@@ -19,12 +20,17 @@ sdf = starepandas.STAREDataFrame(gdf)
 sdf.set_sids(stare, inplace=True)
 
 trixels = sdf.make_trixels()
-sdf.set_trixels(trixels, inplace=True)
+trixel_df = sdf.set_trixels(trixels, inplace=False)
 
 
-def test_plot1():
+def test_plot_notrixel():
     sdf.plot(trixels=False, color='r')
 
 
-def test_plot2():
-    sdf.plot(trixels=False, color='b')
+def test_plot_trixel():
+    trixel_df.plot(trixels=True, color='b')
+
+
+def test_issue51_a():
+    with pytest.raises(AttributeError):
+        sdf.plot(trixels=True)
