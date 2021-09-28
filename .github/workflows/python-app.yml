@@ -24,7 +24,9 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install flake8 pytest
-        pip install . # Install the package including dependencies
+        #pip install . # Install the package including dependencies
+        pip install configparser 
+        python3 -c "import configparser; c = configparser.ConfigParser(); c.read('setup.cfg'); print(c['options']['install_requires'])" | xargs pip install
     - name: Lint with flake8
       run: |
         # stop the build if there are Python syntax errors or undefined names
