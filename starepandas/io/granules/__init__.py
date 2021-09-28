@@ -22,7 +22,21 @@ class SidecarNotFoundError(Exception):
         super().__init__(self.message)
 
 
-def guess_companion_path(granule_path, prefix=None, folder=None):
+class CompanionNotFoundError(Exception):
+    def __init__(self, file_path):
+        self.file_path = file_path
+        self.message = 'Could not find companion for {}'.format(file_path)
+        super().__init__(self.message)
+
+
+class MultipleCompanionsFoundError(Exception):
+    def __init__(self, file_path):
+        self.file_path = file_path
+        self.message = 'More than one possible companion found for {}. Specify the prefix'.format(file_path)
+        super().__init__(self.message)
+
+
+def guess_companion_path(granule_path, folder=None, prefix=None):
     """
     Tries to find a companion to the granule.
     The assumption being that granule file names are composed of
@@ -38,6 +52,12 @@ def guess_companion_path(granule_path, prefix=None, folder=None):
         The prefix of the companion name; e.g. VJ102DNB
 
     Examples
+    ---------
+    >>> granule_path = starepandas.datasets.get_path('VNP02DNB.A2020219.0742.001.2020219125654.nc')
+    >>> companion_path = guess_companion_path(granule_path, prefix='VNP03DNB')
+    >>> companion_name = companion_path.split('/')[-1]
+    >>> companion_name
+    'VNP03DNB.A2020219.0742.001.2020219124651.nc'
     """
 
     if not folder:
@@ -47,21 +67,21 @@ def guess_companion_path(granule_path, prefix=None, folder=None):
     date = name_parts[1]
     time = name_parts[2]
     if prefix:
-        pattern = '{folder}/{prefix}.*\\.{date}.{time}\\..*[^_stare]\\.(nc|hdf|HDF5)'
+        pattern = '{folder}/*{prefix}.*\\.{date}.{time}\\..*[^_stare]\\.(nc|hdf|HDF5)'
         pattern = pattern.format(folder=folder, prefix=prefix, date=date, time=time)
     else:
-        pattern = '{folder}/.*\\.{date}.{time}\\..*[^_stare]\\.(nc|hdf|HDF5)'
+        pattern = '{folder}/*.*\\.{date}.{time}\\..*[^_stare]\\.(nc|hdf|HDF5)'
         pattern = pattern.format(folder=folder, date=date, time=time)
+    print(pattern)
     matches = glob.glob(folder + '/*')
-    granules = list(filter(re.compile(pattern).match, matches))
-    if len(granules) < 1 or granules[0] == granule_path:
-        print('did not find companion')
-        return None
-    if len(granules) > 1:
-        print('more than one possible match found. Specify the prefix!')
-        print(granules)
+    companions = set(filter(re.compile(pattern).match, matches))
+    companions = list(companions - set([granule_path]))
+    if len(companions) < 1 or companions[0] == granule_path:
+        raise CompanionNotFoundError(granule_path)
+    if len(companions) > 1:
+        raise MultipleCompanionsFoundError(granule_path)
     else:
-        return granules[0]
+        return companions[0]
 
 
 def granule_factory(file_path, sidecar_path=None):

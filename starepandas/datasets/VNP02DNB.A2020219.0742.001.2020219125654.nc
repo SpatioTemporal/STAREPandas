@@ -1,0 +1,1 @@
+../../tests/data/granules/VNP02DNB.A2020219.0742.001.2020219125654.nc
