@@ -21,7 +21,7 @@ remote sensing granules and tiles (MOD09, MOD09GA, VNP03) through pyhdf and netc
 
 ## Installation
 
-## pyhdf
+### pyhdf
 STAREPandas depends on pyhdf to read hdf4-eos granules, requiring libhdf4-dev, to build.
 
 Tested on python 3.7.6
@@ -44,7 +44,7 @@ Alternatively, pyhdf can also be found on conda
 ```shell
 conda install -c conda-forge pyhdf
 ```
-## pystare
+### pystare
 STAREPandas is built on top of [pystare](https://github.com/SpatioTemporal/pystare), which is not on PyPI yet. 
 Therefore manually install pystare first.
 
@@ -52,7 +52,7 @@ Therefore manually install pystare first.
 pip3 install git+git://github.com/SpatioTemporal/pystare.git
 ```
 
-## STAREPandas
+### STAREPandas
 It is recommendable to install pip packages in a [Virtual Environment](https://pip.pypa.io/warnings/venv)
 
 ```
@@ -97,13 +97,13 @@ The examples/ folder contains notebooks that highlight the usage.
 
 STAREPandas helps integrating STARE in the geospatial data workflow.
 Building on top of fiona and geopandas, STAREPandas allows to read almost any vector-based spatial data format and convert lat/lon and well-known-text (WKT) representation to STARE indices and covers.
-   
+
 ```python
 path = geopandas.datasets.get_path('naturalearth_lowres')
 world = geopandas.read_file(path)
-africa = world[world.continent=='Africa']
-stare = starepandas.stare_from_gdf(africa , level=7, force_ccw=True)
-africa  = starepandas.STAREDataFrame(africa , stare=stare)
+africa = world[world.continent == 'Africa']
+stare = starepandas.sids_from_gdf(africa, resolution=7, force_ccw=True)
+africa = starepandas.STAREDataFrame(africa, stare=stare)
 ```
     
 STAREPandas extends the geopandas rich plotting abilities and provides a simple method to generate visualizations of trixels:
@@ -126,24 +126,24 @@ modis = starepandas.read_mod09(path, add_stare=True, adapt_resolution=True)
 ![Example 2](figures/modis.png)
 
 STAREPandas allows to carry out STARE-based spatial relation tests and spatial joins.
-    
+
 ```python
-cities = [  'Buenos Aires', 'Brasilia', 'Santiago', 
-            'Bogota', 'Caracas', 'Sao Paulo', 'Bridgetown']
+cities = ['Buenos Aires', 'Brasilia', 'Santiago',
+          'Bogota', 'Caracas', 'Sao Paulo', 'Bridgetown']
 latitudes = [-34.58, -15.78, -33.45, 4.60, 10.48, -23.55, 13.1]
 longitudes = [-58.66, -47.91, -70.66, -74.08, -66.86, -46.63, -59.62]
-data =  {   'City': cities, 
-            'Latitude': latitudes, 'Longitude': longitudes}
+data = {'City': cities,
+        'Latitude': latitudes, 'Longitude': longitudes}
 cities = starepandas.STAREDataFrame(data)
-stare = starepandas.stare_from_xy(cities.Longitude, cities.Latitude, level=27)
-cities.set_stare(stare, inplace=True)
-    
+stare = starepandas.sids_from_xy(cities.Longitude, cities.Latitude, resolution=27)
+cities.set_sids(stare, inplace=True)
+
 countries = geopandas.read_file(geopandas.datasets.get_path('naturalearth_lowres'))
 countries = countries.sort_values(by='name')
-samerica = countries[countries.continent=='South America']
-stare = starepandas.stare_from_gdf(samerica, level=10, force_ccw=True)
+samerica = countries[countries.continent == 'South America']
+stare = starepandas.sids_from_gdf(samerica, resolution=10, force_ccw=True)
 samerica = starepandas.STAREDataFrame(samerica, stare=stare)
-    
+
 starepandas.stare_join(samerica, cities, how='left').head()
 ```
 
@@ -156,10 +156,10 @@ fname = 'zip://data/amapoly_ivb.zip'
 amazon = geopandas.read_file(fname)  # Nice flex
 amazon = amazon.to_crs('EPSG:4326')
 
-stare = starepandas.stare_from_gdf(amazon, level=10, force_ccw=True)
+stare = starepandas.sids_from_gdf(amazon, resolution=10, force_ccw=True)
 amazon = starepandas.STAREDataFrame(amazon, stare=stare)
 
-stare_amazon = samerica.stare_intersection(amazon.make_stare.iloc[0])
+stare_amazon = samerica.stare_intersection(amazon.make_sids.iloc[0])
 ```
     
     

@@ -119,7 +119,7 @@ def folder2catalog(path, granule_trunk='', granule_extension='*', add_sf=False, 
         pass
         # client=Client()
         # client.close()
-    df.set_stare('stare_cover', inplace=True)
+    df.set_sids('stare_cover', inplace=True)
     if add_sf:
         df.set_geometry('geom', inplace=True)
     return df

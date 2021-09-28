@@ -491,7 +491,7 @@ def trixels_from_stareseries(sids_series, n_workers=1):
     -------------
     >>> import starepandas
     >>> sids = [4611686018427387903, 4611686018427387903]
-    >>> sdf = starepandas.STAREDataFrame(stare=sids)
+    >>> sdf = starepandas.STAREDataFrame(sids=sids)
     >>> trixels = starepandas.trixels_from_stareseries(sdf.stare)
     """
 
