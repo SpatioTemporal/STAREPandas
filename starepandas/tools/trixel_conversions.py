@@ -58,8 +58,7 @@ def vertices2centers(vertices):
 
     Examples
     --------------
-import starepandas.tools.trixel_conversions    >>> import starepandas
-    >>> import numpy
+    >>> import starepandas
     >>> sids = numpy.array([18014398509481987])
     >>> vertices = starepandas.tools.trixel_conversions.to_vertices(sids)
     >>> starepandas.vertices2centers(vertices)
@@ -88,8 +87,7 @@ def vertices2centers_ecef(vertices):
 
     Examples
     ----------
-import starepandas.tools.trixel_conversions    >>> import starepandas
-    >>> import numpy
+    >>> import starepandas
     >>> sids = numpy.array([1729382256910270464])
     >>> vertices = starepandas.tools.trixel_conversions.to_vertices(sids)
     >>> starepandas.vertices2centers_ecef(vertices)
@@ -121,10 +119,9 @@ def vertices2centerpoints(vertices):
 
     Examples
     ----------
-import starepandas.tools.trixel_conversions    >>> import starepandas
-    >>> import numpy
+    >>> import starepandas
     >>> sids = numpy.array([2882303761517117440])
-    >>> vertices = starepandas.tools.trixel_conversions.to_vertices(sids)
+    >>> vertices = starepandas.tools.to_vertices(sids)
     >>> points = starepandas.vertices2centerpoints(vertices)
     >>> print(points[0])
     POINT (251.5650509020583 24.09484285959212)
@@ -153,8 +150,7 @@ def vertices2corners(vertices):
 
     Examples
     --------------
-import starepandas.tools.trixel_conversions    >>> import starepandas
-    >>> import numpy
+    >>> import starepandas
     >>> sids = numpy.array([3458764513820540928])
     >>> vertices = starepandas.tools.trixel_conversions.to_vertices(sids)
     >>> starepandas.vertices2corners(vertices)
@@ -223,8 +219,7 @@ def vertices2corners_ecef(vertices):
 
     Examples
     ----------
-import starepandas.tools.trixel_conversions    >>> import starepandas
-    >>> import numpy
+    >>> import starepandas
     >>> sids = numpy.array([3458764513820540928])
     >>> vertices = starepandas.tools.trixel_conversions.to_vertices(sids)
     >>> starepandas.vertices2corners_ecef(vertices)

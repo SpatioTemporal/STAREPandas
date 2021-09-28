@@ -152,7 +152,7 @@ def stare_from_geom_row(row, level):
     return stare_from_shapely(row.geometry)
 
 
-def stare_from_shapely(geom, level=-1, convex=False, force_ccw=False):
+def stare_from_shapely(geom, level, convex=False, force_ccw=False):
     """ Wrapper for starepandas.from_point(), starepandas.from_ring(),
     starepandas.from_polygon(), starepandas.from_multipolygon()
 
@@ -179,8 +179,8 @@ def stare_from_shapely(geom, level=-1, convex=False, force_ccw=False):
     Point:
 
     >>> point = shapely.geometry.Point(10.5, 20)
-    >>> starepandas.stare_from_shapely(point)
-    4611686018427387903
+    >>> starepandas.stare_from_shapely(point, level=27)
+    4598246232954051067
 
     Polygon:
 
@@ -263,9 +263,9 @@ def stare_from_ring(ring, level=-1, convex=False, force_ccw=False):
     lon = latlon[0]
     lat = latlon[1]
     if convex:
-        range_indices = pystare.to_hull_range_from_latlon(lat, lon, level)
+        range_indices = pystare.cover_from_hull(lat, lon, level)
     else:
-        range_indices = pystare.to_nonconvex_hull_range_from_latlon(lat, lon, level)
+        range_indices = pystare.cover_from_ring(lat, lon, level)
 
     return range_indices
 
@@ -308,7 +308,7 @@ def stare_from_polygon(polygon, level=-1, convex=False, force_ccw=False):
                 interior.coords = list(interior.coords)[::-1]
             sids_int.append(stare_from_ring(interior, level, convex, force_ccw=False))
         sids_int = numpy.concatenate(sids_int)
-        sids = pystare.intersect(sids_int, sids_ext)
+        sids = pystare.intersection(sids_int, sids_ext)
     else:
         sids = sids_ext
     return sids
@@ -351,25 +351,25 @@ def stare_from_multipolygon(multipolygon, level=-1, convex=False, force_ccw=Fals
 def dissolve_stare(sids):
     """ Dissolve STARE index values.
     Combine/dissolve sibiling sids into the parent sids. That is:
-        1. Any 4 siblings with the same parent in the collection get replaced by the parent. And
-        2. Any child whose parents is in the collection will be removed
+    1. Any 4 siblings with the same parent in the collection get replaced by the parent. And
+    2. Any child whose parents is in the collection will be removed
 
     Parameters
-    -----------
+    ------------
     sids: array-like
         A collection of SIDs to dissolve
 
     Returns
-    --------
+    ---------
     dissolved: numpy.array
         Dissolved SIDs
 
     See Also
-    ---------
+    ----------
     merge_stare
 
     Examples
-    --------
+    ---------
     >>> import starepandas
     >>> # The two latter SIDs are contained in the first SID
     >>> sids = [4035225266123964416, 4254212798004854789, 4255901647865118724]
@@ -487,7 +487,6 @@ def series_intersects(series, other, method='skiplist', n_workers=1):
     array([ True,  True])
 
     """
-    method = {'skiplist': 0, 'binsearch': 1, 'nn': 2}[method]
 
     # Make sure other is iterable
     other = numpy.array([other]).flatten()
@@ -519,57 +518,3 @@ def series_intersects(series, other, method='skiplist', n_workers=1):
         intersects = res.compute(scheduler='processes')
     return intersects
 
-
-def int2hex(sids):
-    """ Converts int sids to hex sids
-
-    Parameters
-    -----------
-    sids: array-like or int64
-        int representations of SIDs
-
-    Returns
-    --------
-    sid: array-like or str
-        hex representations of SIDs
-
-    Examples
-    -----------
-    >>> import starepandas
-    >>> sid = 3458764513820540928
-    >>> starepandas.int2hex(sid)
-    '0x3000000000000000'
-    """
-
-    if hasattr(sids, "__len__"):
-        return ["0x%016x" % sid for sid in sids]
-    else:
-        return "0x%016x" % sids
-
-
-def hex2int(sids):
-    """ Converts hex SIDs to int SIDs
-
-    Parameters
-    -----------
-    sids: array-like or str
-        hex representations of SIDs
-
-    Returns
-    ----------
-    sid: array-like or int64
-        int representation of SIDs
-
-
-    Examples
-    -----------
-    >>> import starepandas
-    >>> sid = '0x3000000000000000'
-    >>> starepandas.hex2int(sid)
-    3458764513820540928
-    """
-
-    if isinstance(sids, str):
-        return int(sids, 16)
-    else:
-        return [int(sid, 16) for sid in sids]

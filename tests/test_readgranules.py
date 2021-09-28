@@ -1,7 +1,6 @@
 import unittest
 import starepandas
 import os
-import pytest
 
 
 class MainTest(unittest.TestCase):
@@ -28,7 +27,7 @@ class MainTest(unittest.TestCase):
             self.assertEqual(companion, 'tests/data/granules/VNP03DNB.A2020219.0742.001.2020219124651.nc')
         
     def test_read_vnp03dnb(self):
-        granule = starepandas.io.granules.VNP03DNB('tests/data/granules/VNP03DNB.A2020219.0742.001.2020219124651.nc')        
+        granule = starepandas.io.granules.VNP03DNB('tests/data/granules/VNP03DNB.A2020219.0742.001.2020219124651.nc')
         granule.guess_sidecar_path()
         with self.subTest():
             self.assertEqual(granule.sidecar_path, 'tests/data/granules/VNP03DNB.A2020219.0742.001.2020219124651_stare.nc')
@@ -83,12 +82,4 @@ def test_find_sidecar():
     mod05 = starepandas.io.granules.Mod05(fpath)
     sidecar_path = mod05.guess_sidecar_path()
     assert os.path.exists(sidecar_path)
-
-
-
-if __name__ == '__main__':
-    test_find_companion()
-
-
-
 

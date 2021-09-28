@@ -512,20 +512,25 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         else:
             raise ValueError("Other must be array-like object or int64")
 
-        intersects = starepandas.series_intersects(other=other, series=self[self._stare_column_name], method=method,
+        intersects = starepandas.series_intersects(other=other,
+                                                   series=self[self._stare_column_name],
+                                                   method=method,
                                                    n_workers=n_workers)
         return pandas.Series(intersects)
 
-    def stare_disjoint(self, other, method=1, n_workers=1):
+    def stare_disjoint(self, other, method='binsearch', n_workers=1):
         """  Returns a ``Series`` of ``dtype('bool')`` with value ``True`` for
-        each geometry that is disjoint from `other`. This is the inverse operation of STAREDataFrame.stare_intersects()
+        each geometry that is disjoint from `other`.
+        This is the inverse operation of STAREDataFrame.stare_intersects()
 
-        :param other: The STARE index collection representing the spatial object to test if is intersected.
-        :type other: Collection of STARE indices
-        :param method: Method for STARE intersects test {skiplist': 0, 'binsearch': 1, 'nn': 2}. Default: 1
-        :type method: str
-        :param n_workers: number of workers to be used for intersects tests
-        :type n_workers: int
+        Parameters
+        ------------
+        other: array-like
+            The STARE index collection representing the spatial object to test if is intersected.
+        method: str
+            Method for STARE intersects test 'skiplist', 'binsearch' or 'nn'. Default: 'binsearch'.
+        n_workers: int
+            number of workers to be used for intersects tests
 
         See also
         --------
@@ -563,7 +568,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         """
         data = []
         for srange in self[self._stare_column_name]:
-            data.append(pystare.intersect(srange, other))
+            data.append(pystare.intersection(srange, other))
         return pandas.Series(data, index=self.index)
 
     def stare_dissolve(self, by=None, dissolve_sids=True, n_workers=1,
@@ -730,7 +735,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
                 r = resolution
             else:
                 r = int(pystare.spatial_resolution(sids).max())
-            sids = pystare.expand_intervals(sids, resolution=r, multi_resolution=False)
+            sids = pystare.expand_intervals(sids, level=r, multi_resolution=False)
             new_sids_col.append(sids)
 
         if inplace:
@@ -757,9 +762,9 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         for row in self[self._stare_column_name]:
             try:
                 # Ducktyping collection of sids
-                sids.append(list(map(starepandas.int2hex, row)))
+                sids.append(list(map(pystare.int2hex, row)))
             except TypeError:
-                sids.append(starepandas.int2hex(row))
+                sids.append(pystare.int2hex(row))
         return sids
 
     def write_pods(self, pod_root, level, chunk_name, hex=True):
@@ -780,7 +785,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         for group in grouped.groups:
             g = grouped.get_group(group)
             if hex:
-                pod = starepandas.int2hex(group)
+                pod = pystare.int2hex(group)
             else:
                 pod = group
             g.to_pickle('{pod_root}/{pod}/{chunk_name}'.format(pod_root=pod_root, pod=pod, chunk_name=chunk_name))

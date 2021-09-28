@@ -46,7 +46,7 @@ class Granule:
         return starepandas.io.granules.guess_companion_path(self.file_path, prefix, folder)
 
     def add_stare(self, adapt_resolution=True):
-        self.stare = pystare.from_latlon2D(lat=self.lat, lon=self.lon, adapt_resolution=adapt_resolution)
+        self.stare = pystare.from_latlon_2d(lat=self.lat, lon=self.lon, adapt_level=adapt_resolution)
 
     def read_sidecar_index(self, sidecar_path=None):
         if not sidecar_path:
