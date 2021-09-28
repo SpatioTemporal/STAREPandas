@@ -1,4 +1,4 @@
-io
+I/O
 ==================================== 
 
 .. currentmodule:: starepandas
@@ -10,3 +10,7 @@ io
     read_granule
     read_pods
     read_sql_table
+
+    STAREDataFrame.write_pods
+    STAREDataFrame.to_scidb
+
