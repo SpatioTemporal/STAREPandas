@@ -5,7 +5,7 @@
 .. automodsumm:: starepandas.tools.spatial_conversions
     :toctree: api/
     :functions-only:
-    :skip: stare_from_geom_row, stare_row
+    :skip: sids_from_geom_row, sids_from_latlon_row
 
 
 

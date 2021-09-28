@@ -14,9 +14,9 @@ df = pandas.DataFrame(data)
 geom = geopandas.points_from_xy(df.Longitude, df.Latitude)
 gdf = geopandas.GeoDataFrame(df, geometry=geom)
 
-stare = starepandas.stare_from_gdf(gdf, level=5)
+stare = starepandas.sids_from_gdf(gdf, resolution=5)
 sdf = starepandas.STAREDataFrame(gdf)
-sdf.set_stare(stare, inplace=True)
+sdf.set_sids(stare, inplace=True)
 
 trixels = sdf.make_trixels()
 sdf.set_trixels(trixels, inplace=True)

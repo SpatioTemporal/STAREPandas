@@ -16,9 +16,10 @@ Bootstrapping
 
 .. autosummary::
     :toctree: api/
+    :nosignatures:
 
-    STAREDataFrame.make_stare
-    STAREDataFrame.set_stare
+    STAREDataFrame.make_sids
+    STAREDataFrame.set_sids
     STAREDataFrame.make_trixels
     STAREDataFrame.set_trixels
 

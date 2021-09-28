@@ -10,7 +10,7 @@ def read_sql_table(sql, con, stare_column='stare',  **kwargs):
     
     if stare_column in df.columns:        
         df[stare_column] = df[stare_column].apply(func=numpy.frombuffer, args=('int64',))
-        df.set_stare(stare_column, inplace=True)    
+        df.set_sids(stare_column, inplace=True)
     else:
         print('{} is not in the columns'.format(stare_column))
     return df  

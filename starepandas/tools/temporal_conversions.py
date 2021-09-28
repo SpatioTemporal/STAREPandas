@@ -12,7 +12,7 @@ def tivs_from_timeseries(series, scale='utc', format='datetime64', forward_res=4
 
     The forward_res and reverse_res are STARE temporal resolutions. Their ranges are as follows
 
-    .. tabularcolumns:: |l|l|
+    ..tabularcolumns::
     +-------------+----------------------------+
     | Resolutions | Unit                       |
     +=============+============================+
@@ -32,7 +32,6 @@ def tivs_from_timeseries(series, scale='utc', format='datetime64', forward_res=4
     +-------------+----------------------------+
     | 12-00       | Year                       |
     +-------------+----------------------------+
-
 
 
     Parameters
@@ -62,7 +61,6 @@ def tivs_from_timeseries(series, scale='utc', format='datetime64', forward_res=4
     >>> dates = pandas.to_datetime(dates)
     >>> starepandas.tivs_from_timeseries(dates)
     array([2276059438861267137, 2275939265676325057])
-
     """
     if not series.dtype == '<M8[ns]':
         raise ValueError()
