@@ -32,8 +32,12 @@ def guess_companion_path(granule_path, prefix=None, folder=None):
     -----------
     granule_path: str
         The path of the granule to find the companion for
+    folder: str
+        the folder to look for companions
     prefix: str
-        The pri
+        The prefix of the companion name; e.g. VJ102DNB
+
+    Examples
     """
 
     if not folder:
@@ -83,26 +87,28 @@ def granule_factory(file_path, sidecar_path=None):
     return granule
 
 
-def read_granule(file_path, latlon=False, sidecar=False, sidecar_path=None, add_stare=False, adapt_resolution=True,
-                 **kwargs):
+def read_granule(file_path, latlon=False, sidecar=False, sidecar_path=None, add_stare=False, adapt_resolution=True):
     """ Reads a granule into a STAREDataFrame
 
-    :param file_path: path of the granule
-    :type file_path: string
-    :param latlon: toggle whether to read the latitude and longitude variables
-    :type latlon: bool
-    :param sidecar: toggle whether to read the sidecar file
-    :type sidecar: bool
-    :param sidecar_path: path of the sidecar file. If not provided, it is assumed to be ${file_path}_stare.nc
-    :type sidecar_path: string
-    :param add_stare: toggle whether to lookup stare indices
-    :type add_stare: bool
-    :param adapt_resolution: toggle whether to adapt the resolution
-    :type adapt_resolution: bool
-    :param kwargs:
-    :type kwargs:
-    :return: stare dataframe
-    :rtype: starepandas.STAREDataFrame
+    Parameters
+    -----------
+    file_path: str
+        path of the granule
+    latlon: bool
+        toggle whether to read the latitude and longitude variables
+    sidecar: bool
+        toggle whether to read the sidecar file
+    sidecar_path: str
+        path of the sidecar file. If not provided, it is assumed to be ${file_path}_stare.nc
+    add_stare: bool
+        toggle whether to lookup stare indices
+    adapt_resolution: bool
+        toggle whether to adapt the resolution
+
+    Returns
+    --------
+    df: starepandas.STAREDataFrame
+        A dataframe holding the granule data
 
     Examples
     ----------
@@ -126,4 +132,5 @@ def read_granule(file_path, latlon=False, sidecar=False, sidecar_path=None, add_
     elif add_stare:
         granule.add_stare(adapt_resolution)
 
-    return granule.to_df()
+    df = granule.to_df()
+    return df
