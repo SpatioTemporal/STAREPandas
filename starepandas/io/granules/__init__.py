@@ -60,7 +60,7 @@ def guess_companion_path(granule_path, folder=None, prefix=None):
     'VNP03DNB.A2020219.0742.001.2020219124651.nc'
     """
 
-    if not folder:
+    if folder is None:
         folder = '/'.join(granule_path.split('/')[0:-1])
     name = granule_path.split('/')[-1]
     name_parts = name.split('.')
@@ -72,7 +72,6 @@ def guess_companion_path(granule_path, folder=None, prefix=None):
     else:
         pattern = '{folder}/*.*\\.{date}.{time}\\..*[^_stare]\\.(nc|hdf|HDF5)'
         pattern = pattern.format(folder=folder, date=date, time=time)
-    print(pattern)
     matches = glob.glob(folder + '/*')
     companions = set(filter(re.compile(pattern).match, matches))
     companions = list(companions - set([granule_path]))

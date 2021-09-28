@@ -19,7 +19,7 @@ def test_polygon():
     iceland = countries[countries.name == 'Iceland']
     sids = starepandas.stare_from_gdf(iceland, level=8, force_ccw=True)
     fname = starepandas.datasets.get_path('MOD05_L2.A2019336.0000.061.2019336211522.hdf')
-    modis = starepandas.read_granule(fname, read_latlon=False, sidecar=True)
+    modis = starepandas.read_granule(fname, latlon=False, sidecar=True)
     intersects = modis.stare_intersects(sids[0])
     assert 1384 == sum(intersects)
 
