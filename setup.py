@@ -10,8 +10,7 @@ cmdclass = versioneer.get_cmdclass()
 
 
 setuptools.setup(
-    version=version
-    #version='0.6.1',
+    version=version,
     cmdclass=cmdclass
 )
 
