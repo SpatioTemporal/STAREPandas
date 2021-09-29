@@ -8,10 +8,7 @@ class Granule:
 
     def __init__(self, file_path, sidecar_path=None):
         self.file_path = file_path
-        if sidecar_path:
-            self.sidecar_path = sidecar_path
-        else:
-            self.sidecar_path = self.guess_sidecar_path()
+        self.sidecar_path = sidecar_path
         self.data = {}
         self.lat = None
         self.lon = None
@@ -31,14 +28,12 @@ class Granule:
             if target in names:
                 return name
             else:
-                return None
-                #raise SidecarNotFoundError(self.file_path)
+                raise starepandas.io.granules.SidecarNotFoundError(self.file_path)
         else:
             if glob.glob(name):
                 return name
             else:
-                return None
-                #raise SidecarNotFoundError(self.file_path)
+                raise starepandas.io.granules.SidecarNotFoundError(self.file_path)
 
     def guess_companion_path(self, prefix=None, folder=None):
         if prefix is None:
@@ -49,15 +44,23 @@ class Granule:
         self.stare = pystare.from_latlon_2d(lat=self.lat, lon=self.lon, adapt_level=adapt_resolution)
 
     def read_sidecar_index(self, sidecar_path=None):
-        if not sidecar_path:
-            sidecar_path = self.sidecar_path
-        ds = starepandas.io.s3.nc4_dataset_wrapper(sidecar_path)
+        if sidecar_path:
+            scp = sidecar_path
+        elif self.sidecar_path:
+            scp = self.sidecar_path
+        else:
+            scp = self.guess_sidecar_path()
+        ds = starepandas.io.s3.nc4_dataset_wrapper(scp)
         self.stare = ds['STARE_index_{}'.format(self.nom_res)][:, :].astype(numpy.int64)
 
     def read_sidecar_cover(self, sidecar_path=None):
-        if not sidecar_path:
-            sidecar_path = self.sidecar_path
-        ds = starepandas.io.s3.nc4_dataset_wrapper(sidecar_path)
+        if sidecar_path:
+            scp = sidecar_path
+        elif self.sidecar_path:
+            scp = self.sidecar_path
+        else:
+            scp = self.guess_sidecar_path()
+        ds = starepandas.io.s3.nc4_dataset_wrapper(scp)
         self.stare_cover = ds['STARE_cover_{}'.format(self.nom_res)][:].astype(numpy.int64)
 
     def to_df(self):
