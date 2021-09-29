@@ -38,8 +38,12 @@ def to_vertices(sids):
      array([-30.75902492]),
      array([15.84277554]))
     """
-
-    return pystare.to_vertices_latlon(sids)
+    vs = pystare.to_vertices_latlon(sids)
+    vs2 = tuple([(vs[0] + 90.0) % 180.0 - 90.0,
+                 ((vs[1] + 180) % 360) - 180,
+                 (vs[2] + 90.0) % 180.0 - 90.0,
+                 ((vs[3] + 180) % 360) - 180])
+    return vs2
 
 
 def vertices2centers(vertices):
