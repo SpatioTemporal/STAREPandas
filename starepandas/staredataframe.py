@@ -6,7 +6,7 @@ import numpy
 import starepandas
 import starepandas.tools.trixel_conversions
 
-DEFAULT_SID_COLUMN_NAME = 'stare'
+DEFAULT_SID_COLUMN_NAME = 'sids'
 DEFAULT_TRIXEL_COLUMN_NAME = 'trixels'
 
 
@@ -495,7 +495,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         else:
             df = self.copy()
         if boundary:
-            df = df[not df.geometry.is_empty]
+            df = df[df.geometry.is_empty == False]
             df = df.set_geometry(df.geometry.boundary)
         return geopandas.plotting.plot_dataframe(df, *args, **kwargs)
 
@@ -614,7 +614,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         n_chunks: int
             Performance optimization; number of chunks to use for the stare dissolve.
         geom: bool
-            Toggle if the geometry column is to be dissolved.
+            Toggle if the geometry column is to be dissolved. Geom column Will be dropped if set to False.
         aggfunc: str
             aggregation function. E.g. 'first', 'sum', 'mean'.
 
@@ -634,12 +634,12 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             sids = starepandas.merge_stare(self[self._sid_column_name], dissolve_sids, n_workers, n_chunks)
             return sids
         else:
-            data = self.drop(columns=['stare', 'trixels'], errors='ignore')
+            data = self.drop(columns=[self._sid_column_name, self._trixel_column_name], errors='ignore')
             if geom:
-                aggregated_data = data.dissolve_stare(by=by, aggfunc=aggfunc, **kwargs)
+                aggregated_data = data.dissolve(by=by, aggfunc=aggfunc, **kwargs)
             else:
-                aggregated_data = data.groupby(by=by, **kwargs).agg(
-                    aggfunc)
+                data = data.drop(columns=[self._geometry_column_name], errors='ignore')
+                aggregated_data = data.groupby(by=by, **kwargs).agg(aggfunc)
 
         sids = self.groupby(group_keys=True, by=by)[self._sid_column_name].agg(starepandas.merge_stare,
                                                                                dissolve_sids,
@@ -820,7 +820,8 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         return STAREDataFrame
 
 
-def _dataframe_set_stare(self, col, inplace=False):
+def _dataframe_set_sids(self, col, inplace=False):
+    # We create a function here so that we can take conventional DataFrames and convert them to sdfs
     if inplace:
         raise ValueError(
             "Can't do inplace setting when converting from (Geo)DataFrame to STAREDataFrame"
@@ -830,5 +831,5 @@ def _dataframe_set_stare(self, col, inplace=False):
     return sdf.set_sids(col, inplace=False)
 
 
-geopandas.GeoDataFrame.set_stare = _dataframe_set_stare
-pandas.DataFrame.set_stare = _dataframe_set_stare
+geopandas.GeoDataFrame.set_sids = _dataframe_set_sids
+pandas.DataFrame.set_sids = _dataframe_set_sids

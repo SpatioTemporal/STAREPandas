@@ -72,7 +72,7 @@ def test_sidecar_not_found():
 
 def test_bootstrap():
     fname = 'tests/data/granules/MYD05_L2.A2020060.1635.061.2020061153519.hdf'
-    modis = starepandas.read_granule(fname, add_stare=True, adapt_resolution=True)
+    modis = starepandas.read_granule(fname, add_sids=True, adapt_resolution=True)
     #trixels = modis.make_trixels()
     #modis.set_trixels(trixels, inplace=True)
 
