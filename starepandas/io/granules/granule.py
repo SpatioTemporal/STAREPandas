@@ -71,6 +71,11 @@ class Granule:
         xy: bool
             If true, add columns for the original array coordinates
 
+        Returns
+        --------
+        df: STAREDataFrame
+            dataframe containing lat, lon, xy, and data; one row per observation
+
         """
         df = {}
         if self.lat is not None:
@@ -91,4 +96,5 @@ class Granule:
         for key in self.data.keys():
             df[key] = self.data[key].flatten()
         return starepandas.STAREDataFrame(df)
+
 

@@ -45,11 +45,10 @@ Alternatively, pyhdf can also be found on conda
 conda install -c conda-forge pyhdf
 ```
 ### pystare
-STAREPandas is built on top of [pystare](https://github.com/SpatioTemporal/pystare), which is not on PyPI yet. 
-Therefore manually install pystare first.
+STAREPandas is built on top of [pystare](https://github.com/SpatioTemporal/pystare).
 
 ```shell
-pip3 install git+git://github.com/SpatioTemporal/pystare.git
+pip3 install pystare
 ```
 
 ### STAREPandas
@@ -64,15 +63,9 @@ Make sure pip is up-to-date.
 Then install STAREPandas from github.
 
 ```shell
-pip3 install git+git://github.com/SpatioTemporal/starepandas.git $STAREPandas
+pip3 install starepandas
 ```
 
-or from a local copy
-
-```shell
-git clone https://github.com/SpatioTemporal/starepandas $STAREPandas
-pip3 install $STAREPandas/
-```
     
 ## Note
 Some of the examples require Rtree-linux to be installed to run geopandas spatial joins. 
@@ -90,6 +83,23 @@ This is likely related to [rtree issue 120](https://github.com/Toblerity/rtree/i
 cd starepandas/
 pytests
 ```
+
+
+## Documentation
+starepandas uses sphinx
+
+The dependencies are in ```docs/source/requirements.txt```
+
+```
+pip3 install -r docs/source/requirements.txt
+```
+
+Build the docs with e.g.
+```
+cd docs/
+make html 
+```
+    
 
     
 ## Features and usage

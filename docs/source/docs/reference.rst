@@ -13,6 +13,7 @@ namespace plus those listed in the reference are public.
     :maxdepth: 1
 
     STAREDataFrame <reference/staredataframe>
+    STAREDataFrame Alphabetical <reference/staredataframe_alphabetical>
     spatial_conversion <reference/spatial_conversions>
     trixel_conversion <reference/trixel_conversions>
     temporal_conversion <reference/temporal_conversions>

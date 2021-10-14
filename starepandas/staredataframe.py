@@ -270,10 +270,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         >>> sids = numpy.array([3458764513820540928])
         >>> df = starepandas.STAREDataFrame(sids=sids)
         >>> df.trixel_vertices()
-        (array([29.9999996 , 45.00000069, 29.9999996 ]),
-        array([189.73560999, 315.        ,  80.26439001]),
-        array([80.264389]),
-        array([135.]))
+        (array([29.9999996 , 45.00000069, 29.9999996 ]), array([-170.26439001,  -45.        ,   80.26439001]), array([80.264389]), array([135.]))
         """
         return starepandas.tools.trixel_conversions.to_vertices(self[self._sid_column_name])
 
@@ -356,7 +353,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         >>> df = starepandas.STAREDataFrame(sids=sids)
         >>> centers = df.trixel_centerpoints()
         >>> print(centers[0])
-        POINT (135 80.26438899520529)
+        POINT (135 80.26438899520531)
         """
         if vertices:
             return starepandas.tools.trixel_conversions.vertices2centerpoints(vertices)
@@ -389,9 +386,9 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         >>> sids = numpy.array([3458764513820540928])
         >>> df = starepandas.STAREDataFrame(sids=sids)
         >>> df.trixel_corners()
-        array([[[189.73560999,  29.9999996 ],
-                [315.        ,  45.00000069],
-                [ 80.26439001,  29.9999996 ]]])
+        array([[[-170.26439001,  29.9999996 ],
+                [ -45.        ,  45.00000069],
+                [  80.26439001,  29.9999996 ]]])
         """
 
         if vertices:
@@ -519,7 +516,8 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
         Examples
         --------
-        >>> germany = [4251398048237748227, 4269412446747230211, 4278419646001971203, 4539628424389459971, 4548635623644200963, 4566650022153682947]
+        >>> germany = [4251398048237748227, 4269412446747230211, 4278419646001971203,
+        ...            4539628424389459971, 4548635623644200963, 4566650022153682947]
         >>> cities = {'name': ['berlin', 'madrid'], 'sid': [4258121269174388239, 4288120002905386575]}
         >>> cities = starepandas.STAREDataFrame(cities, sids='sid')
         >>> cities.stare_intersects(germany)
@@ -676,7 +674,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         0    2299437706637111718
         1    2299435211084507590
         2    2299566194809236966
-        Name: stare, dtype: int64
+        Name: sids, dtype: int64
 
         """
 
@@ -743,7 +741,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         >>> world = geopandas.read_file(geopandas.datasets.get_path('naturalearth_lowres'))
         >>> germany  = world[world.name=='Germany']
         >>> germany = starepandas.STAREDataFrame(germany, add_sids=True, resolution=6, add_trixels=False)
-        >>> len(germany.stare.iloc[0])
+        >>> len(germany.sids.iloc[0])
         43
         >>> sids_singleres = germany.to_stare_singleres()
         >>> len(sids_singleres[0])
@@ -779,7 +777,8 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         >>> sdf.hex()
         ['0x0008000000000004', '0x0010000000000004']
 
-        >>> sdf = starepandas.STAREDataFrame(sids=[[2251799813685252, 4503599627370500], [4604930618986332164, 4607182418800017412]])
+        >>> sdf = starepandas.STAREDataFrame(sids=[[2251799813685252, 4503599627370500],
+        ...                                        [4604930618986332164, 4607182418800017412]])
         >>> sdf.hex()
         [['0x0008000000000004', '0x0010000000000004'], ['0x3fe8000000000004', '0x3ff0000000000004']]
         """
@@ -819,6 +818,85 @@ class STAREDataFrame(geopandas.GeoDataFrame):
     @property
     def _constructor(self):
         return STAREDataFrame
+
+    def to_array(self, column, shape=None, pivot=False):
+        """Converts the 'column' to a numpy array.
+
+        Either a shape argument has to be provided or the dataframe has to contain a column x and y
+        holding the original array coordinates.
+
+        If the dataframe has x/y columns, the column can also be pivoted. I.e. rather than
+        reshaping according to the shape, pivoted along the x/y columns.
+        This may be relevant if the dataframe's row order has changed.
+
+        Parameters
+        ----------
+        column: str
+            column name to be converted to an array
+        shape: tuple
+            x and y shape of the array. x*y has to equal the length of the dataframe
+        pivot: bool
+            if true, rather than simple reshaping, the dataframe is pivoted along the x and y column
+
+        Examples
+        ----------
+        >>> df = starepandas.STAREDataFrame({'x': [0, 0, 1, 1],
+        ...                                  'y': [1, 0, 0, 1],
+        ...                                  'a': [1, 2, 3, 4]})
+        >>> df.to_array('a', pivot=False)
+        array([[1, 2],
+               [3, 4]])
+
+        >>> df.to_array('a', pivot=True)
+        array([[2, 1],
+               [3, 4]])
+
+        See also
+        --------
+        STAREDataFrame.to_arrays
+
+        """
+        if shape is None:
+            shape = (max(self['x'])+1, max(self['y'])+1)
+
+        if pivot:
+            array = self.pivot(index='x', columns='y', values=column).to_numpy()
+        else:
+            array = self[column].to_numpy().reshape(shape)
+        return array
+
+    def to_arrays(self, shape=None, pivot=False):
+        """ Converts a STAREDataFrame into a dictionary of arrays; one array per column/field.
+
+        This may be useful to write data back to granules.
+        Either a shape argument has to be provided or the dataframe has to contain a column x and y
+        holding the original array coordinates.
+        If no shape is provided, the shape is assumed to be (max(x)+1, max(y)+1).
+
+        If the dataframe has x/y columns, the column can also be pivoted. I.e. rather than
+        reshaping according to the shape, pivoted along the x/y columns.
+        This may be relevant if the dataframe's row order has changed.
+
+        Parameters
+        ----------
+        shape: tuple
+            x and y shape of the array. x*y has to equal the length of the dataframe
+        pivot: bool
+            if true, rather than simple reshaping, the dataframe is pivoted along the x and y column
+
+        See also
+        ---------
+        STAREDataFrame.to_array
+        """
+
+        arrays = {}
+
+        for column in self.columns:
+            if column in ['x', 'y']:
+                continue
+            arrays[column] = self.to_array(column, shape=shape, pivot=pivot)
+
+        return arrays
 
 
 def _dataframe_set_sids(self, col, inplace=False):
