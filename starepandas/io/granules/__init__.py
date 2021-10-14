@@ -105,7 +105,13 @@ def granule_factory(file_path, sidecar_path=None):
     return granule
 
 
-def read_granule(file_path, latlon=False, sidecar=False, sidecar_path=None, add_sids=False, adapt_resolution=True):
+def read_granule(file_path,
+                 latlon=False,
+                 sidecar=False,
+                 sidecar_path=None,
+                 add_sids=False,
+                 adapt_resolution=True,
+                 xy=False):
     """ Reads a granule into a STAREDataFrame
 
     Parameters
@@ -122,6 +128,8 @@ def read_granule(file_path, latlon=False, sidecar=False, sidecar_path=None, add_
         toggle whether to lookup stare indices
     adapt_resolution: bool
         toggle whether to adapt the resolution
+    xy: bool
+        toggle wheather to add array coordinates to the dataframe.
 
     Returns
     --------

@@ -614,6 +614,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         n_chunks: int
             Performance optimization; number of chunks to use for the stare dissolve.
         geom: bool
+
             Toggle if the geometry column is to be dissolved. Geom column Will be dropped if set to False.
         aggfunc: str
             aggregation function. E.g. 'first', 'sum', 'mean'.

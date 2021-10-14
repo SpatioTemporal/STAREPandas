@@ -63,13 +63,32 @@ class Granule:
         ds = starepandas.io.s3.nc4_dataset_wrapper(scp)
         self.stare_cover = ds['STARE_cover_{}'.format(self.nom_res)][:].astype(numpy.int64)
 
-    def to_df(self):
+    def to_df(self, xy=False):
+        """ Converts the granule object to a dataframe
+
+        Parameters
+        -----------
+        xy: bool
+            If true, add columns for the original array coordinates
+
+        """
         df = {}
         if self.lat is not None:
             df['lat'] = self.lat.flatten()
             df['lon'] = self.lon.flatten()
         if self.stare is not None:
             df['stare'] = self.stare.flatten()
+        if xy:
+            if self.lat is not None:
+                indices = numpy.indices(self.lat.shape)
+            elif self.stare is not None:
+                indices = numpy.indices(self.stare.shape)
+            else:
+                ds = list(self.data.values())[0]
+                indices = numpy.indices(ds.shape)
+            df['x'] = indices[0].flatten()
+            df['y'] = indices[1].flatten()
         for key in self.data.keys():
             df[key] = self.data[key].flatten()
         return starepandas.STAREDataFrame(df)
+
