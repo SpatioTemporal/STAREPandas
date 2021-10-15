@@ -17,7 +17,7 @@ class VIIRSL2(Granule):
     def read_latlon(self):        
         self.lat = self.netcdf.groups['geolocation_data']['latitude'][:].data.astype(numpy.double)
         self.lon = self.netcdf.groups['geolocation_data']['longitude'][:].data.astype(numpy.double)
-           
+
 
 class CLDMSKL2VIIRS(VIIRSL2):
     
@@ -99,9 +99,4 @@ class VNP02DNB(VIIRSL2):
         
     def read_latlon(self):
         pass
-        
-    def read_sidecar_cover(self, sidecar_path=None):
-        pass
-        
-    def read_sidecar_index(self, sidecar_path=None):
-        pass
+

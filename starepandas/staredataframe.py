@@ -4,9 +4,10 @@ import pystare
 import pandas
 import numpy
 import starepandas
+import netCDF4
 import starepandas.tools.trixel_conversions
 
-DEFAULT_SID_COLUMN_NAME = 'stare'
+DEFAULT_SID_COLUMN_NAME = 'sids'
 DEFAULT_TRIXEL_COLUMN_NAME = 'trixels'
 
 
@@ -176,6 +177,12 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         if not inplace:
             return frame
 
+    def has_trixels(self):
+        return self._trixel_column_name in self
+
+    def has_sids(self):
+        return self._sid_column_name in self
+
     def make_trixels(self, sid_column=None, n_workers=1):
         """
         Returns a Polygon or Multipolygon GeoSeries
@@ -203,7 +210,8 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
         if sid_column is None:
             sid_column = self._sid_column_name
-        trixels_series = starepandas.tools.trixel_conversions.trixels_from_stareseries(self[sid_column], n_workers=n_workers)
+        trixels_series = starepandas.tools.trixel_conversions.trixels_from_stareseries(self[sid_column],
+                                                                                       n_workers=n_workers)
         return trixels_series
 
     def set_trixels(self, col=None, inplace=False):
@@ -263,10 +271,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         >>> sids = numpy.array([3458764513820540928])
         >>> df = starepandas.STAREDataFrame(sids=sids)
         >>> df.trixel_vertices()
-        (array([29.9999996 , 45.00000069, 29.9999996 ]),
-        array([189.73560999, 315.        ,  80.26439001]),
-        array([80.264389]),
-        array([135.]))
+        (array([29.9999996 , 45.00000069, 29.9999996 ]), array([-170.26439001,  -45.        ,   80.26439001]), array([80.264389]), array([135.]))
         """
         return starepandas.tools.trixel_conversions.to_vertices(self[self._sid_column_name])
 
@@ -349,7 +354,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         >>> df = starepandas.STAREDataFrame(sids=sids)
         >>> centers = df.trixel_centerpoints()
         >>> print(centers[0])
-        POINT (135 80.26438899520529)
+        POINT (135 80.26438899520531)
         """
         if vertices:
             return starepandas.tools.trixel_conversions.vertices2centerpoints(vertices)
@@ -382,9 +387,9 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         >>> sids = numpy.array([3458764513820540928])
         >>> df = starepandas.STAREDataFrame(sids=sids)
         >>> df.trixel_corners()
-        array([[[189.73560999,  29.9999996 ],
-                [315.        ,  45.00000069],
-                [ 80.26439001,  29.9999996 ]]])
+        array([[[-170.26439001,  29.9999996 ],
+                [ -45.        ,  45.00000069],
+                [  80.26439001,  29.9999996 ]]])
         """
 
         if vertices:
@@ -481,12 +486,14 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         >>> ax = germany.plot(trixels=True, boundary=True, color='y', zorder=0)
         """
         if trixels:
+            if not self.has_trixels():
+                raise AttributeError('No trixels set (expected in "{}" column)'.format(self._trixel_column_name))
             boundary = True
             df = self.set_geometry(self._trixel_column_name, inplace=False)
         else:
             df = self.copy()
         if boundary:
-            df = df[df.geometry.is_empty==False]
+            df = df[df.geometry.is_empty == False]
             df = df.set_geometry(df.geometry.boundary)
         return geopandas.plotting.plot_dataframe(df, *args, **kwargs)
 
@@ -510,7 +517,8 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
         Examples
         --------
-        >>> germany = [4251398048237748227, 4269412446747230211, 4278419646001971203, 4539628424389459971, 4548635623644200963, 4566650022153682947]
+        >>> germany = [4251398048237748227, 4269412446747230211, 4278419646001971203,
+        ...            4539628424389459971, 4548635623644200963, 4566650022153682947]
         >>> cities = {'name': ['berlin', 'madrid'], 'sid': [4258121269174388239, 4288120002905386575]}
         >>> cities = starepandas.STAREDataFrame(cities, sids='sid')
         >>> cities.stare_intersects(germany)
@@ -605,7 +613,8 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         n_chunks: int
             Performance optimization; number of chunks to use for the stare dissolve.
         geom: bool
-            Toggle if the geometry column is to be dissolved.
+
+            Toggle if the geometry column is to be dissolved. Geom column Will be dropped if set to False.
         aggfunc: str
             aggregation function. E.g. 'first', 'sum', 'mean'.
 
@@ -625,12 +634,12 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             sids = starepandas.merge_stare(self[self._sid_column_name], dissolve_sids, n_workers, n_chunks)
             return sids
         else:
-            data = self.drop(columns=['stare', 'trixels'], errors='ignore')
+            data = self.drop(columns=[self._sid_column_name, self._trixel_column_name], errors='ignore')
             if geom:
-                aggregated_data = data.dissolve_stare(by=by, aggfunc=aggfunc, **kwargs)
+                aggregated_data = data.dissolve(by=by, aggfunc=aggfunc, **kwargs)
             else:
-                aggregated_data = data.groupby(by=by, **kwargs).agg(
-                    aggfunc)
+                data = data.drop(columns=[self._geometry_column_name], errors='ignore')
+                aggregated_data = data.groupby(by=by, **kwargs).agg(aggfunc)
 
         sids = self.groupby(group_keys=True, by=by)[self._sid_column_name].agg(starepandas.merge_stare,
                                                                                dissolve_sids,
@@ -666,7 +675,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         0    2299437706637111718
         1    2299435211084507590
         2    2299566194809236966
-        Name: stare, dtype: int64
+        Name: sids, dtype: int64
 
         """
 
@@ -733,7 +742,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         >>> world = geopandas.read_file(geopandas.datasets.get_path('naturalearth_lowres'))
         >>> germany  = world[world.name=='Germany']
         >>> germany = starepandas.STAREDataFrame(germany, add_sids=True, resolution=6, add_trixels=False)
-        >>> len(germany.stare.iloc[0])
+        >>> len(germany.sids.iloc[0])
         43
         >>> sids_singleres = germany.to_stare_singleres()
         >>> len(sids_singleres[0])
@@ -769,7 +778,8 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         >>> sdf.hex()
         ['0x0008000000000004', '0x0010000000000004']
 
-        >>> sdf = starepandas.STAREDataFrame(sids=[[2251799813685252, 4503599627370500], [4604930618986332164, 4607182418800017412]])
+        >>> sdf = starepandas.STAREDataFrame(sids=[[2251799813685252, 4503599627370500],
+        ...                                        [4604930618986332164, 4607182418800017412]])
         >>> sdf.hex()
         [['0x0008000000000004', '0x0010000000000004'], ['0x3fe8000000000004', '0x3ff0000000000004']]
         """
@@ -810,8 +820,126 @@ class STAREDataFrame(geopandas.GeoDataFrame):
     def _constructor(self):
         return STAREDataFrame
 
+    def to_array(self, column, shape=None, pivot=False):
+        """Converts the 'column' to a numpy array.
 
-def _dataframe_set_stare(self, col, inplace=False):
+        Either a shape argument has to be provided or the dataframe has to contain a column x and y
+        holding the original array coordinates.
+
+        If the dataframe has x/y columns, the column can also be pivoted. I.e. rather than
+        reshaping according to the shape, pivoted along the x/y columns.
+        This may be relevant if the dataframe's row order has changed.
+
+        Parameters
+        ----------
+        column: str
+            column name to be converted to an array
+        shape: tuple
+            x and y shape of the array. x*y has to equal the length of the dataframe
+        pivot: bool
+            if true, rather than simple reshaping, the dataframe is pivoted along the x and y column
+
+        Examples
+        ----------
+        >>> df = starepandas.STAREDataFrame({'x': [0, 0, 1, 1],
+        ...                                  'y': [1, 0, 0, 1],
+        ...                                  'a': [1, 2, 3, 4]})
+        >>> df.to_array('a', pivot=False)
+        array([[1, 2],
+               [3, 4]])
+
+        >>> df.to_array('a', pivot=True)
+        array([[2, 1],
+               [3, 4]])
+
+        See also
+        --------
+        STAREDataFrame.to_arrays
+
+        """
+        if shape is None:
+            shape = (max(self['x']) + 1, max(self['y']) + 1)
+
+        if pivot:
+            array = self.pivot(index='x', columns='y', values=column).to_numpy()
+        else:
+            array = self[column].to_numpy().reshape(shape)
+        return array
+
+    def to_sids_array(self, shape=None, pivot=False):
+        return self.to_array(self._sid_column_name, shape, pivot)
+
+    def to_arrays(self, shape=None, pivot=False):
+        """ Converts a STAREDataFrame into a dictionary of arrays; one array per column/field.
+
+        This may be useful to write data back to granules.
+        Either a shape argument has to be provided or the dataframe has to contain a column x and y
+        holding the original array coordinates.
+        If no shape is provided, the shape is assumed to be (max(x)+1, max(y)+1).
+
+        If the dataframe has x/y columns, the column can also be pivoted. I.e. rather than
+        reshaping according to the shape, pivoted along the x/y columns.
+        This may be relevant if the dataframe's row order has changed.
+
+        Parameters
+        ----------
+        shape: tuple
+            x and y shape of the array. x*y has to equal the length of the dataframe
+        pivot: bool
+            if true, rather than simple reshaping, the dataframe is pivoted along the x and y column
+
+        See also
+        ---------
+        STAREDataFrame.to_array
+        """
+
+        arrays = {}
+
+        for column in self.columns:
+            if column in ['x', 'y']:
+                continue
+            arrays[column] = self.to_array(column, shape=shape, pivot=pivot)
+
+        return arrays
+
+    def to_sidecar(self, fname, cover=False, shuffle=True, zlib=True):
+        """ Writes STARE Sidecar
+
+        """
+        sids = self.to_array(self._sid_column_name)
+        #lat = self.to_array(self['lat'])
+        #lon = self.to_array(self['lon'])
+        if cover:
+            sids_cover = self.stare_dissolve()
+            l = sids_cover.size
+        i = sids.shape[0]
+        j = sids.shape[1]
+        with netCDF4.Dataset(fname, 'w', format="NETCDF4") as rootgrp:
+            rootgrp.createDimension('i', i)
+            rootgrp.createDimension('j', j)
+
+            sids_netcdf = rootgrp.createVariable(varname='STARE_index',
+                                                 datatype='u8',
+                                                 dimensions=('i', 'j'),
+                                                 chunksizes=[i, j],
+                                                 shuffle=shuffle,
+                                                 zlib=zlib)
+            sids_netcdf.long_name = 'SpatioTemporal Adaptive Resolution Encoding (STARE) index'
+            sids_netcdf[:, :] = sids
+            if cover:
+                rootgrp.createDimension('l', l)
+                cover_netcdf = rootgrp.createVariable(varname='STARE_cover',
+                                                      datatype='u8',
+                                                      dimensions=('l'),
+                                                      chunksizes=[l],
+                                                      shuffle=shuffle,
+                                                      zlib=zlib)
+                cover_netcdf.long_name = 'SpatioTemporal Adaptive Resolution Encoding (STARE) cover'
+                cover_netcdf[:] = sids_cover
+
+
+def _dataframe_set_sids(self, col, inplace=False):
+    # We create a function here so that we can take conventional DataFrames and convert them to sdfs
     if inplace:
         raise ValueError(
             "Can't do inplace setting when converting from (Geo)DataFrame to STAREDataFrame"
@@ -821,5 +949,5 @@ def _dataframe_set_stare(self, col, inplace=False):
     return sdf.set_sids(col, inplace=False)
 
 
-geopandas.GeoDataFrame.set_stare = _dataframe_set_stare
-pandas.DataFrame.set_stare = _dataframe_set_stare
+geopandas.GeoDataFrame.set_sids = _dataframe_set_sids
+pandas.DataFrame.set_sids = _dataframe_set_sids

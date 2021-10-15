@@ -1,4 +1,4 @@
-STAREDataFrame
+starepandas.STAREDataFrame
 ====================================
 .. currentmodule:: starepandas
 
@@ -64,6 +64,8 @@ IO
 
     STAREDataFrame.write_pods
     STAREDataFrame.to_scidb
+    STAREDataFrame.to_array
+    STAREDataFrame.to_arrays
 
 Plotting
 -----------

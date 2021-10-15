@@ -481,8 +481,11 @@ def merge_stare(sids, dissolve_sids=True, n_workers=1, n_chunks=1):
     """
 
     if isinstance(sids, pandas.Series):
-        # If we receive a series of SID collections we merge all sids into a single 1D array
-        sids = numpy.concatenate(sids.array)
+        sids = sids.to_numpy()
+        if sids.dtype == numpy.dtype('O'):
+            # If we receive a series of SID collections we merge all sids into a single 1D array
+            # to_numpy() would have produced an array of lists in this case
+            sids = numpy.concatenate(sids)
 
     # Remove duplicate SIDs
     dissolved = numpy.unique(sids)

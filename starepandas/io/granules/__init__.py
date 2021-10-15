@@ -8,7 +8,6 @@ from .atms import ATMS
 
 
 class UnsuportedFileError(Exception):
-
     def __init__(self, file_path):
         self.file_path = file_path
         self.message = 'cannot handle {}'.format(file_path)
@@ -94,7 +93,7 @@ def granule_factory(file_path, sidecar_path=None):
         granule = VNP03DNB(file_path, sidecar_path)
     elif re.search('VNP03MOD|VJ103MOD', file_path, re.IGNORECASE):
         granule = VNP03MOD(file_path, sidecar_path)
-    elif re.search('CLDMSKL2VIIRS', file_path, re.IGNORECASE):
+    elif re.search('CLDMSK_L2_VIIRS', file_path, re.IGNORECASE):
         granule = CLDMSKL2VIIRS(file_path, sidecar_path)
     elif re.search('SSMIS', file_path, re.IGNORECASE):
         granule = SSMIS(file_path, sidecar_path)
@@ -106,7 +105,13 @@ def granule_factory(file_path, sidecar_path=None):
     return granule
 
 
-def read_granule(file_path, latlon=False, sidecar=False, sidecar_path=None, add_stare=False, adapt_resolution=True):
+def read_granule(file_path,
+                 latlon=False,
+                 sidecar=False,
+                 sidecar_path=None,
+                 add_sids=False,
+                 adapt_resolution=True,
+                 xy=False):
     """ Reads a granule into a STAREDataFrame
 
     Parameters
@@ -119,10 +124,12 @@ def read_granule(file_path, latlon=False, sidecar=False, sidecar_path=None, add_
         toggle whether to read the sidecar file
     sidecar_path: str
         path of the sidecar file. If not provided, it is assumed to be ${file_path}_stare.nc
-    add_stare: bool
+    add_sids: bool
         toggle whether to lookup stare indices
     adapt_resolution: bool
         toggle whether to adapt the resolution
+    xy: bool
+        toggle wheather to add array coordinates to the dataframe.
 
     Returns
     --------
@@ -137,7 +144,7 @@ def read_granule(file_path, latlon=False, sidecar=False, sidecar_path=None, add_
 
     granule = granule_factory(file_path, sidecar_path)
 
-    if add_stare:
+    if add_sids:
         latlon = True
         sidecar = False
 
@@ -148,8 +155,8 @@ def read_granule(file_path, latlon=False, sidecar=False, sidecar_path=None, add_
 
     if sidecar:
         granule.read_sidecar_index(sidecar_path)
-    elif add_stare:
-        granule.add_stare(adapt_resolution)
+    elif add_sids:
+        granule.add_sids(adapt_resolution)
 
-    df = granule.to_df()
+    df = granule.to_df(xy=xy)
     return df

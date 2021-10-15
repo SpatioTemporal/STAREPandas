@@ -89,7 +89,7 @@ class SSMIS(Granule):
 
         self.read_timestamps()
 
-    def add_stare(self, adapt_resolution=True):
+    def add_sids(self, adapt_resolution=True):
         self.stare = {}
         for scan in self.scans:
             self.stare[scan] = pystare.from_latlon2D(lat=self.lat[scan], lon=self.lon[scan],
