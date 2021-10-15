@@ -22,8 +22,8 @@ class SSMIS(Granule):
         self.lat = {}
         self.lon = {}
         for scan in self.scans:
-            self.lat[scan] = self.netcdf.groups[scan]['Latitude'][:].data.astype(numpy.double)
-            self.lon[scan] = self.netcdf.groups[scan]['Longitude'][:].data.astype(numpy.double)
+            self.lat[scan] = self.netcdf.groups[scan]['Latitude'][:].astype(numpy.double)
+            self.lon[scan] = self.netcdf.groups[scan]['Longitude'][:].astype(numpy.double)
 
     def read_timestamp_scan(self, scan):
         year = self.netcdf.groups[scan]['ScanTime']['Year'][:]

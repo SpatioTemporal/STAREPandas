@@ -1,6 +1,7 @@
 from starepandas.io.granules.ssmis import SSMIS
 import numpy
 
+
 class ATMS(SSMIS):
     
     def read_timestamps(self):
