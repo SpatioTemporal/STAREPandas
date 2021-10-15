@@ -99,9 +99,4 @@ class VNP02DNB(VIIRSL2):
         
     def read_latlon(self):
         pass
-        
-    def read_sidecar_cover(self, sidecar_path=None):
-        pass
-        
-    def read_sidecar_index(self, sidecar_path=None):
-        pass
+

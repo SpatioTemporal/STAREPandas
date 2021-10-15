@@ -44,9 +44,9 @@ class Granule:
         self.stare = pystare.from_latlon_2d(lat=self.lat, lon=self.lon, adapt_level=adapt_resolution)
 
     def read_sidecar_index(self, sidecar_path=None):
-        if sidecar_path:
+        if sidecar_path is not None:
             scp = sidecar_path
-        elif self.sidecar_path:
+        elif self.sidecar_path is not None:
             scp = self.sidecar_path
         else:
             scp = self.guess_sidecar_path()
@@ -82,7 +82,7 @@ class Granule:
             df['lat'] = self.lat.flatten()
             df['lon'] = self.lon.flatten()
         if self.stare is not None:
-            df['stare'] = self.stare.flatten()
+            df['sids'] = self.stare.flatten()
         if xy:
             if self.lat is not None:
                 indices = numpy.indices(self.lat.shape)

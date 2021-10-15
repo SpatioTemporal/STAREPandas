@@ -158,5 +158,5 @@ def read_granule(file_path,
     elif add_sids:
         granule.add_sids(adapt_resolution)
 
-    df = granule.to_df()
+    df = granule.to_df(xy=xy)
     return df

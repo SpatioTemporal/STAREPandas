@@ -4,6 +4,7 @@ import pystare
 import pandas
 import numpy
 import starepandas
+import netCDF4
 import starepandas.tools.trixel_conversions
 
 DEFAULT_SID_COLUMN_NAME = 'sids'
@@ -857,13 +858,16 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
         """
         if shape is None:
-            shape = (max(self['x'])+1, max(self['y'])+1)
+            shape = (max(self['x']) + 1, max(self['y']) + 1)
 
         if pivot:
             array = self.pivot(index='x', columns='y', values=column).to_numpy()
         else:
             array = self[column].to_numpy().reshape(shape)
         return array
+
+    def to_sids_array(self, shape=None, pivot=False):
+        return self.to_array(self._sid_column_name, shape, pivot)
 
     def to_arrays(self, shape=None, pivot=False):
         """ Converts a STAREDataFrame into a dictionary of arrays; one array per column/field.
@@ -897,6 +901,41 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             arrays[column] = self.to_array(column, shape=shape, pivot=pivot)
 
         return arrays
+
+    def to_sidecar(self, fname, cover=False, shuffle=True, zlib=True):
+        """ Writes STARE Sidecar
+
+        """
+        sids = self.to_array(self._sid_column_name)
+        #lat = self.to_array(self['lat'])
+        #lon = self.to_array(self['lon'])
+        if cover:
+            sids_cover = self.stare_dissolve()
+            l = sids_cover.size
+        i = sids.shape[0]
+        j = sids.shape[1]
+        with netCDF4.Dataset(fname, 'w', format="NETCDF4") as rootgrp:
+            rootgrp.createDimension('i', i)
+            rootgrp.createDimension('j', j)
+
+            sids_netcdf = rootgrp.createVariable(varname='STARE_index',
+                                                 datatype='u8',
+                                                 dimensions=('i', 'j'),
+                                                 chunksizes=[i, j],
+                                                 shuffle=shuffle,
+                                                 zlib=zlib)
+            sids_netcdf.long_name = 'SpatioTemporal Adaptive Resolution Encoding (STARE) index'
+            sids_netcdf[:, :] = sids
+            if cover:
+                rootgrp.createDimension('l', l)
+                cover_netcdf = rootgrp.createVariable(varname='STARE_cover',
+                                                      datatype='u8',
+                                                      dimensions=('l'),
+                                                      chunksizes=[l],
+                                                      shuffle=shuffle,
+                                                      zlib=zlib)
+                cover_netcdf.long_name = 'SpatioTemporal Adaptive Resolution Encoding (STARE) cover'
+                cover_netcdf[:] = sids_cover
 
 
 def _dataframe_set_sids(self, col, inplace=False):
