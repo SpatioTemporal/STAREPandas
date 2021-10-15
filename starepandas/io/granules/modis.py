@@ -11,15 +11,17 @@ def get_hdfeos_metadata(file_path):
     metadata['StructMetadata']  = get_metadata_group(hdf, 'StructMetadata')
     metadata['CoreMetadata']    = get_metadata_group(hdf, 'CoreMetadata')    
     return metadata
-    
+
+
 def get_metadata_group(hdf, group_name):
     metadata_group = {}
     keys = [s for s in hdf.attributes().keys() if group_name in s]
     for key in keys:    
         string = hdf.attributes()[key]
         m = parse_hdfeos_metadata(string)
-        metadata_group  = {**metadata_group, **m}    
+        metadata_group = {**metadata_group, **m}
     return metadata_group
+
 
 def parse_hdfeos_metadata(string):
     out = {} 
@@ -34,12 +36,12 @@ def parse_hdfeos_metadata(string):
         else:
             lines.append(line)
     i = -1
-    while i<(len(lines))-1:        
-        i+=1
+    while i < (len(lines))-1:
+        i += 1
         line = lines[i]
         if "=" in line:
             key = line.split('=')[0]
-            value = '='.join(line.split('=')[1:])#.join('=')
+            value = '='.join(line.split('=')[1:])
             if key in ['GROUP', 'OBJECT']:
                 endIdx = lines[i+1:].index('END_{}={}'.format(key, value))
                 endIdx += i+1
