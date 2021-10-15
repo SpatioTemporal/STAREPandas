@@ -9,4 +9,5 @@ Examples
     Dissolving <notebooks/dissolve.ipynb>
     Enclaves <notebooks/enclaves.ipynb>
     Granules <notebooks/granules.ipynb>
+    Granules <notebooks/read_granules.ipynb>
     Temporal <notebooks/temporal.ipynb>

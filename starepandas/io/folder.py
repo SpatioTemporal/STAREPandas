@@ -34,6 +34,7 @@ def slam(client, action, data, partition_factor=1.5, dbg=0):
 def make_row(granule_path, add_sf=False):
     granule = starepandas.io.granules.granule_factory(granule_path)
 
+    granule.sidecar_path = granule.guess_sidecar_path()
     if not granule.sidecar_path:
         print('no sidecar found for {}'.format(granule_path))
         return None

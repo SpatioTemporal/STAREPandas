@@ -128,7 +128,7 @@ def vertices2centerpoints(vertices):
     >>> vertices = starepandas.tools.to_vertices(sids)
     >>> points = starepandas.vertices2centerpoints(vertices)
     >>> print(points[0])
-    POINT (251.5650509020583 24.09484285959212)
+    POINT (-108.4349490979417 24.09484285959212)
     """
 
     lat_center = vertices[2]
@@ -158,9 +158,10 @@ def vertices2corners(vertices):
     >>> sids = numpy.array([3458764513820540928])
     >>> vertices = starepandas.tools.trixel_conversions.to_vertices(sids)
     >>> starepandas.vertices2corners(vertices)
-    array([[[189.73560999,  29.9999996 ],
-            [315.        ,  45.00000069],
-            [ 80.26439001,  29.9999996 ]]])
+    array([[[-170.26439001,   29.9999996 ],
+            [ -45.        ,   45.00000069],
+            [  80.26439001,   29.9999996 ]]])
+
     """
 
     lats = vertices[0]
@@ -327,7 +328,7 @@ def to_centerpoints(sids):
     >>> sids = [4611263805962321926, 4611404543450677254]
     >>> centerpoints = starepandas.to_centerpoints(sids)
     >>> print(centerpoints[0])
-    POINT (19.50219017924583 23.29074702177385)
+    POINT (19.50219017924582 23.29074702177385)
     """
 
     vertices = to_vertices(sids)
@@ -496,7 +497,7 @@ def trixels_from_stareseries(sids_series, n_workers=1):
     >>> import starepandas
     >>> sids = [4611686018427387903, 4611686018427387903]
     >>> sdf = starepandas.STAREDataFrame(sids=sids)
-    >>> trixels = starepandas.trixels_from_stareseries(sdf.stare)
+    >>> trixels = starepandas.trixels_from_stareseries(sdf.sids)
     """
 
     if n_workers > len(sids_series):
