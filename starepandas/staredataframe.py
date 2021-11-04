@@ -6,9 +6,20 @@ import numpy
 import starepandas
 import netCDF4
 import starepandas.tools.trixel_conversions
+import multiprocessing
 
 DEFAULT_SID_COLUMN_NAME = 'sids'
 DEFAULT_TRIXEL_COLUMN_NAME = 'trixels'
+
+
+def compress_sids_group(group):
+    sids = group[1].to_numpy()
+    if sids.dtype == numpy.dtype('O'):
+        # If we receive a series of SID collections we merge all sids into a single 1D array
+        # to_numpy() would have produced an array of lists in this case
+        sids = numpy.concatenate(sids)
+    sids = starepandas.compress_sids(sids)
+    return tuple([group[0], sids])
 
 
 class STAREDataFrame(geopandas.GeoDataFrame):
@@ -595,8 +606,8 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             data.append(pystare.intersection(srange, other))
         return pandas.Series(data, index=self.index)
 
-    def stare_dissolve(self, by=None, dissolve_sids=True, n_workers=1,
-                       n_chunks=1, geom=False, aggfunc="first", **kwargs):
+    def stare_dissolve(self, by=None, compress_sids=True, n_workers=1,
+                       geom=False, aggfunc="first", **kwargs):
         """
         Dissolves a dataframe subject to a field. I.e. grouping by a field/column.
         Seminal method to GeoDataFrame.dissolve()
@@ -605,13 +616,11 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         -------------
         by: str
             column to use the dissolve on. If None, dissolve all rows.
-        dissolve_sids: bool
+        compress_sids: bool
             Toggle if STARE index values get dissolved. If not, sids will be appended.
             If not dissolved, there may be repetitive sids and sids that could get merged into the parent sid.
         n_workers: int
             workers to use for the dissolve
-        n_chunks: int
-            Performance optimization; number of chunks to use for the stare dissolve.
         geom: bool
 
             Toggle if the geometry column is to be dissolved. Geom column Will be dropped if set to False.
@@ -631,7 +640,12 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         North America  [1170935903116328964, 1173187702930014212, 117...  ...  23505137.0
         """
         if by is None:
-            sids = starepandas.merge_stare(self[self._sid_column_name], dissolve_sids, n_workers, n_chunks)
+            sids = self[self._sid_column_name].to_numpy()
+            if sids.dtype == numpy.dtype('O'):
+                # If we receive a series of SID collections we merge all sids into a single 1D array
+                # to_numpy() would have produced an array of lists in this case
+                sids = numpy.concatenate(sids)
+            sids = starepandas.compress_sids(sids)
             return sids
         else:
             data = self.drop(columns=[self._sid_column_name, self._trixel_column_name], errors='ignore')
@@ -641,10 +655,19 @@ class STAREDataFrame(geopandas.GeoDataFrame):
                 data = data.drop(columns=[self._geometry_column_name], errors='ignore')
                 aggregated_data = data.groupby(by=by, **kwargs).agg(aggfunc)
 
-        sids = self.groupby(group_keys=True, by=by)[self._sid_column_name].agg(starepandas.merge_stare,
-                                                                               dissolve_sids,
-                                                                               n_workers, n_chunks)
-        sdf = starepandas.STAREDataFrame(sids, sids=self._sid_column_name)
+        sids_groups = self.groupby(group_keys=True, by=by)[self._sid_column_name]
+
+        if n_workers == 1:
+            dissolved = []
+            for group in sids_groups:
+                dissolved.append(compress_sids_group(group))
+        else:
+            with multiprocessing.Pool(processes=n_workers) as pool:
+                dissolved = pool.map(compress_sids_group, [group for group in sids_groups])
+
+        sdf = STAREDataFrame(dissolved, columns=[by, self._sid_column_name])
+        sdf.set_index(by, inplace=True)
+        sdf.set_sids(self._sid_column_name, inplace=True)
 
         aggregated = sdf.join(aggregated_data)
         return aggregated

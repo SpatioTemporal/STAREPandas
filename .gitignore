@@ -10,4 +10,4 @@ examples/dask-worker-space/*
 .eggs/*
 *.kate-swp
 docs/source/docs/reference/api/*
-
+.idea/*
