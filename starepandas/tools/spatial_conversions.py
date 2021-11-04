@@ -400,7 +400,7 @@ def sids_from_multipolygon(multipolygon, resolution, convex=False, force_ccw=Fal
     return range_indices
 
 
-def dissolve_stare(sids):
+def compress_sids(sids):
     """ Dissolve STARE index values.
     Combine/dissolve sibiling sids into the parent sids. That is:
     1. Any 4 siblings with the same parent in the collection get replaced by the parent. And
@@ -425,7 +425,7 @@ def dissolve_stare(sids):
     >>> import starepandas
     >>> # The two latter SIDs are contained in the first SID
     >>> sids = [4035225266123964416, 4254212798004854789, 4255901647865118724]
-    >>> starepandas.dissolve_stare(sids)
+    >>> starepandas.compress_sids(sids)
     array([4035225266123964416])
 
     Notes
@@ -437,79 +437,6 @@ def dissolve_stare(sids):
     s_range = pystare.to_compressed_range(sids)
     expanded = pystare.expand_intervals(s_range, -1, multi_resolution=True)
     return expanded
-
-
-def merge_stare(sids, dissolve_sids=True, n_workers=1, n_chunks=1):
-    """ Merges a collection (of a collection) of sids. I.e.
-
-    1. Flatten the colection
-    2. Remove duplicates
-    3. Combine/dissolve sibiling sids into the parent sids.  C.f. :func:`~dissolve_stare`
-
-    See Also
-    ----------
-    dissolve_stare
-
-    Parameters
-    -----------
-    sids: array / list
-        a list of collections of SIDs; such as a Series of sids
-    dissolve_sids: bool
-        toggle if sids should be dissolved. I.e. combining ancestors into parent sids when possible
-    n_workers: int
-        number of workers to use. (only relevant for dissolve / if dissolve=True)
-    n_chunks: int
-         Performance parameter. If n_chunks >1, the sid collection will be split into n_chunks for the dissolve.
-
-    Returns
-    --------
-    sids: numpy.array
-        merged SIDs
-
-    Examples
-    ----------
-    >>> import starepandas
-    >>> import pandas
-    >>> sids = pandas.Series([[4035225266123964416],
-    ...                       [4254212798004854789, 4255901647865118724]])
-    >>> starepandas.merge_stare(sids)
-    [4035225266123964416]
-
-    >>> sids = [4035225266123964416, 4254212798004854789, 4255901647865118724]
-    >>> starepandas.merge_stare(sids)
-    [4035225266123964416]
-    """
-
-    if isinstance(sids, pandas.Series):
-        sids = sids.to_numpy()
-        if sids.dtype == numpy.dtype('O'):
-            # If we receive a series of SID collections we merge all sids into a single 1D array
-            # to_numpy() would have produced an array of lists in this case
-            sids = numpy.concatenate(sids)
-
-    # Remove duplicate SIDs
-    dissolved = numpy.unique(sids)
-
-    if not dissolve_sids:
-        return list(dissolved)
-
-    if n_workers == 1 and n_chunks == 1:
-        dissolved = dissolve_stare(dissolved)
-    else:
-        if n_workers > 1:
-            chunks = numpy.array_split(dissolved, n_workers)
-            with multiprocessing.Pool(processes=n_workers) as pool:
-                dissolved = pool.map(dissolve_stare, chunks)
-        elif n_chunks > 1:
-            chunks = numpy.array_split(dissolved, n_chunks)
-            dissolved = []
-            for chunk in chunks:
-                dissolved.append(dissolve_stare(chunk))
-        dissolved = numpy.concatenate(dissolved)
-        dissolved = numpy.unique(dissolved)
-        dissolved = dissolve_stare(dissolved)
-
-    return list(dissolved)
 
 
 def series_intersects(series, other, method='skiplist', n_workers=1):
