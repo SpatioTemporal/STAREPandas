@@ -9,7 +9,6 @@ os.environ["OMP_NUM_THREADS"] = "1"
 
 import numpy
 import pystare
-import multiprocessing
 
 
 def sids_from_gdf(gdf, resolution, convex=False, force_ccw=True, n_workers=1):
@@ -89,22 +88,27 @@ def sids_from_geoseries(series, resolution, convex=False, force_ccw=True, n_work
     [array([4251398048237748227, 4269412446747230211, 4278419646001971203,
            4539628424389459971, 4548635623644200963, 4566650022153682947])]
     """
-    if n_workers > len(series):
+
+    if len(series) == 1:
+        n_workers = 1
+    elif n_workers >= len(series):
         # Cannot have more partitions than rows
         n_workers = len(series) - 1
 
     if n_workers == 1:
-        stare = []
+        sids = []
         for geom in series:
-            sids = sids_from_shapely(geom=geom, resolution=resolution, convex=convex, force_ccw=force_ccw)
-            stare.append(sids)
+            sids_row = sids_from_shapely(geom=geom, resolution=resolution, convex=convex, force_ccw=force_ccw)
+            sids.append(sids_row)
+        #sids = numpy.array(sids, dtype='object')  # Has to be object to suppress VisibleDeprecationWarning
     else:
         ddf = dask.dataframe.from_pandas(series, npartitions=n_workers)
-        meta = {'stare': 'int64'}
-        res = ddf.map_partitions(lambda df: numpy.array(sids_from_geoseries(df, resolution, convex, force_ccw, 1)),
+        meta = {'sids': 'int64'}
+        res = ddf.map_partitions(lambda df: numpy.array(sids_from_geoseries(df, resolution, convex, force_ccw, 1), dtype='object'),
                                  meta=meta)
-        stare = res.compute(scheduler='processes')
-    return stare
+        sids = res.compute(scheduler='processes')
+        sids = sids.tolist()
+    return sids
 
 
 def sids_from_xy(lon, lat, resolution):
@@ -473,9 +477,11 @@ def series_intersects(series, other, method='skiplist', n_workers=1):
     # Make sure other is iterable
     other = numpy.array([other]).flatten()
 
-    if n_workers > len(series):
-        # Cannot have more partitions than rows        
-        n_workers = len(series)
+    if len(series) == 1:
+        n_workers = 1
+    elif n_workers >= len(series):
+        # Cannot have more partitions than rows
+        n_workers = len(series) - 1
 
     if n_workers == 1:
         if series.dtype == numpy.int64:
@@ -489,14 +495,16 @@ def series_intersects(series, other, method='skiplist', n_workers=1):
                     intersects.append(pystare.intersects(sids, other, method).any())
                 else:
                     intersects.append(pystare.intersects(other, sids, method).any())
-            intersects = numpy.array(intersects)
+            intersects = numpy.array(intersects, dtype='bool')
     else:
-        if n_workers > len(series):
-            # Cannot have more partitions than rows        
-            n_workers = len(series)
         ddf = dask.dataframe.from_pandas(series, npartitions=n_workers)
         meta = {'intersects': 'bool'}
-        res = ddf.map_partitions(lambda df: series_intersects(df, other, method, 1), meta=meta)
+        res = ddf.map_partitions(lambda df: numpy.array(series_intersects(df, other, method, 1)), meta=meta)
         intersects = res.compute(scheduler='processes')
     return intersects
+
+
+
+
+
 
