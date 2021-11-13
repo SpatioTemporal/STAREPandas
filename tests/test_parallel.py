@@ -1,6 +1,8 @@
 import starepandas
 import geopandas
-
+countries = geopandas.read_file(geopandas.datasets.get_path('naturalearth_lowres'))
+iceland = countries[countries.name == 'Iceland']
+sids = starepandas.sids_from_gdf(iceland, resolution=8, force_ccw=True)
 
 def test_sid_lookup():
     countries = geopandas.read_file(geopandas.datasets.get_path('naturalearth_lowres'))
@@ -21,7 +23,23 @@ def test_intersects():
     countries = geopandas.read_file(geopandas.datasets.get_path('naturalearth_lowres'))
     iceland = countries[countries.name == 'Iceland']
     sids = starepandas.sids_from_gdf(iceland, resolution=8, force_ccw=True)
+    #sids = sids.astype('int64')
     fname = starepandas.datasets.get_path('MOD05_L2.A2019336.0000.061.2019336211522.hdf')
     modis = starepandas.read_granule(fname, latlon=False, sidecar=True)
     intersects = modis.stare_intersects(other=sids[0], n_workers=2)
     assert 1384 == sum(intersects)
+
+
+def test_issue62():
+    # This leads to len(series) > n_workers. resulting in nworkers=0 and thus division by zero
+    countries = geopandas.read_file(geopandas.datasets.get_path('naturalearth_lowres'))
+    starepandas.sids_from_geoseries(countries[0:1].geometry, resolution=6,  n_workers=2)
+
+
+def test_issue62_2():
+    # This leads to more workers than len(series) resulting in a ValueError
+    countries = geopandas.read_file(geopandas.datasets.get_path('naturalearth_lowres'))
+    starepandas.sids_from_geoseries(countries[0:3].geometry, resolution=6,  n_workers=3)
+
+
+

@@ -511,7 +511,9 @@ def trixels_from_stareseries(sids_series, n_workers=1):
             trixels_series.append(trixels)
     else:
         ddf = dask.dataframe.from_pandas(sids_series, npartitions=n_workers)
-        meta = {'trixels': 'object'}
-        res = ddf.map_partitions(lambda df: numpy.array(trixels_from_stareseries(df, 1)).flatten(), meta=meta)
+        meta = {'trixels': 'int64'}
+        res = ddf.map_partitions(lambda df: numpy.array(trixels_from_stareseries(df, 1), dtype='object').flatten(), meta=meta)
         trixels_series = res.compute(scheduler='processes')
+        trixels_series = list(trixels_series)
+
     return trixels_series
