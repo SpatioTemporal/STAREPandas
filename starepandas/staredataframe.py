@@ -491,6 +491,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         Examples
         --------
         >>> import starepandas
+        >>> import geopandas
         >>> world = geopandas.read_file(geopandas.datasets.get_path('naturalearth_lowres'))
         >>> germany = world[world.name=='Germany']
         >>> germany = starepandas.STAREDataFrame(germany, add_sids=True, resolution=8, add_trixels=True, n_workers=1)

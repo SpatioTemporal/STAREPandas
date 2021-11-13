@@ -100,7 +100,6 @@ def sids_from_geoseries(series, resolution, convex=False, force_ccw=True, n_work
         for geom in series:
             sids_row = sids_from_shapely(geom=geom, resolution=resolution, convex=convex, force_ccw=force_ccw)
             sids.append(sids_row)
-        #sids = numpy.array(sids, dtype='object')  # Has to be object to suppress VisibleDeprecationWarning
     else:
         ddf = dask.dataframe.from_pandas(series, npartitions=n_workers)
         meta = {'sids': 'int64'}
