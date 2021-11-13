@@ -89,7 +89,7 @@ def sids_from_geoseries(series, resolution, convex=False, force_ccw=True, n_work
            4539628424389459971, 4548635623644200963, 4566650022153682947])]
     """
 
-    if len(series) == 1:
+    if len(series) <= 1:
         n_workers = 1
     elif n_workers >= len(series):
         # Cannot have more partitions than rows
@@ -476,7 +476,7 @@ def series_intersects(series, other, method='skiplist', n_workers=1):
     # Make sure other is iterable
     other = numpy.array([other]).flatten()
 
-    if len(series) == 1:
+    if len(series) <= 1:
         n_workers = 1
     elif n_workers >= len(series):
         # Cannot have more partitions than rows

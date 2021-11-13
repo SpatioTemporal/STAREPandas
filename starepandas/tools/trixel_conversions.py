@@ -499,8 +499,9 @@ def trixels_from_stareseries(sids_series, n_workers=1):
     >>> sdf = starepandas.STAREDataFrame(sids=sids)
     >>> trixels = starepandas.trixels_from_stareseries(sdf.sids)
     """
-
-    if n_workers > len(sids_series):
+    if len(sids_series) <= 1:
+        n_workers = 1
+    elif n_workers >= len(sids_series):
         # Cannot have more partitions than rows
         n_workers = len(sids_series) - 1
 
@@ -514,6 +515,7 @@ def trixels_from_stareseries(sids_series, n_workers=1):
         meta = {'trixels': 'int64'}
         res = ddf.map_partitions(lambda df: numpy.array(trixels_from_stareseries(df, 1), dtype='object').flatten(), meta=meta)
         trixels_series = res.compute(scheduler='processes')
-        trixels_series = list(trixels_series)
+        # Since the array would be ragged, we are probably safer with a list of arrays
+        trixels_series = trixels_series.tolist()
 
     return trixels_series
