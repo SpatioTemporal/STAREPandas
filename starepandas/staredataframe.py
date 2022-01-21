@@ -23,34 +23,7 @@ def compress_sids_group(group):
 
 
 class STAREDataFrame(geopandas.GeoDataFrame):
-    """
-    A STAREDataFrame object is a pandas.DataFrame that has a special column
-    with STARE indices and optionally a special column holding the trixel representation.
-    In addition to the standard DataFrame constructor arguments,
-    STARE also accepts the following keyword arguments:
 
-    Parameters
-    ----------
-    sids : str or array-like
-        If str, column to use as stare column. If array, will be set as 'stare' column on STAREDataFrame.
-    add_sids : bool
-        If true, STARE index values will be generated using a geometry column
-    resolution: int
-        If add_stare is True, then use resolution as the maximum STARE resolution.
-    trixels : str or array-like
-        If str, column to use as trixel column. If array, will be set as 'trixel' column on STAREDataFrame.
-    add_trixels : bool
-        If true, trixels will be generated from the STARE column.
-
-    Examples
-    ---------
-    >>> cities = ['Buenos Aires', 'Brasilia', 'Santiago', 'Bogota', 'Caracas']
-    >>> latitudes = [-34.58, -15.78, -33.45, 4.60, 10.48]
-    >>> longitudes = [-58.66, -47.91, -70.66, -74.08, -66.86]
-    >>> data =  {'City': cities, 'Latitude': latitudes, 'Longitude': longitudes}
-    >>> sids = starepandas.sids_from_xy(longitudes, latitudes, resolution=5)
-    >>> sdf = starepandas.STAREDataFrame(data, sids=sids)
-    """
 
     _metadata = ['_sid_column_name', '_trixel_column_name', '_geometry_column_name', '_crs']
 
@@ -61,6 +34,34 @@ class STAREDataFrame(geopandas.GeoDataFrame):
                  sids=None, add_sids=False, resolution=None,
                  trixels=None, add_trixels=False, n_workers=1,
                  **kwargs):
+        """
+        A STAREDataFrame object is a pandas.DataFrame that has a special column
+        with STARE indices and optionally a special column holding the trixel representation.
+        In addition to the standard DataFrame constructor arguments,
+        STARE also accepts the following keyword arguments:
+
+        Parameters
+        ----------
+        sids : str or array-like
+            If str, column to use as stare column. If array, will be set as 'stare' column on STAREDataFrame.
+        add_sids : bool
+            If true, STARE index values will be generated using a geometry column
+        resolution: int
+            If add_stare is True, then use resolution as the maximum STARE resolution.
+        trixels : str or array-like
+            If str, column to use as trixel column. If array, will be set as 'trixel' column on STAREDataFrame.
+        add_trixels : bool
+            If true, trixels will be generated from the STARE column.
+
+        Examples
+        ---------
+        >>> cities = ['Buenos Aires', 'Brasilia', 'Santiago', 'Bogota', 'Caracas']
+        >>> latitudes = [-34.58, -15.78, -33.45, 4.60, 10.48]
+        >>> longitudes = [-58.66, -47.91, -70.66, -74.08, -66.86]
+        >>> data =  {'City': cities, 'Latitude': latitudes, 'Longitude': longitudes}
+        >>> sids = starepandas.sids_from_xy(longitudes, latitudes, resolution=5)
+        >>> sdf = starepandas.STAREDataFrame(data, sids=sids)
+        """
 
         super(STAREDataFrame, self).__init__(*args, **kwargs)
 

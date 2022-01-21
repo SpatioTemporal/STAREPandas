@@ -2,13 +2,15 @@ starepandas.STAREDataFrame
 ====================================
 .. currentmodule:: starepandas
 
+A STAREDataFrame object is a pandas.DataFrame that has a special column
+with STARE indices and optionally a special column holding the trixel representation.
 
 Constructor
 -----------
 .. autosummary::
     :toctree: api/
 
-    STAREDataFrame.__init__
+    STAREDataFrame
 
 
 Bootstrapping
@@ -16,7 +18,6 @@ Bootstrapping
 
 .. autosummary::
     :toctree: api/
-    :nosignatures:
 
     STAREDataFrame.make_sids
     STAREDataFrame.set_sids
