@@ -7,6 +7,7 @@ import starepandas
 import netCDF4
 import starepandas.tools.trixel_conversions
 import multiprocessing
+import shapely
 
 DEFAULT_SID_COLUMN_NAME = 'sids'
 DEFAULT_TRIXEL_COLUMN_NAME = 'trixels'
@@ -148,7 +149,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
                                                force_ccw=force_ccw, n_workers=n_workers)
         return sids
 
-    def set_sids(self, col=None, inplace=False):
+    def set_sids(self, col, inplace=False, resolution=None):
         """ Set the StareDataFrame stare indices using either an existing column or
         the specified input. By default yields a new object.
         The original stare column is replaced with the input.
@@ -174,9 +175,6 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         else:
             frame = self.copy()
 
-        if col is None:
-            col = self.make_sids()
-
         if isinstance(col, (list, numpy.ndarray, pandas.Series)):
             frame[frame._sid_column_name] = col
         elif hasattr(col, "ndim") and col.ndim != 1:
@@ -195,7 +193,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
     def has_sids(self):
         return self._sid_column_name in self
 
-    def make_trixels(self, sid_column=None, n_workers=1):
+    def make_trixels(self, sid_column=None, n_workers=1, wrap_lon=True):
         """
         Returns a Polygon or Multipolygon GeoSeries
         containing the trixels referred by the STARE indices
@@ -206,6 +204,8 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             Column to use as STARE column. Default: 'stare'
         n_workers: int
             number of (dask) workers to use to generate trixels
+        wrap_lon: bool
+            toggle if trixels should be wraped around antimeridian.
 
         Returns
         -----------
@@ -223,10 +223,11 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         if sid_column is None:
             sid_column = self._sid_column_name
         trixels_series = starepandas.tools.trixel_conversions.trixels_from_stareseries(self[sid_column],
-                                                                                       n_workers=n_workers)
+                                                                                       n_workers=n_workers,
+                                                                                       wrap_lon=wrap_lon)
         return trixels_series
 
-    def set_trixels(self, col=None, inplace=False):
+    def set_trixels(self, col, inplace=False):
         """
         Set the trixel column
 
@@ -250,9 +251,6 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             frame = self
         else:
             frame = self.copy()
-
-        if col is None:
-            col = self.make_trixels()
 
         if isinstance(col, (pandas.Series, list, numpy.ndarray)):
             frame[frame._trixel_column_name] = col
@@ -366,7 +364,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         >>> df = starepandas.STAREDataFrame(sids=sids)
         >>> centers = df.trixel_centerpoints()
         >>> print(centers[0])
-        POINT (135 80.26438899520531)
+        POINT (135 80.264)
         """
         if vertices:
             return starepandas.tools.trixel_conversions.vertices2centerpoints(vertices)
@@ -413,7 +411,6 @@ class STAREDataFrame(geopandas.GeoDataFrame):
                 corners.append(tuple(trixel[0].boundary.coords)[0:3])
         else:
             corners = starepandas.tools.trixel_conversions.to_corners(self[self._sid_column_name])
-
         return corners
 
     def trixel_corners_ecef(self, vertices=None):
@@ -476,6 +473,49 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         corners = self.trixel_corners_ecef(vertices)
         gring = starepandas.tools.trixel_conversions.corners2gring(corners)
         return gring
+
+    def split_antimeridian(self, inplace=False):
+        """Splits trixels at the antimeridian
+
+        This works on trixels that cross the meridian and whose longitudes have *not* been wrapped around the
+        antimeridian. I.e. when creating the trixels use sdf.make_trixels(wrap_lon=False)
+
+
+        Examples
+        ----------
+        >>> cities = {'name': ['midway', 'Fiji', 'Baker', 'honolulu'],
+        ...           'lat': [28.2, -17.8,  0.2, 21.3282956],
+        ...           'lon': [-177.35, 178.1, -176.7, -157.9]}
+        >>> sdf = starepandas.STAREDataFrame(cities)
+        >>> sids = starepandas.sids_from_xy(sdf.lon, sdf.lat, resolution=1)
+        >>> sdf.set_sids(sids, inplace=True)
+        >>> trixels = sdf.make_trixels(wrap_lon=False)
+        >>> sdf.set_trixels(trixels, inplace=True)
+        >>> split_geoms = sdf.split_antimeridian(inplace=False)
+        >>> split_geoms.iloc[0][0].exterior.xy[0][0]
+        180.0
+
+        """
+        trixels = geopandas.GeoSeries(self[self._trixel_column_name])
+
+        if (trixels.geom_type == 'Polygon').all():
+            split = starepandas.tools.trixel_conversions.split_antimeridian_geoseries(trixels)
+        else:
+            split = []
+            for row in self[self._trixel_column_name]:
+                if row.geom_type == 'Polygon':
+                    # We need to catch single Polygons
+                    row = [row]
+                row = geopandas.GeoSeries(list(row))
+                row = starepandas.tools.trixel_conversions.split_antimeridian_geoseries(row)
+                row = row.unary_union
+                split.append(row)
+            split = geopandas.GeoSeries(split)
+
+        if inplace:
+            self[self._trixel_column_name] = split
+        else:
+            return split
 
     def plot(self, *args, trixels=True, boundary=False, **kwargs):
         """ Generate a plot with matplotlib.

@@ -7,7 +7,7 @@ import pystare
 import shapely
 
 
-def to_vertices(sids):
+def to_vertices(sids, wrap_lon=True):
     """ Converts a (collection of) sid(s) into vertices. Vertices are a tuple of:
 
     1. the latitudes of the corners
@@ -21,6 +21,9 @@ def to_vertices(sids):
     ----------
     sids: int or collection of ints
         sids to covert to vertices
+    wrap_lon: bool
+        toggle if vertices should be wraped around antimeridian. If true:
+        lon = ((lon + 180.0) % 360.0) - 180.0
 
     Returns
     ---------
@@ -39,11 +42,12 @@ def to_vertices(sids):
      array([15.84277554]))
     """
     vs = pystare.to_vertices_latlon(sids)
-    vs2 = tuple([(vs[0] + 90.0) % 180.0 - 90.0,
-                 ((vs[1] + 180) % 360) - 180,
-                 (vs[2] + 90.0) % 180.0 - 90.0,
-                 ((vs[3] + 180) % 360) - 180])
-    return vs2
+    if wrap_lon:
+        vs = tuple([vs[0],
+                    pystare.lon_wrap_180(vs[1]),
+                    vs[2],
+                    pystare.lon_wrap_180(vs[3])])
+    return vs
 
 
 def vertices2centers(vertices):
@@ -336,13 +340,16 @@ def to_centerpoints(sids):
     return centerpoints
 
 
-def to_corners(sids):
+def to_corners(sids, wrap_lon=True):
     """ Converts a (collection of) sid(s) into (collection of) corners in lon/lat representation.
 
     Parameters
     ----------
     sids: int or collection of ints
         sids to covert to corners
+    wrap_lon: bool
+        toggle if vertices should be wraped around antimeridian. If true:
+        lon = ((lon + 180.0) % 360.0) - 180.0
 
     Returns
     ---------
@@ -363,7 +370,7 @@ def to_corners(sids):
             [19.73607532, 24.53819039]]])
     """
 
-    vertices = to_vertices(sids)
+    vertices = to_vertices(sids, wrap_lon=wrap_lon)
     corners = vertices2corners(vertices)
     return corners
 
@@ -442,16 +449,23 @@ def corners2gring(corners):
     return gcs
 
 
-def to_trixels(sids, as_multipolygon=False):
-    """ Converts a (collection of) sid(s) into a (collection of) trixel(s)
+def to_trixels(sids, as_multipolygon=False, wrap_lon=True):
+    """
+    Converts a (collection of) sid(s) into a (collection of) trixel(s)
 
-    :param sids: (Collection of) STARE index value(s)
-    :type sids: int64 or array-like
-    :param as_multipolygon: If more than one sid is passed, toggle if the resulting trixels should be combined into a
-        multipolygon
-    :type as_multipolygon: bool
-    :return: array like of trixels
-    :rtype: array-like
+    Parameters
+    ------------
+    sids: int64 or array-like
+        (Collection of) STARE index value(s)
+    as_multipolygon: bool
+        If more than one sid is passed, toggle if the resulting trixels should be combined into a multipolygon
+    wrap_lon: bool
+        toggle if trixels should be wraped around antimeridian.
+
+    Returns
+    ---------
+    trixels: Polygon or Multipolygon
+        (collection of) trixel(s)
 
     Examples
     ---------
@@ -468,7 +482,7 @@ def to_trixels(sids, as_multipolygon=False):
         sids = sids.astype(numpy.int64)
 
     trixels = []
-    vertices = to_corners(sids)
+    vertices = to_corners(sids, wrap_lon=wrap_lon)
     for vertex in vertices:
         geom = shapely.geometry.Polygon(vertex)
         trixels.append(geom)
@@ -480,17 +494,24 @@ def to_trixels(sids, as_multipolygon=False):
     return trixels
 
 
-def trixels_from_stareseries(sids_series, n_workers=1):
+def trixels_from_stareseries(sids_series, n_workers=1, wrap_lon=True):
     """ Takes a series of STARE index values and creates an array of sets of trixels. If a row contains a set of sids
     (rather than a single sid); i.e. representing e.g. a region, a set of trixels will be generated and combined in a
     multipolygon
 
-    :param sids_series: Series or array-like with STARE index values
-    :type sids_series: array like
-    :param n_workers: number of workers to use to lookup geometries in parallel
-    :type n_workers: int
-    :return: array like of trixels / triangle geometries
-    :rtype: array-like
+    Parameters
+    -----------
+    sids_series: array-like
+        Series or array-like with STARE index values
+    n_workers: int
+        number of workers to use to lookup geometries in parallel
+    wrap_lon: bool
+            toggle if trixels should be wraped around antimeridian.
+
+    Returns
+    -----------
+    trixel_series: array like
+        Series of trixels / triangle geometries
 
     Examples
     -------------
@@ -508,14 +529,30 @@ def trixels_from_stareseries(sids_series, n_workers=1):
     if n_workers == 1:
         trixels_series = []
         for sids in sids_series:
-            trixels = to_trixels(sids, as_multipolygon=True)
+            trixels = to_trixels(sids, as_multipolygon=True, wrap_lon=wrap_lon)
             trixels_series.append(trixels)
     else:
         ddf = dask.dataframe.from_pandas(sids_series, npartitions=n_workers)
         meta = {'trixels': 'int64'}
-        res = ddf.map_partitions(lambda df: numpy.array(trixels_from_stareseries(df, 1), dtype='object').flatten(), meta=meta)
+        res = ddf.map_partitions(lambda df: numpy.array(trixels_from_stareseries(df, 1), dtype='object').flatten(),
+                                 meta=meta)
         trixels_series = res.compute(scheduler='processes')
         # Since the array would be ragged, we are probably safer with a list of arrays
         trixels_series = trixels_series.tolist()
 
     return trixels_series
+
+def split_antimeridian_geoseries(trixels):
+    """Splits trixels at the antimeridian
+
+    This works on trixels that cross the meridian and whose longitudes have *not* been wrapped around the
+    antimeridian. I.e. when creating the trixels use sdf.make_trixels(wrap_lon=False)
+    """
+
+    bbox = shapely.geometry.Polygon([(-180, -90), (180, -90), (180, 90), (-180, 90)])
+
+    inside = trixels.intersection(bbox)
+    outside = trixels.difference(bbox)
+    outside = outside.apply(lambda x: shapely.affinity.translate(x, xoff=-360))
+    split = inside.union(outside)
+    return split
