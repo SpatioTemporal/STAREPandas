@@ -492,7 +492,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         >>> trixels = sdf.make_trixels(wrap_lon=False)
         >>> sdf.set_trixels(trixels, inplace=True)
         >>> split_geoms = sdf.split_antimeridian(inplace=False)
-        >>> split_geoms.iloc[0][0].exterior.xy[0][0]
+        >>> max(max(split_geoms.iloc[0][0].exterior.xy))
         180.0
 
         """
