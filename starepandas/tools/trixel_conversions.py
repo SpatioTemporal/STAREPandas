@@ -488,9 +488,9 @@ def to_trixels(sids, as_multipolygon=False, wrap_lon=True):
         geom = shapely.geometry.Polygon(vertex)
         trixels.append(geom)
 
-    if len(trixels) == 1:
+    if len(trixels) == 1 and not as_multipolygon:
         trixels = trixels[0]
-    elif as_multipolygon:
+    if as_multipolygon:
         trixels = shapely.geometry.MultiPolygon(trixels)
     return trixels
 
