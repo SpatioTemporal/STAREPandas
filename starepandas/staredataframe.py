@@ -7,7 +7,9 @@ import starepandas
 import netCDF4
 import starepandas.tools.trixel_conversions
 import multiprocessing
+import warnings
 import shapely
+
 
 DEFAULT_SID_COLUMN_NAME = 'sids'
 DEFAULT_TRIXEL_COLUMN_NAME = 'trixels'
@@ -253,6 +255,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             frame = self.copy()
 
         if isinstance(col, (pandas.Series, list, numpy.ndarray)):
+            col = geopandas.geodataframe._ensure_geometry(col)
             frame[frame._trixel_column_name] = col
         elif isinstance(col, str) and col in self.columns:
             frame._trixel_column_name = col
