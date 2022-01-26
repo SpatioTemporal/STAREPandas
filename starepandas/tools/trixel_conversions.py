@@ -1,10 +1,11 @@
 import math
 
 import dask.dataframe
-import geopandas
+import geopandas._vectorized as vectorized
 import numpy
 import pystare
 import shapely
+import geopandas
 
 
 def to_vertices(sids, wrap_lon=True):
@@ -533,8 +534,9 @@ def trixels_from_stareseries(sids_series, n_workers=1, wrap_lon=True):
             trixels_series.append(trixels)
     else:
         ddf = dask.dataframe.from_pandas(sids_series, npartitions=n_workers)
-        meta = {'trixels': 'int64'}
-        res = ddf.map_partitions(lambda df: numpy.array(trixels_from_stareseries(df, 1), dtype='object').flatten(),
+        meta = {'trixels': 'object'}
+        res = ddf.map_partitions(lambda df:
+                                 vectorized.from_shapely(trixels_from_stareseries(df, n_workers=1, wrap_lon=wrap_lon)).flatten(),
                                  meta=meta)
         trixels_series = res.compute(scheduler='processes')
         # Since the array would be ragged, we are probably safer with a list of arrays
