@@ -57,6 +57,7 @@ Trixel Functions
     STAREDataFrame.trixel_corners
     STAREDataFrame.trixel_corners_ecef
     STAREDataFrame.trixel_grings
+    STAREDataFrame.split_antimeridian
 
 IO
 ------------

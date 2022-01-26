@@ -24,8 +24,6 @@ def compress_sids_group(group):
 
 
 class STAREDataFrame(geopandas.GeoDataFrame):
-
-
     _metadata = ['_sid_column_name', '_trixel_column_name', '_geometry_column_name', '_crs']
 
     _sid_column_name = DEFAULT_SID_COLUMN_NAME
@@ -253,6 +251,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             frame = self.copy()
 
         if isinstance(col, (pandas.Series, list, numpy.ndarray)):
+            col = geopandas._vectorized.from_shapely(col)
             frame[frame._trixel_column_name] = col
         elif isinstance(col, str) and col in self.columns:
             frame._trixel_column_name = col
@@ -541,7 +540,6 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         if trixels:
             if not self.has_trixels():
                 raise AttributeError('No trixels set (expected in "{}" column)'.format(self._trixel_column_name))
-            boundary = True
             df = self.set_geometry(self._trixel_column_name, inplace=False)
         else:
             df = self.copy()
@@ -972,8 +970,8 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
         """
         sids = self.to_array(self._sid_column_name)
-        #lat = self.to_array(self['lat'])
-        #lon = self.to_array(self['lon'])
+        # lat = self.to_array(self['lat'])
+        # lon = self.to_array(self['lon'])
         if cover:
             sids_cover = self.stare_dissolve()
             l = sids_cover.size
