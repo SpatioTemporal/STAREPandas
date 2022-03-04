@@ -501,17 +501,17 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         """
         trixels = geopandas.GeoSeries(self[self._trixel_column_name])
 
-        if (trixels.geom_type == 'Polygon').all():
-            split = starepandas.tools.trixel_conversions.split_antimeridian_geoseries(trixels)
+        if False:
+            split = starepandas.tools.trixel_conversions.split_antimeridian(trixels)
         else:
             split = []
-            for row in self[self._trixel_column_name]:
+            for row in trixels:
                 if row.geom_type == 'Polygon':
                     # We need to catch single Polygons
                     row = [row]
-                row = geopandas.GeoSeries(list(row))
-                row = starepandas.tools.trixel_conversions.split_antimeridian_geoseries(row)
-                row = row.unary_union
+                row = geopandas.GeoSeries(row)
+                row = starepandas.tools.trixel_conversions.split_antimeridian(row)
+                #row = row.unary_union
                 split.append(row)
             split = geopandas.GeoSeries(split)
 

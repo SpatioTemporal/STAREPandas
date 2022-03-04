@@ -3,7 +3,7 @@ import numpy
 import starepandas
 
 
-def read_sql_table(sql, con, stare_column='stare',  **kwargs):
+def read_sql_table(sql, con, stare_column='sids',  **kwargs):
     
     df = pandas.read_sql_table(sql, con)
     df = starepandas.STAREDataFrame(df)

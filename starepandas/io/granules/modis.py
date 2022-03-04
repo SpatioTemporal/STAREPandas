@@ -5,7 +5,7 @@ import numpy
 
 
 def get_hdfeos_metadata(file_path):    
-    hdf= starepandas.io.s3.sd_wrapper(file_path)
+    hdf = starepandas.io.s3.sd_wrapper(file_path)
     metadata = {}
     metadata['ArchiveMetadata'] = get_metadata_group(hdf, 'ArchiveMetadata')
     metadata['StructMetadata']  = get_metadata_group(hdf, 'StructMetadata')
@@ -88,7 +88,7 @@ class Mod09(Modis):
             
 
 class Mod05(Modis):
-    
+
     def __init__(self, file_path, sidecar_path=None):
         super(Mod05, self).__init__(file_path, sidecar_path)
         self.nom_res = '5km'

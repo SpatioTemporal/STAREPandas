@@ -459,7 +459,8 @@ def to_trixels(sids, as_multipolygon=False, wrap_lon=True):
     sids: int64 or array-like
         (Collection of) STARE index value(s)
     as_multipolygon: bool
-        If more than one sid is passed, toggle if the resulting trixels should be combined into a multipolygon
+        If more than one sid is passed, toggle if the resulting trixels should be
+        combined into a multipolygon. Otherwise a list of trixels is returned.
     wrap_lon: bool
         toggle if trixels should be wraped around antimeridian.
 
@@ -477,6 +478,7 @@ def to_trixels(sids, as_multipolygon=False, wrap_lon=True):
     if isinstance(sids, (numpy.int64, int)):
         # If single value was passed
         sids = [sids]
+        as_multipolygon = False
 
     if isinstance(sids, numpy.ndarray):
         # This is not ideal, but when we read sidecars, we get unit64 and have to cast
@@ -544,17 +546,31 @@ def trixels_from_stareseries(sids_series, n_workers=1, wrap_lon=True):
 
     return trixels_series
 
-def split_antimeridian_geoseries(trixels):
+
+def split_antimeridian(trixels):
     """Splits trixels at the antimeridian
 
     This works on trixels that cross the meridian and whose longitudes have *not* been wrapped around the
     antimeridian. I.e. when creating the trixels use sdf.make_trixels(wrap_lon=False)
+
+    Parameters
+    ------------
+    trixels: A polygon, multipolygon, collection of polygons, or a geometry series
+        A collection of trixels.
     """
 
     bbox = shapely.geometry.Polygon([(-180, -90), (180, -90), (180, 90), (-180, 90)])
 
-    inside = trixels.intersection(bbox)
-    outside = trixels.difference(bbox)
+    trixels = geopandas.GeoSeries(trixels)
+
+    inside = trixels.explode(index_parts=True).reset_index(drop=True)
+    inside = inside.intersection(bbox)
+    inside = geopandas.tools.collect(inside)
+
+    outside = trixels.explode(index_parts=True).reset_index(drop=True)
+    outside = outside.difference(bbox)
     outside = outside.apply(lambda x: shapely.affinity.translate(x, xoff=-360))
+    outside = geopandas.tools.collect(outside)
+
     split = inside.union(outside)
     return split
