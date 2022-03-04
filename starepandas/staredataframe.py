@@ -509,9 +509,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
                 if row.geom_type == 'Polygon':
                     # We need to catch single Polygons
                     row = [row]
-                row = geopandas.GeoSeries(row)
                 row = starepandas.tools.trixel_conversions.split_antimeridian(row)
-                #row = row.unary_union
                 split.append(row)
             split = geopandas.GeoSeries(split)
 

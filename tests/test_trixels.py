@@ -14,5 +14,5 @@ def test_trixels():
 
 def test_wrap():
     geom = shapely.wkt.loads('POLYGON((-100 0, -200 0, -150 40, -100 0))')
-    geom_split = starepandas.split_antimeridian_geoseries(geom)
-    assert min(geom_split.geoms[0].exterior.xy[0]) >= 180.0
+    geom_split = starepandas.split_antimeridian(geom)
+    assert min(geom_split.geoms[0].exterior.xy[0]) >= -180.0
