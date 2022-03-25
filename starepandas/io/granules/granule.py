@@ -61,7 +61,7 @@ class Granule:
         else:
             scp = self.guess_sidecar_path()
         ds = starepandas.io.s3.nc4_dataset_wrapper(scp)
-        self.stare_cover = ds['STARE_cover_{}'.format(self.nom_res)][:].astype(numpy.int64)
+        self.stare_cover = ds['STARE_cover'][:].astype(numpy.int64)
 
     def to_df(self, xy=False):
         """ Converts the granule object to a dataframe

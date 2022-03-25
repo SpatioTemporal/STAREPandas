@@ -78,12 +78,31 @@ class Modis(Granule):
 
 class Mod09(Modis):
     
-    def __init__(self, file_path, sidecar_path=None):
-        super(Mod09, self).__init__(file_path)
-        self.nom_res = '1km'
-    
+    def __init__(self, file_path, sidecar_path=None, nom_res=None):
+        super(Mod09, self).__init__(file_path, sidecar_path)
+        if nom_res is None:
+            self.nom_res = '1km'
+        else:
+            self.nom_res = nom_res
+
     def read_data(self):
+        if self.nom_res == '1km':
+            self.read_data_1km()
+        elif self.nom_res == '500m':
+            self.read_data_500m()
+        elif self.nom_res == '250m':
+            self.read_data_250m()
+
+    def read_data_1km(self):
         for dataset_name in dict(filter(lambda elem: '1km' in elem[0], self.hdf.datasets().items())).keys():
+            self.data[dataset_name] = self.hdf.select(dataset_name).get()
+
+    def read_data_500m(self):
+        for dataset_name in dict(filter(lambda elem: '500m' in elem[0], self.hdf.datasets().items())).keys():
+           self.data[dataset_name] = self.hdf.select(dataset_name).get()
+
+    def read_data_250m(self):
+        for dataset_name in dict(filter(lambda elem: '250m' in elem[0], self.hdf.datasets().items())).keys():
             self.data[dataset_name] = self.hdf.select(dataset_name).get()
             
 

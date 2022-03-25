@@ -82,11 +82,11 @@ def guess_companion_path(granule_path, folder=None, prefix=None):
         return companions[0]
 
 
-def granule_factory(file_path, sidecar_path=None):
+def granule_factory(file_path, sidecar_path=None, nom_res=None):
     if re.search('MOD05|MYD05', file_path, re.IGNORECASE):
         granule = Mod05(file_path, sidecar_path)
     elif re.search('MOD09|MYD09', file_path, re.IGNORECASE):
-        granule = Mod09(file_path, sidecar_path)
+        granule = Mod09(file_path, sidecar_path, nom_res)
     elif re.search('VNP02DNB|VJ102DNB', file_path, re.IGNORECASE):
         granule = VNP02DNB(file_path, sidecar_path)
     elif re.search('VNP03DNB|VJ103DNB', file_path, re.IGNORECASE):
@@ -111,7 +111,8 @@ def read_granule(file_path,
                  sidecar_path=None,
                  add_sids=False,
                  adapt_resolution=True,
-                 xy=False):
+                 xy=False,
+                 resolution=None):
     """ Reads a granule into a STAREDataFrame
 
     Parameters
@@ -130,6 +131,8 @@ def read_granule(file_path,
         toggle whether to adapt the resolution
     xy: bool
         toggle wheather to add array coordinates to the dataframe.
+    resolution: str
+        oprional; for multi-resolution products, specify which resolution to read
 
     Returns
     --------
@@ -142,7 +145,7 @@ def read_granule(file_path,
     >>> modis = starepandas.read_granule(fname, latlon=True, sidecar=True)
     """
 
-    granule = granule_factory(file_path, sidecar_path)
+    granule = granule_factory(file_path, sidecar_path, resolution)
 
     if add_sids:
         latlon = True
@@ -151,7 +154,10 @@ def read_granule(file_path,
     if latlon:
         granule.read_latlon()
 
-    granule.read_data()
+    if resolution is None:
+        granule.read_data()
+    else:
+        granule.read_data()
 
     if sidecar:
         granule.read_sidecar_index(sidecar_path)

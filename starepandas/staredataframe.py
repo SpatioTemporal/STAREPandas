@@ -16,7 +16,7 @@ DEFAULT_TRIXEL_COLUMN_NAME = 'trixels'
 
 
 def compress_sids_group(group):
-    sids = group[1].to_numpy()
+    sids = group[1].to_numpy()  # zero element is group label, 1 element is the df
     if sids.dtype == numpy.dtype('O'):
         # If we receive a series of SID collections we merge all sids into a single 1D array
         # to_numpy() would have produced an array of lists in this case
@@ -26,8 +26,6 @@ def compress_sids_group(group):
 
 
 class STAREDataFrame(geopandas.GeoDataFrame):
-
-
     _metadata = ['_sid_column_name', '_trixel_column_name', '_geometry_column_name', '_crs']
 
     _sid_column_name = DEFAULT_SID_COLUMN_NAME
@@ -224,6 +222,8 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
         if sid_column is None:
             sid_column = self._sid_column_name
+        if sid_column not in list(self.columns):
+            raise Exception('sids column does not exist')
         trixels_series = starepandas.tools.trixel_conversions.trixels_from_stareseries(self[sid_column],
                                                                                        n_workers=n_workers,
                                                                                        wrap_lon=wrap_lon)
@@ -665,7 +665,6 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         n_workers: int
             workers to use for the dissolve
         geom: bool
-
             Toggle if the geometry column is to be dissolved. Geom column Will be dropped if set to False.
         aggfunc: str
             aggregation function. E.g. 'first', 'sum', 'mean'.
@@ -714,6 +713,19 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
         aggregated = sdf.join(aggregated_data)
         return aggregated
+
+    def spatial_resolution(self):
+        sids = self[self._sid_column_name]
+        return pystare.spatial_resolution(sids)
+
+    def trixel_area(self, r=None):
+        # r: earth radius
+        sids = self[self._sid_column_name]
+        solid_angel = pystare.to_area(sids)
+        if r is None:
+            return solid_angel
+        else:
+            return solid_angel * r**2
 
     def to_stare_resolution(self, resolution, inplace=False, clear_to_resolution=False):
         """
