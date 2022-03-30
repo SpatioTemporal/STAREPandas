@@ -29,7 +29,7 @@ def stare_join(left_df, right_df, how='left'):
     right_key = []
 
     for row in right_df.itertuples():
-        k = left_df.index[left_df.stare_intersects(row.stare)]
+        k = left_df.index[left_df.stare_intersects(row.sids)]
         left_key.extend(list(k))
         right_key.extend([row.Index]*len(k))
 

@@ -11,3 +11,4 @@ examples/dask-worker-space/*
 *.kate-swp
 docs/source/docs/reference/api/*
 .idea/*
+*dask-worker-space*

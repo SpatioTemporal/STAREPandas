@@ -112,7 +112,7 @@ def read_granule(file_path,
                  add_sids=False,
                  adapt_resolution=True,
                  xy=False,
-                 resolution=None):
+                 nom_res=None):
     """ Reads a granule into a STAREDataFrame
 
     Parameters
@@ -131,7 +131,7 @@ def read_granule(file_path,
         toggle whether to adapt the resolution
     xy: bool
         toggle wheather to add array coordinates to the dataframe.
-    resolution: str
+    nom_res: str
         oprional; for multi-resolution products, specify which resolution to read
 
     Returns
@@ -145,7 +145,7 @@ def read_granule(file_path,
     >>> modis = starepandas.read_granule(fname, latlon=True, sidecar=True)
     """
 
-    granule = granule_factory(file_path, sidecar_path, resolution)
+    granule = granule_factory(file_path, sidecar_path, nom_res)
 
     if add_sids:
         latlon = True
@@ -154,10 +154,7 @@ def read_granule(file_path,
     if latlon:
         granule.read_latlon()
 
-    if resolution is None:
-        granule.read_data()
-    else:
-        granule.read_data()
+    granule.read_data()
 
     if sidecar:
         granule.read_sidecar_index(sidecar_path)
