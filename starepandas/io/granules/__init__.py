@@ -151,15 +151,18 @@ def read_granule(file_path,
         latlon = True
         sidecar = False
 
-    if latlon:
-        granule.read_latlon()
-
     granule.read_data()
 
     if sidecar:
         granule.read_sidecar_index(sidecar_path)
     elif add_sids:
         granule.add_sids(adapt_resolution)
+
+    if latlon:
+        if sidecar:
+            granule.read_sidecar_latlon()
+        else:
+            granule.read_latlon()
 
     df = granule.to_df(xy=xy)
     return df

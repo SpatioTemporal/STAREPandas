@@ -513,7 +513,7 @@ def trixels_from_stareseries(sids_series, n_workers=1, wrap_lon=True):
 
     Returns
     -----------
-    trixel_series: array like
+    trixel_series: geopandas.GeoSeries
         Series of trixels / triangle geometries
 
     Examples
@@ -543,7 +543,7 @@ def trixels_from_stareseries(sids_series, n_workers=1, wrap_lon=True):
         trixels_series = res.compute(scheduler='processes')
         # Since the array would be ragged, we are probably safer with a list of arrays
         trixels_series = trixels_series.tolist()
-
+    trixels_series = geopandas.GeoSeries(trixels_series, crs='EPSG:4326', index=sids_series.index)
     return trixels_series
 
 
@@ -561,7 +561,7 @@ def split_antimeridian(trixels):
 
     bbox = shapely.geometry.Polygon([(-180, -90), (180, -90), (180, 90), (-180, 90)])
 
-    trixels = geopandas.GeoSeries(trixels)
+    trixels = geopandas.GeoSeries(trixels, crs='EPSG:4326', index=trixels.index)
 
     inside = trixels.explode(index_parts=True).reset_index(drop=True)
     inside = inside.intersection(bbox)

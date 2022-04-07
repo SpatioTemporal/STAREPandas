@@ -254,7 +254,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         else:
             frame = self.copy()
 
-        if isinstance(col, (pandas.Series, list, numpy.ndarray)):
+        if isinstance(col, (pandas.Series, geopandas.GeoSeries, list, numpy.ndarray)):
             col = geopandas.geodataframe._ensure_geometry(col)
             frame[frame._trixel_column_name] = col
         elif isinstance(col, str) and col in self.columns:
@@ -501,17 +501,14 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         """
         trixels = geopandas.GeoSeries(self[self._trixel_column_name])
 
-        if False:
-            split = starepandas.tools.trixel_conversions.split_antimeridian(trixels)
-        else:
-            split = []
-            for row in trixels:
-                if row.geom_type == 'Polygon':
-                    # We need to catch single Polygons
-                    row = [row]
-                row = starepandas.tools.trixel_conversions.split_antimeridian(row)
-                split.append(row)
-            split = geopandas.GeoSeries(split)
+        split = []
+        for row in trixels:
+            if row.geom_type == 'Polygon':
+                # We need to catch single Polygons
+                row = [row]
+            row = starepandas.tools.trixel_conversions.split_antimeridian(row)
+            split.append(row)
+        split = geopandas.GeoSeries(split)
 
         if inplace:
             self[self._trixel_column_name] = split

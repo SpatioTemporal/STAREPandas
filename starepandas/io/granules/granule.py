@@ -63,6 +63,17 @@ class Granule:
         ds = starepandas.io.s3.nc4_dataset_wrapper(scp)
         self.stare_cover = ds['STARE_cover'][:].astype(numpy.int64)
 
+    def read_sidecar_latlon(self, sidecar_path=None):
+        if sidecar_path is not None:
+            scp = sidecar_path
+        elif self.sidecar_path is not None:
+            scp = self.sidecar_path
+        else:
+            scp = self.guess_sidecar_path()
+        ds = starepandas.io.s3.nc4_dataset_wrapper(scp)
+        self.lat = ds['Latitude_{}'.format(self.nom_res)][:, :]
+        self.lon = ds['Longitude_{}'.format(self.nom_res)][:, :]
+
     def to_df(self, xy=False):
         """ Converts the granule object to a dataframe
 
