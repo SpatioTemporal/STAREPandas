@@ -538,7 +538,8 @@ def trixels_from_stareseries(sids_series, n_workers=1, wrap_lon=True):
         ddf = dask.dataframe.from_pandas(sids_series, npartitions=n_workers)
         meta = {'trixels': 'object'}
         res = ddf.map_partitions(lambda df:
-                                 vectorized.from_shapely(trixels_from_stareseries(df, n_workers=1, wrap_lon=wrap_lon)).flatten(),
+                                 vectorized.from_shapely(
+                                     trixels_from_stareseries(df, n_workers=1, wrap_lon=wrap_lon)).flatten(),
                                  meta=meta)
         trixels_series = res.compute(scheduler='processes')
         # Since the array would be ragged, we are probably safer with a list of arrays
@@ -561,14 +562,16 @@ def split_antimeridian(trixels):
 
     bbox = shapely.geometry.Polygon([(-180, -90), (180, -90), (180, 90), (-180, 90)])
 
-    trixels = geopandas.GeoSeries(trixels, crs='EPSG:4326', index=trixels.index)
+    trixels = geopandas.GeoSeries(trixels, crs='EPSG:4326')
 
-    inside = trixels.explode(index_parts=True).reset_index(drop=True)
-    inside = inside.intersection(bbox)
-    inside = geopandas.tools.collect(inside)
+    exploded = trixels.explode(index_parts=True).reset_index(drop=True)
 
-    outside = trixels.explode(index_parts=True).reset_index(drop=True)
-    outside = outside.difference(bbox)
+    inside = exploded.intersection(bbox)
+    inside[inside.geom_type != 'Polygon'] = shapely.wkt.loads('POLYGON EMPTY')
+    inside = geopandas.tools.collect(inside, multi=True)
+
+    outside = exploded.difference(bbox)
+    outside[outside.geom_type != 'Polygon'] = shapely.wkt.loads('POLYGON EMPTY')
     outside = outside.apply(lambda x: shapely.affinity.translate(x, xoff=-360))
     outside = geopandas.tools.collect(outside)
 

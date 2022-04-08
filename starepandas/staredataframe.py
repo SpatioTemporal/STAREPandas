@@ -10,7 +10,6 @@ import multiprocessing
 import warnings
 import shapely
 
-
 DEFAULT_SID_COLUMN_NAME = 'sids'
 DEFAULT_TRIXEL_COLUMN_NAME = 'trixels'
 
@@ -508,14 +507,14 @@ class STAREDataFrame(geopandas.GeoDataFrame):
                 row = [row]
             row = starepandas.tools.trixel_conversions.split_antimeridian(row)
             split.append(row)
-        split = geopandas.GeoSeries(split)
+        split = geopandas.GeoSeries(split, index=self.index)
 
         if inplace:
             self[self._trixel_column_name] = split
         else:
             return split
 
-    def plot(self, *args, trixels=True, boundary=False, **kwargs):
+    def plot(self, *args, trixels=True, boundary=True, **kwargs):
         """ Generate a plot with matplotlib.
         Seminal method to
         `GeoDataFrame.plot() <https://geopandas.org/docs/reference/api/geopandas.GeoDataFrame.plot.html>`_
@@ -539,7 +538,6 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         if trixels:
             if not self.has_trixels():
                 raise AttributeError('No trixels set (expected in "{}" column)'.format(self._trixel_column_name))
-            boundary = True
             df = self.set_geometry(self._trixel_column_name, inplace=False)
         else:
             df = self.copy()
@@ -722,7 +720,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         if r is None:
             return solid_angel
         else:
-            return solid_angel * r**2
+            return solid_angel * r ** 2
 
     def to_stare_resolution(self, resolution, inplace=False, clear_to_resolution=False):
         """
@@ -982,8 +980,8 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
         """
         sids = self.to_array(self._sid_column_name)
-        #lat = self.to_array(self['lat'])
-        #lon = self.to_array(self['lon'])
+        # lat = self.to_array(self['lat'])
+        # lon = self.to_array(self['lon'])
         if cover:
             sids_cover = self.stare_dissolve()
             l = sids_cover.size
