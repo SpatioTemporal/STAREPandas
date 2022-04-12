@@ -192,7 +192,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
     def has_sids(self):
         return self._sid_column_name in self
 
-    def make_trixels(self, sid_column=None, n_workers=1, wrap_lon=True):
+    def make_trixels(self, sid_column=None, n_workers=1, wrap_lon=True, wrap_thresh=180):
         """
         Returns a Polygon or Multipolygon GeoSeries
         containing the trixels referred by the STARE indices
@@ -225,7 +225,8 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             raise Exception('sids column does not exist')
         trixels_series = starepandas.tools.trixel_conversions.trixels_from_stareseries(self[sid_column],
                                                                                        n_workers=n_workers,
-                                                                                       wrap_lon=wrap_lon)
+                                                                                       wrap_lon=wrap_lon,
+                                                                                       wrap_thresh=wrap_thresh)
         return trixels_series
 
     def set_trixels(self, col, inplace=False):

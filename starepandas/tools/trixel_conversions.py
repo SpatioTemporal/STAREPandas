@@ -8,7 +8,7 @@ import shapely
 import geopandas
 
 
-def to_vertices(sids, wrap_lon=True):
+def to_vertices(sids, wrap_lon=True, wrap_thresh=180):
     """ Converts a (collection of) sid(s) into vertices. Vertices are a tuple of:
 
     1. the latitudes of the corners
@@ -25,6 +25,8 @@ def to_vertices(sids, wrap_lon=True):
     wrap_lon: bool
         toggle if vertices should be wraped around antimeridian. If true:
         lon = ((lon + 180.0) % 360.0) - 180.0
+    wrap_thresh: float
+        the longitude around which we should wrap.
 
     Returns
     ---------
@@ -44,10 +46,9 @@ def to_vertices(sids, wrap_lon=True):
     """
     vs = pystare.to_vertices_latlon(sids)
     if wrap_lon:
-        vs = tuple([vs[0],
-                    pystare.lon_wrap_180(vs[1]),
-                    vs[2],
-                    pystare.lon_wrap_180(vs[3])])
+        # We only wrap longitudes over wrap_thresh degrees.
+        vs[1][vs[1] > wrap_thresh] = (vs[1][vs[1] > wrap_thresh] + 180) % 360.0 - 180
+        vs[3][vs[3] > wrap_thresh] = (vs[3][vs[3] > wrap_thresh] + 180) % 360.0 - 180
     return vs
 
 
@@ -333,7 +334,7 @@ def to_centerpoints(sids):
     >>> sids = [4611263805962321926, 4611404543450677254]
     >>> centerpoints = starepandas.to_centerpoints(sids)
     >>> print(centerpoints[0])
-    POINT (19.50219017924582 23.29074702177385)
+    POINT (19.50219017924583 23.29074702177385)
     """
 
     vertices = to_vertices(sids)
@@ -341,7 +342,7 @@ def to_centerpoints(sids):
     return centerpoints
 
 
-def to_corners(sids, wrap_lon=True):
+def to_corners(sids, wrap_lon=True, wrap_thresh=180):
     """ Converts a (collection of) sid(s) into (collection of) corners in lon/lat representation.
 
     Parameters
@@ -371,7 +372,7 @@ def to_corners(sids, wrap_lon=True):
             [19.73607532, 24.53819039]]])
     """
 
-    vertices = to_vertices(sids, wrap_lon=wrap_lon)
+    vertices = to_vertices(sids, wrap_lon=wrap_lon, wrap_thresh=wrap_thresh)
     corners = vertices2corners(vertices)
     return corners
 
@@ -450,7 +451,7 @@ def corners2gring(corners):
     return gcs
 
 
-def to_trixels(sids, as_multipolygon=False, wrap_lon=True):
+def to_trixels(sids, as_multipolygon=False, wrap_lon=True, wrap_thresh=180):
     """
     Converts a (collection of) sid(s) into a (collection of) trixel(s)
 
@@ -463,6 +464,8 @@ def to_trixels(sids, as_multipolygon=False, wrap_lon=True):
         combined into a multipolygon. Otherwise a list of trixels is returned.
     wrap_lon: bool
         toggle if trixels should be wraped around antimeridian.
+    wrap_thresh: float
+        longitude at which values should be wrapped
 
     Returns
     ---------
@@ -485,7 +488,7 @@ def to_trixels(sids, as_multipolygon=False, wrap_lon=True):
         sids = sids.astype(numpy.int64)
 
     trixels = []
-    vertices = to_corners(sids, wrap_lon=wrap_lon)
+    vertices = to_corners(sids, wrap_lon=wrap_lon, wrap_thresh=wrap_thresh)
     for vertex in vertices:
         geom = shapely.geometry.Polygon(vertex)
         trixels.append(geom)
@@ -497,7 +500,7 @@ def to_trixels(sids, as_multipolygon=False, wrap_lon=True):
     return trixels
 
 
-def trixels_from_stareseries(sids_series, n_workers=1, wrap_lon=True):
+def trixels_from_stareseries(sids_series, n_workers=1, wrap_lon=True, wrap_thresh=180):
     """ Takes a series of STARE index values and creates an array of sets of trixels. If a row contains a set of sids
     (rather than a single sid); i.e. representing e.g. a region, a set of trixels will be generated and combined in a
     multipolygon
@@ -532,14 +535,16 @@ def trixels_from_stareseries(sids_series, n_workers=1, wrap_lon=True):
     if n_workers == 1:
         trixels_series = []
         for sids in sids_series:
-            trixels = to_trixels(sids, as_multipolygon=True, wrap_lon=wrap_lon)
+            trixels = to_trixels(sids, as_multipolygon=True, wrap_lon=wrap_lon, wrap_thresh=wrap_thresh)
             trixels_series.append(trixels)
     else:
         ddf = dask.dataframe.from_pandas(sids_series, npartitions=n_workers)
         meta = {'trixels': 'object'}
         res = ddf.map_partitions(lambda df:
                                  vectorized.from_shapely(
-                                     trixels_from_stareseries(df, n_workers=1, wrap_lon=wrap_lon)).flatten(),
+                                     trixels_from_stareseries(df, n_workers=1,
+                                                              wrap_lon=wrap_lon,
+                                                              wrap_thresh=wrap_thresh)).flatten(),
                                  meta=meta)
         trixels_series = res.compute(scheduler='processes')
         # Since the array would be ragged, we are probably safer with a list of arrays
