@@ -309,7 +309,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         >>> sids = numpy.array([3458764513820540928])
         >>> df = starepandas.STAREDataFrame(sids=sids)
         >>> df.trixel_centers()
-        array([[135.      ,  80.264389]])
+        array([[134.9      ,  80.264389]])
         """
 
         if vertices:
@@ -363,11 +363,11 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
         Examples
         ---------
-        >>> sids = numpy.array([3458764513820540928])
+        >>> sids = numpy.array([4458764513820540928])
         >>> df = starepandas.STAREDataFrame(sids=sids)
         >>> centers = df.trixel_centerpoints()
         >>> print(centers[0])
-        POINT (135 80.264)
+        POINT (18.4 24.09)
         """
         if vertices:
             return starepandas.tools.trixel_conversions.vertices2centerpoints(vertices)
