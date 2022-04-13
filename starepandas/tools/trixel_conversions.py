@@ -47,8 +47,8 @@ def to_vertices(sids, wrap_lon=True):
     if wrap_lon:
         # If the trixel is not counterclockwise, then it is wrapped around the antimeridian
         # and we need to move the vertices over
-        vs[1] = (vs[1] + 180) % 360.0 - 180
-        vs[3] = (vs[3] + 180) % 360.0 - 180
+        vs[1][vs[1]>180] = (vs[1][vs[1]>180] + 180) % 360.0 - 180
+        vs[3][vs[3]>180] = (vs[3][vs[3]>180] + 180) % 360.0 - 180
     return vs
 
 
