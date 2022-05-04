@@ -3,6 +3,7 @@ import shapely
 import numpy
 import glob
 import re
+import pandas
 
 
 # Dask helpers
@@ -34,6 +35,7 @@ def slam(client, action, data, partition_factor=1.5, dbg=0):
 def make_row(granule_path, add_sf=False):
     granule = starepandas.io.granules.granule_factory(granule_path)
 
+    granule.sidecar_path = granule.guess_sidecar_path()
     if not granule.sidecar_path:
         print('no sidecar found for {}'.format(granule_path))
         return None
@@ -50,6 +52,7 @@ def make_row(granule_path, add_sf=False):
 
     if add_sf:
         row['geom'] = get_sf_cover(granule_path)
+    row = pandas.DataFrame([row])
     return row
 
 
@@ -105,7 +108,7 @@ def folder2catalog(path, granule_trunk='', granule_extension='*', add_sf=False, 
     pattern = '.*[^_stare]\.(nc|hdf|HDF5)'
     granule_paths = list(filter(re.compile(pattern).match, granule_paths))
 
-    df = starepandas.STAREDataFrame()
+    rows = []
     if client is None:
         for granule_path in granule_paths:
             if s3 is not None:
@@ -114,12 +117,13 @@ def folder2catalog(path, granule_trunk='', granule_extension='*', add_sf=False, 
             else:
                 granule_url = granule_path
             row = make_row(granule_url, add_sf)
-            df = df.append(row, ignore_index=True)
+            rows.append(row)
     else:
         pass
         # client=Client()
         # client.close()
-    df.set_stare('stare_cover', inplace=True)
+    df = pandas.concat(rows)
+    df = starepandas.STAREDataFrame(df, sids='stare_cover')
     if add_sf:
         df.set_geometry('geom', inplace=True)
     return df

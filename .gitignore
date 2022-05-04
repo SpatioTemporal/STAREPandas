@@ -9,4 +9,6 @@ examples/dask-worker-space/*
 *.egg-info/
 .eggs/*
 *.kate-swp
-doc/source/docs/reference/api/*
+docs/source/docs/reference/api/*
+.idea/*
+*dask-worker-space*

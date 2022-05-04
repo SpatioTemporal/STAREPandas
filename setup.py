@@ -4,12 +4,12 @@ import setuptools
 import versioneer
 
 
-version = versioneer.get_version(),
+version = versioneer.get_version()
 cmdclass = versioneer.get_cmdclass()
 
+
 setuptools.setup(
-    #version=version,
-    version="0.5.1",
+    version=version,
     cmdclass=cmdclass
 )
 

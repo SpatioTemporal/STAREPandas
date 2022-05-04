@@ -36,7 +36,10 @@ extensions = ['sphinx.ext.autodoc',
               'nbsphinx',  # Notebook integration
               "numpydoc",   # Syntax/schema for docstrings!
               #'m2r2'
+              'sphinx_markdown_tables'
               ]
+
+#source_suffix = ['.rst', '.py']
 
 # continue doc build and only print warnings/errors in examples
 ipython_warning_is_error = False
@@ -69,6 +72,12 @@ exclude_patterns = []
 # html_theme = 'alabaster'
 # html_theme = 'sphinx_rtd_theme'
 html_theme = "pydata_sphinx_theme"
+html_theme_options = {
+    "collapse_navigation": True,
+    "show_toc_level": 1,
+    "navbar_align": "content",
+}
+
 
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,

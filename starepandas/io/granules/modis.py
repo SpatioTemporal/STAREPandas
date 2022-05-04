@@ -5,21 +5,23 @@ import numpy
 
 
 def get_hdfeos_metadata(file_path):    
-    hdf= starepandas.io.s3.sd_wrapper(file_path)
+    hdf = starepandas.io.s3.sd_wrapper(file_path)
     metadata = {}
     metadata['ArchiveMetadata'] = get_metadata_group(hdf, 'ArchiveMetadata')
     metadata['StructMetadata']  = get_metadata_group(hdf, 'StructMetadata')
     metadata['CoreMetadata']    = get_metadata_group(hdf, 'CoreMetadata')    
     return metadata
-    
+
+
 def get_metadata_group(hdf, group_name):
     metadata_group = {}
     keys = [s for s in hdf.attributes().keys() if group_name in s]
     for key in keys:    
         string = hdf.attributes()[key]
         m = parse_hdfeos_metadata(string)
-        metadata_group  = {**metadata_group, **m}    
+        metadata_group = {**metadata_group, **m}
     return metadata_group
+
 
 def parse_hdfeos_metadata(string):
     out = {} 
@@ -34,12 +36,12 @@ def parse_hdfeos_metadata(string):
         else:
             lines.append(line)
     i = -1
-    while i<(len(lines))-1:        
-        i+=1
+    while i < (len(lines))-1:
+        i += 1
         line = lines[i]
         if "=" in line:
             key = line.split('=')[0]
-            value = '='.join(line.split('=')[1:])#.join('=')
+            value = '='.join(line.split('=')[1:])
             if key in ['GROUP', 'OBJECT']:
                 endIdx = lines[i+1:].index('END_{}={}'.format(key, value))
                 endIdx += i+1
@@ -76,17 +78,36 @@ class Modis(Granule):
 
 class Mod09(Modis):
     
-    def __init__(self, file_path, sidecar_path=None):
-        super(Mod09, self).__init__(file_path)
-        self.nom_res = '1km'
-    
+    def __init__(self, file_path, sidecar_path=None, nom_res=None):
+        super(Mod09, self).__init__(file_path, sidecar_path)
+        if nom_res is None:
+            self.nom_res = '1km'
+        else:
+            self.nom_res = nom_res
+
     def read_data(self):
+        if self.nom_res == '1km':
+            self.read_data_1km()
+        elif self.nom_res == '500m':
+            self.read_data_500m()
+        elif self.nom_res == '250m':
+            self.read_data_250m()
+
+    def read_data_1km(self):
         for dataset_name in dict(filter(lambda elem: '1km' in elem[0], self.hdf.datasets().items())).keys():
+            self.data[dataset_name] = self.hdf.select(dataset_name).get()
+
+    def read_data_500m(self):
+        for dataset_name in dict(filter(lambda elem: '500m' in elem[0], self.hdf.datasets().items())).keys():
+           self.data[dataset_name] = self.hdf.select(dataset_name).get()
+
+    def read_data_250m(self):
+        for dataset_name in dict(filter(lambda elem: '250m' in elem[0], self.hdf.datasets().items())).keys():
             self.data[dataset_name] = self.hdf.select(dataset_name).get()
             
 
 class Mod05(Modis):
-    
+
     def __init__(self, file_path, sidecar_path=None):
         super(Mod05, self).__init__(file_path, sidecar_path)
         self.nom_res = '5km'

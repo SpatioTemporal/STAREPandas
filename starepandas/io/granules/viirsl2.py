@@ -15,9 +15,9 @@ class VIIRSL2(Granule):
         self.ts_end = self.netcdf.time_coverage_end       
     
     def read_latlon(self):        
-        self.lat = self.netcdf.groups['geolocation_data']['latitude'][:].data.astype(numpy.double)
-        self.lon = self.netcdf.groups['geolocation_data']['longitude'][:].data.astype(numpy.double)
-           
+        self.lat = self.netcdf.groups['geolocation_data']['latitude'][:].astype(numpy.double)
+        self.lon = self.netcdf.groups['geolocation_data']['longitude'][:].astype(numpy.double)
+
 
 class CLDMSKL2VIIRS(VIIRSL2):
     
@@ -33,11 +33,11 @@ class CLDMSKL2VIIRS(VIIRSL2):
         :return: None
         """
 
-        self.data['Integer_Cloud_Mask'] = self.netcdf.groups['geophysical_data']['Integer_Cloud_Mask'][:].data
+        self.data['Integer_Cloud_Mask'] = self.netcdf.groups['geophysical_data']['Integer_Cloud_Mask'][:]
 
         # There appear to be 10 QA dimensions which are nowhere documented. Leaving this open for now
         # Cloud Mask QA (1km) Bit 1: 0 not useful 1 useful. Bit 2-7: confidence levels
-        # self.data['Quality_Assurance'] = self.netcdf.groups['geophysical_data']['Quality_Assurance'][:].data
+        # self.data['Quality_Assurance'] = self.netcdf.groups['geophysical_data']['Quality_Assurance'][:]
 
 
 class VNP03MOD(VIIRSL2):
@@ -57,8 +57,8 @@ class VNP03MOD(VIIRSL2):
         :return: None
         """
 
-        self.data['land_water_mask'] = self.netcdf.groups['geolocation_data']['land_water_mask'][:].data
-        self.data['quality_flag'] = self.netcdf.groups['geolocation_data']['quality_flag'][:].data
+        self.data['land_water_mask'] = self.netcdf.groups['geolocation_data']['land_water_mask'][:]
+        self.data['quality_flag'] = self.netcdf.groups['geolocation_data']['quality_flag'][:]
     
 
 class VNP03DNB(VIIRSL2):
@@ -80,9 +80,9 @@ class VNP03DNB(VIIRSL2):
         """
 
         group = self.netcdf.groups['geolocation_data']
-        self.data['moon_illumination_fraction'] = group['moon_illumination_fraction'][:].data
-        self.data['land_water_mask'] = group['land_water_mask'][:].data
-        self.data['quality_flag'] = group['quality_flag'][:].data
+        self.data['moon_illumination_fraction'] = group['moon_illumination_fraction'][:]
+        self.data['land_water_mask'] = group['land_water_mask'][:]
+        self.data['quality_flag'] = group['quality_flag'][:]
                 
 
 class VNP02DNB(VIIRSL2):
@@ -92,16 +92,11 @@ class VNP02DNB(VIIRSL2):
         self.companion_prefix = 'VNP03DNB'
             
     def read_data(self):
-        dnb = self.netcdf.groups['observation_data']['DNB_observations'][:].data
-        quality_flags = self.netcdf.groups['observation_data']['DNB_quality_flags'][:].data
+        dnb = self.netcdf.groups['observation_data']['DNB_observations'][:]
+        quality_flags = self.netcdf.groups['observation_data']['DNB_quality_flags'][:]
         self.data['DNB_observations'] = dnb
         self.data['DNB_quality_flags'] = quality_flags                
         
     def read_latlon(self):
         pass
-        
-    def read_sidecar_cover(self, sidecar_path=None):
-        pass
-        
-    def read_sidecar_index(self, sidecar_path=None):
-        pass
+

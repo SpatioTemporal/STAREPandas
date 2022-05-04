@@ -1,13 +1,14 @@
 import math
 
 import dask.dataframe
-import geopandas
+import geopandas._vectorized as vectorized
 import numpy
 import pystare
 import shapely
+import geopandas
 
 
-def to_vertices(sids):
+def to_vertices(sids, wrap_lon=True):
     """ Converts a (collection of) sid(s) into vertices. Vertices are a tuple of:
 
     1. the latitudes of the corners
@@ -21,6 +22,9 @@ def to_vertices(sids):
     ----------
     sids: int or collection of ints
         sids to covert to vertices
+    wrap_lon: bool
+        toggle if vertices should be wraped around antimeridian. If true:
+        lon = ((lon + 180.0) % 360.0) - 180.0
 
     Returns
     ---------
@@ -38,8 +42,14 @@ def to_vertices(sids):
      array([-30.75902492]),
      array([15.84277554]))
     """
+    vs = pystare.to_vertices_latlon(sids)
 
-    return pystare.to_vertices_latlon(sids)
+    if wrap_lon:
+        # If the trixel is not counterclockwise, then it is wrapped around the antimeridian
+        # and we need to move the vertices over
+        vs[1][vs[1]>180] = (vs[1][vs[1]>180] + 180) % 360.0 - 180
+        vs[3][vs[3]>180] = (vs[3][vs[3]>180] + 180) % 360.0 - 180
+    return vs
 
 
 def vertices2centers(vertices):
@@ -58,8 +68,7 @@ def vertices2centers(vertices):
 
     Examples
     --------------
-import starepandas.tools.trixel_conversions    >>> import starepandas
-    >>> import numpy
+    >>> import starepandas
     >>> sids = numpy.array([18014398509481987])
     >>> vertices = starepandas.tools.trixel_conversions.to_vertices(sids)
     >>> starepandas.vertices2centers(vertices)
@@ -88,8 +97,7 @@ def vertices2centers_ecef(vertices):
 
     Examples
     ----------
-import starepandas.tools.trixel_conversions    >>> import starepandas
-    >>> import numpy
+    >>> import starepandas
     >>> sids = numpy.array([1729382256910270464])
     >>> vertices = starepandas.tools.trixel_conversions.to_vertices(sids)
     >>> starepandas.vertices2centers_ecef(vertices)
@@ -121,13 +129,12 @@ def vertices2centerpoints(vertices):
 
     Examples
     ----------
-import starepandas.tools.trixel_conversions    >>> import starepandas
-    >>> import numpy
+    >>> import starepandas
     >>> sids = numpy.array([2882303761517117440])
-    >>> vertices = starepandas.tools.trixel_conversions.to_vertices(sids)
+    >>> vertices = starepandas.tools.to_vertices(sids)
     >>> points = starepandas.vertices2centerpoints(vertices)
     >>> print(points[0])
-    POINT (251.5650509020583 24.09484285959212)
+    POINT (-108.4349490979417 24.09484285959212)
     """
 
     lat_center = vertices[2]
@@ -153,14 +160,14 @@ def vertices2corners(vertices):
 
     Examples
     --------------
-import starepandas.tools.trixel_conversions    >>> import starepandas
-    >>> import numpy
+    >>> import starepandas
     >>> sids = numpy.array([3458764513820540928])
     >>> vertices = starepandas.tools.trixel_conversions.to_vertices(sids)
     >>> starepandas.vertices2corners(vertices)
-    array([[[189.73560999,  29.9999996 ],
-            [315.        ,  45.00000069],
-            [ 80.26439001,  29.9999996 ]]])
+    array([[[-170.26439001,   29.9999996 ],
+            [ -45.        ,   45.00000069],
+            [  80.26439001,   29.9999996 ]]])
+
     """
 
     lats = vertices[0]
@@ -223,8 +230,7 @@ def vertices2corners_ecef(vertices):
 
     Examples
     ----------
-import starepandas.tools.trixel_conversions    >>> import starepandas
-    >>> import numpy
+    >>> import starepandas
     >>> sids = numpy.array([3458764513820540928])
     >>> vertices = starepandas.tools.trixel_conversions.to_vertices(sids)
     >>> starepandas.vertices2corners_ecef(vertices)
@@ -252,7 +258,7 @@ def vertices2gring(vertices):
     grings: numpy.array
         The great circles constraining the trixels given by their ECEF norm vectors.
     """
-    corners = vertices2corners(vertices)
+    corners = vertices2corners_ecef(vertices)
     return corners2gring(corners)
 
 
@@ -336,13 +342,16 @@ def to_centerpoints(sids):
     return centerpoints
 
 
-def to_corners(sids):
+def to_corners(sids, wrap_lon=True):
     """ Converts a (collection of) sid(s) into (collection of) corners in lon/lat representation.
 
     Parameters
     ----------
     sids: int or collection of ints
         sids to covert to corners
+    wrap_lon: bool
+        toggle if vertices should be wraped around antimeridian. If true:
+        lon = ((lon + 180.0) % 360.0) - 180.0
 
     Returns
     ---------
@@ -363,7 +372,7 @@ def to_corners(sids):
             [19.73607532, 24.53819039]]])
     """
 
-    vertices = to_vertices(sids)
+    vertices = to_vertices(sids, wrap_lon=wrap_lon)
     corners = vertices2corners(vertices)
     return corners
 
@@ -442,16 +451,24 @@ def corners2gring(corners):
     return gcs
 
 
-def to_trixels(sids, as_multipolygon=False):
-    """ Converts a (collection of) sid(s) into a (collection of) trixel(s)
+def to_trixels(sids, as_multipolygon=False, wrap_lon=True):
+    """
+    Converts a (collection of) sid(s) into a (collection of) trixel(s)
 
-    :param sids: (Collection of) STARE index value(s)
-    :type sids: int64 or array-like
-    :param as_multipolygon: If more than one sid is passed, toggle if the resulting trixels should be combined into a
-        multipolygon
-    :type as_multipolygon: bool
-    :return: array like of trixels
-    :rtype: array-like
+    Parameters
+    ------------
+    sids: int64 or array-like
+        (Collection of) STARE index value(s)
+    as_multipolygon: bool
+        If more than one sid is passed, toggle if the resulting trixels should be
+        combined into a multipolygon. Otherwise a list of trixels is returned.
+    wrap_lon: bool
+        toggle if trixels should be wraped around antimeridian.
+
+    Returns
+    ---------
+    trixels: Polygon or Multipolygon
+        (collection of) trixel(s)
 
     Examples
     ---------
@@ -462,56 +479,108 @@ def to_trixels(sids, as_multipolygon=False):
     if isinstance(sids, (numpy.int64, int)):
         # If single value was passed
         sids = [sids]
+        as_multipolygon = False
 
     if isinstance(sids, numpy.ndarray):
         # This is not ideal, but when we read sidecars, we get unit64 and have to cast
         sids = sids.astype(numpy.int64)
 
     trixels = []
-    vertices = to_corners(sids)
+    vertices = to_corners(sids, wrap_lon=wrap_lon)
     for vertex in vertices:
         geom = shapely.geometry.Polygon(vertex)
         trixels.append(geom)
 
-    if len(trixels) == 1:
+    if len(trixels) == 1 and not as_multipolygon:
         trixels = trixels[0]
-    elif as_multipolygon:
+    if as_multipolygon:
         trixels = shapely.geometry.MultiPolygon(trixels)
     return trixels
 
 
-def trixels_from_stareseries(sids_series, n_workers=1):
+def trixels_from_stareseries(sids_series, n_workers=1, wrap_lon=True):
     """ Takes a series of STARE index values and creates an array of sets of trixels. If a row contains a set of sids
     (rather than a single sid); i.e. representing e.g. a region, a set of trixels will be generated and combined in a
     multipolygon
 
-    :param sids_series: Series or array-like with STARE index values
-    :type sids_series: array like
-    :param n_workers: number of workers to use to lookup geometries in parallel
-    :type n_workers: int
-    :return: array like of trixels / triangle geometries
-    :rtype: array-like
+    Parameters
+    -----------
+    sids_series: array-like
+        Series or array-like with STARE index values
+    n_workers: int
+        number of workers to use to lookup geometries in parallel
+    wrap_lon: bool
+            toggle if trixels should be wraped around antimeridian.
+
+    Returns
+    -----------
+    trixel_series: geopandas.GeoSeries
+        Series of trixels / triangle geometries
 
     Examples
     -------------
     >>> import starepandas
     >>> sids = [4611686018427387903, 4611686018427387903]
-    >>> sdf = starepandas.STAREDataFrame(stare=sids)
-    >>> trixels = starepandas.trixels_from_stareseries(sdf.stare)
+    >>> sdf = starepandas.STAREDataFrame(sids=sids)
+    >>> trixels = starepandas.trixels_from_stareseries(sdf.sids)
     """
-
-    if n_workers > len(sids_series):
+    if len(sids_series) <= 1:
+        n_workers = 1
+    elif n_workers >= len(sids_series):
         # Cannot have more partitions than rows
         n_workers = len(sids_series) - 1
 
     if n_workers == 1:
         trixels_series = []
         for sids in sids_series:
-            trixels = to_trixels(sids, as_multipolygon=True)
+            trixels = to_trixels(sids, as_multipolygon=True, wrap_lon=wrap_lon)
             trixels_series.append(trixels)
     else:
         ddf = dask.dataframe.from_pandas(sids_series, npartitions=n_workers)
         meta = {'trixels': 'object'}
-        res = ddf.map_partitions(lambda df: numpy.array(trixels_from_stareseries(df, 1)).flatten(), meta=meta)
+        res = ddf.map_partitions(lambda df:
+                                 vectorized.from_shapely(
+                                     trixels_from_stareseries(df, n_workers=1,
+                                                              wrap_lon=wrap_lon)).flatten(),
+                                 meta=meta)
         trixels_series = res.compute(scheduler='processes')
+        # Since the array would be ragged, we are probably safer with a list of arrays
+        trixels_series = trixels_series.tolist()
+    trixels_series = geopandas.GeoSeries(trixels_series, crs='EPSG:4326', index=sids_series.index)
     return trixels_series
+
+
+def split_antimeridian(trixels):
+    """Splits trixels at the antimeridian
+
+    This works on trixels that cross the meridian and whose longitudes have *not* been wrapped around the
+    antimeridian. I.e. when creating the trixels use sdf.make_trixels(wrap_lon=False)
+
+    Parameters
+    ------------
+    trixels: A polygon, multipolygon, collection of polygons, or a geometry series
+        A collection of trixels.
+    """
+    bbox = shapely.geometry.Polygon([(-180, -90), (180, -90), (180, 90), (-180, 90)])
+
+    trixels = geopandas.GeoSeries(trixels, crs='EPSG:4326')
+
+    exploded = trixels.explode(index_parts=True).reset_index(drop=True)
+
+    for idx, trixel in exploded.iteritems():
+        if not trixel.exterior.is_ccw:
+            x = (numpy.array(trixel.exterior.xy[0]) + 180) % 360.0 - 180
+            y = numpy.array(trixel.exterior.xy[1])
+            exploded[idx] = shapely.geometry.Polygon(zip(x,y))
+
+    inside = exploded.intersection(bbox)
+    inside[inside.geom_type != 'Polygon'] = shapely.wkt.loads('POLYGON EMPTY')
+    inside = geopandas.tools.collect(inside, multi=True)
+
+    outside = exploded.difference(bbox)
+    outside[outside.geom_type != 'Polygon'] = shapely.wkt.loads('POLYGON EMPTY')
+    outside = outside.apply(lambda x: shapely.affinity.translate(x, xoff=-360))
+    outside = geopandas.tools.collect(outside)
+
+    split = inside.union(outside)
+    return split
