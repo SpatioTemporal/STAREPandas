@@ -524,19 +524,20 @@ def trixels_from_stareseries(sids_series, n_workers=1, wrap_lon=True):
     >>> sdf = starepandas.STAREDataFrame(sids=sids)
     >>> trixels = starepandas.trixels_from_stareseries(sdf.sids)
     """
+    npartitions = n_workers
     if len(sids_series) <= 1:
-        n_workers = 1
-    elif n_workers >= len(sids_series):
+        npartitions = 1
+    elif npartitions >= len(sids_series):
         # Cannot have more partitions than rows
-        n_workers = len(sids_series) - 1
+        npartitions = len(sids_series) - 1
 
-    if n_workers == 1:
+    if npartitions == 1:
         trixels_series = []
         for sids in sids_series:
             trixels = to_trixels(sids, as_multipolygon=True, wrap_lon=wrap_lon)
             trixels_series.append(trixels)
     else:
-        ddf = dask.dataframe.from_pandas(sids_series, npartitions=n_workers)
+        ddf = dask.dataframe.from_pandas(sids_series, npartitions=npartitions)
         meta = {'trixels': 'object'}
         res = ddf.map_partitions(lambda df:
                                  vectorized.from_shapely(
@@ -547,6 +548,41 @@ def trixels_from_stareseries(sids_series, n_workers=1, wrap_lon=True):
         # Since the array would be ragged, we are probably safer with a list of arrays
         trixels_series = trixels_series.tolist()
     trixels_series = geopandas.GeoSeries(trixels_series, crs='EPSG:4326', index=sids_series.index)
+    return trixels_series
+
+
+def split_antimeridian_series(trixels_series, n_workers=1):
+    npartitions = n_workers
+
+    if len(trixels_series) <= 1:
+        npartitions = 1
+    elif npartitions >= len(trixels_series):
+        # Cannot have more partitions than rows
+        npartitions = len(trixels_series) - 1
+
+    if npartitions == 1:
+        split = []
+        for row in trixels_series:
+            if row.geom_type == 'Polygon':
+                # We need to catch single Polygons
+                row = [row]
+            row = split_antimeridian(row)
+            split.append(row)
+        trixels_series = geopandas.GeoSeries(split,
+                                             crs='EPSG:4326',
+                                             index=trixels_series.index)
+    else:
+        ddf = dask.dataframe.from_pandas(trixels_series, npartitions=npartitions)
+        meta = {'trixels': 'object'}
+        res = ddf.map_partitions(lambda df:
+                                 vectorized.from_shapely(split_antimeridian_series(df, n_workers=1)).flatten(),
+                                 meta=meta)
+        trixels_series = res.compute(scheduler='processes')
+        # Since the array would be ragged, we are probably safer with a list of arrays
+        trixels_series = trixels_series.tolist()
+    trixels_series = geopandas.GeoSeries(trixels_series,
+                                         crs='EPSG:4326',
+                                         index=trixels_series.index)
     return trixels_series
 
 
@@ -569,9 +605,12 @@ def split_antimeridian(trixels):
 
     for idx, trixel in exploded.iteritems():
         if not trixel.exterior.is_ccw:
+            # If trixels are not CCW they have been constructed incorrectly
+            # and we wrap their verices around the antimeridian
             x = (numpy.array(trixel.exterior.xy[0]) + 180) % 360.0 - 180
             y = numpy.array(trixel.exterior.xy[1])
-            exploded[idx] = shapely.geometry.Polygon(zip(x,y))
+            # TODO: this appears to break
+            exploded[idx] = shapely.geometry.Polygon(zip(x, y))
 
     inside = exploded.intersection(bbox)
     inside[inside.geom_type != 'Polygon'] = shapely.wkt.loads('POLYGON EMPTY')
