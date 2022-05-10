@@ -12,4 +12,4 @@ sphinxcontrib-jsmath
 sphinxcontrib-qthelp
 sphinxcontrib-serializinghtml
 pystare
-git+git://github.com/SpatioTemporal/STAREPandas@master --no-binary=STAREPandas
+https://github.com/SpatioTemporal/STAREPandas@master --no-binary=STAREPandas
