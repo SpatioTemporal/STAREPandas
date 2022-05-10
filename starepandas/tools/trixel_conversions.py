@@ -6,7 +6,7 @@ import numpy
 import pystare
 import shapely
 import geopandas
-
+from shapely.geometry import Point
 
 def to_vertices(sids, wrap_lon=True):
     """ Converts a (collection of) sid(s) into vertices. Vertices are a tuple of:
@@ -333,8 +333,8 @@ def to_centerpoints(sids):
     >>> import starepandas
     >>> sids = [4611263805962321926, 4611404543450677254]
     >>> centerpoints = starepandas.to_centerpoints(sids)
-    >>> print(centerpoints[0])
-    POINT (19.50219017924583 23.29074702177385)
+    >>> print(Point(19.50219017924583,23.29074702177385).distance(centerpoints[0]) < 1.0e-12)
+    True
     """
 
     vertices = to_vertices(sids)

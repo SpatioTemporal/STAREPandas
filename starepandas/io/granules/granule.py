@@ -40,6 +40,8 @@ class Granule:
             prefix = self.companion_prefix
         return starepandas.io.granules.guess_companion_path(self.file_path, prefix=prefix, folder=folder)
 
+#    def add_stare(self, adapt_resolution=True):
+#        self.stare = pystare.from_latlon_2d(lat=self.lat, lon=self.lon, adapt_level=adapt_resolution)
     def add_sids(self, adapt_resolution=True):
         self.sids = pystare.from_latlon_2d(lat=self.lat, lon=self.lon, adapt_level=adapt_resolution)
 
@@ -51,7 +53,10 @@ class Granule:
         else:
             scp = self.guess_sidecar_path()
         ds = starepandas.io.s3.nc4_dataset_wrapper(scp)
-        self.sids = ds['STARE_index_{}'.format(self.nom_res)][:, :].astype(numpy.int64)
+        try:
+            self.sids = ds['STARE_index_{}'.format(self.nom_res)][:, :].astype(numpy.int64)
+        except IndexError:
+            self.sids = ds['STARE_index{}'.format(self.nom_res)][:, :].astype(numpy.int64)
 
     def read_sidecar_cover(self, sidecar_path=None):
         if sidecar_path:
@@ -106,6 +111,7 @@ class Granule:
             df['x'] = indices[0].flatten()
             df['y'] = indices[1].flatten()
         for key in self.data.keys():
+            # print('saving: ',key)
             df[key] = self.data[key].flatten()
         return starepandas.STAREDataFrame(df)
 
