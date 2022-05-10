@@ -111,7 +111,7 @@ class Granule:
             df['x'] = indices[0].flatten()
             df['y'] = indices[1].flatten()
         for key in self.data.keys():
-            print('saving: ',key)
+            # print('saving: ',key)
             df[key] = self.data[key].flatten()
         return starepandas.STAREDataFrame(df)
 
