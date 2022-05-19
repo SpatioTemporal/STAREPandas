@@ -493,8 +493,8 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         >>> sdf.set_sids(sids, inplace=True)
         >>> trixels = sdf.make_trixels(wrap_lon=False)
         >>> sdf.set_trixels(trixels, inplace=True)
-        >>> split_geoms = sdf.split_antimeridian(inplace=False)
-        >>> max(max(split_geoms.iloc[0][0].exterior.xy))
+        >>> cites_split = sdf.split_antimeridian(inplace=False)
+        >>> max(max(cites_split.trixels[1].geoms[0].exterior.xy))
         180.0
 
         """
@@ -750,11 +750,10 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         >>> sids = [2299437706637111721, 2299435211084507593, 2299566194809236969]
         >>> sdf = starepandas.STAREDataFrame(sids=sids)
         >>> sdf.to_stare_resolution(resolution=6, clear_to_resolution=False)
-        0    2299437706637111718
-        1    2299435211084507590
-        2    2299566194809236966
-        Name: sids, dtype: int64
-
+                          sids
+        0  2299437706637111718
+        1  2299435211084507590
+        2  2299566194809236966
         """
 
         if inplace:
@@ -786,7 +785,11 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         >>> sids = [2299437706637111721, 2299435211084507593, 2299566194809236969]
         >>> sdf = starepandas.STAREDataFrame(sids=sids)
         >>> sdf.clear_to_resolution(inplace=False)
-        array([2299437254470270985, 2299435055447015433, 2299564797819093001])
+                          sids
+        0  2299437254470270985
+        1  2299435055447015433
+        2  2299564797819093001
+
         """
         if inplace:
             df = self
@@ -822,8 +825,8 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         >>> germany = starepandas.STAREDataFrame(germany, add_sids=True, resolution=6, add_trixels=False)
         >>> len(germany.sids.iloc[0])
         43
-        >>> sids_singleres = germany.to_stare_singleres()
-        >>> len(sids_singleres[0])
+        >>> germany_singleres = germany.to_stare_singleres()
+        >>> len(germany_singleres.sids.iloc[0])
         46
         """
 
