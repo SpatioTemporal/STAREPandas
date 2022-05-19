@@ -498,7 +498,12 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         180.0
 
         """
-        trixels = geopandas.GeoSeries(self[self._trixel_column_name])
+        if inplace:
+            df = self
+        else:
+            df = self.copy()
+
+        trixels = geopandas.GeoSeries(df[df._trixel_column_name])
 
         split = []
         for row in trixels:
@@ -507,12 +512,12 @@ class STAREDataFrame(geopandas.GeoDataFrame):
                 row = [row]
             row = starepandas.tools.trixel_conversions.split_antimeridian(row)
             split.append(row)
-        split = geopandas.GeoSeries(split, index=self.index)
+        split = geopandas.GeoSeries(split, index=df.index)
 
-        if inplace:
-            self[self._trixel_column_name] = split
-        else:
-            return split
+        df[df._trixel_column_name] = split
+
+        if not inplace:
+            return df
 
     def plot(self, *args, trixels=True, boundary=True, **kwargs):
         """ Generate a plot with matplotlib.
@@ -753,19 +758,19 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         """
 
         if inplace:
-            sids = self[self._sid_column_name]
+            df = self
         else:
-            sids = self[self._sid_column_name].copy()
+            df = self.copy()
 
+        sids = df[df._sid_column_name]
         sids = pystare.spatial_coerce_resolution(sids, resolution)
         if clear_to_resolution:
             # pystare_terminator_mask uses << operator, which requires us to cast to numpy array first
             sids = pystare.spatial_clear_to_resolution(numpy.array(sids))
 
-        if inplace:
-            self[self._sid_column_name] = sids
-        else:
-            return sids
+        df[df._sid_column_name] = sids
+        if not inplace:
+            return df
 
     def clear_to_resolution(self, inplace=False):
         """
@@ -784,15 +789,15 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         array([2299437254470270985, 2299435055447015433, 2299564797819093001])
         """
         if inplace:
-            sids = self[self._sid_column_name]
+            df = self
         else:
-            sids = self[self._sid_column_name].copy()
+            df = self.copy()
+        sids = df[df._sid_column_name]
         sids = pystare.spatial_clear_to_resolution(numpy.array(sids))
 
-        if inplace:
-            self[self._sid_column_name] = sids
-        else:
-            return sids
+        df[df._sid_column_name] = sids
+        if not inplace:
+            return df
 
     def to_stare_singleres(self, resolution=None, inplace=False):
         """
@@ -823,9 +828,11 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         """
 
         if inplace:
-            sids_col = self[self._sid_column_name]
+            df = self
         else:
-            sids_col = self[self._sid_column_name].copy()
+            df = self.copy()
+
+        sids_col = df[df._sid_column_name]
 
         new_sids_col = []
         for sids in sids_col:
@@ -836,10 +843,9 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             sids = pystare.expand_intervals(sids, level=r, multi_resolution=False)
             new_sids_col.append(sids)
 
-        if inplace:
-            self[self._sid_column_name] = new_sids_col
-        else:
-            return new_sids_col
+        df[df._sid_column_name] = new_sids_col
+        if not inplace:
+            return df
 
     def hex(self):
         """
