@@ -14,3 +14,4 @@ Examples
     Temporal <notebooks/temporal.ipynb>
     Split antimeridian <notebooks/split_antimeridian.ipynb>
     SID resolution manipulations <notebooks/sid_resolution.ipynb>
+    Plotting <notebooks/plotting.ipynb>

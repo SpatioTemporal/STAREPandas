@@ -519,17 +519,18 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         if not inplace:
             return df
 
-    def plot(self, *args, trixels=True, boundary=True, **kwargs):
+    def plot(self, trixels=True, boundary=True, **kwargs):
         """ Generate a plot with matplotlib.
         Seminal method to
         `GeoDataFrame.plot() <https://geopandas.org/docs/reference/api/geopandas.GeoDataFrame.plot.html>`_
         All GeoDataFrame.plot() kwargs are available.
 
-        :param trixels: Toggle if trixels (rather than the SF geometry) is to be plotted
-        :type trixels: bool
-        :param boundary: Toggle if the ring is to be plotted as a linestring rather than the polygon
-        :type boundary: bool
-        :return: ax
+        Parameters
+        ----------
+        trixels: bool
+            Toggle if trixels (rather than the SF geometry) is to be plotted
+        boundary: bool
+            Toggle if the ring is to be plotted as a linestring rather than the polygon. Only relevant if trixels==True
 
         Examples
         --------
@@ -540,16 +541,18 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         >>> germany = starepandas.STAREDataFrame(germany, add_sids=True, resolution=8, add_trixels=True, n_workers=1)
         >>> ax = germany.plot(trixels=True, boundary=True, color='y', zorder=0)
         """
+        df = self.copy()
+
         if trixels:
             if not self.has_trixels():
                 raise AttributeError('No trixels set (expected in "{}" column)'.format(self._trixel_column_name))
-            df = self.set_geometry(self._trixel_column_name, inplace=False)
+            df.set_geometry(self._trixel_column_name, inplace=True)
+            if boundary:
+                df = df[df.geometry.is_empty == False]
+                df = df.set_geometry(df.geometry.boundary)
         else:
-            df = self.copy()
-        if boundary:
-            df = df[df.geometry.is_empty == False]
-            df = df.set_geometry(df.geometry.boundary)
-        return geopandas.plotting.plot_dataframe(df, *args, **kwargs)
+            df.set_geometry(self._geometry_column_name, inplace=True)
+        return geopandas.plotting.plot_dataframe(df, **kwargs)
 
     def to_scidb(self, connection):
         pass

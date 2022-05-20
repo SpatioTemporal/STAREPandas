@@ -303,7 +303,7 @@ def sids_from_ring(ring, resolution, convex=False, force_ccw=False):
     array([4430697608402436102, 4430838345890791430, 4430979083379146758])
     """
     if force_ccw and not ring.is_ccw:
-        ring.coords = list(ring.coords)[::-1]
+        ring = shapely.geometry.LinearRing(ring.coords[::-1])
     latlon = ring.coords.xy
     lon = latlon[0]
     lat = latlon[1]
