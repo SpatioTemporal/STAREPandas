@@ -493,12 +493,17 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         >>> sdf.set_sids(sids, inplace=True)
         >>> trixels = sdf.make_trixels(wrap_lon=False)
         >>> sdf.set_trixels(trixels, inplace=True)
-        >>> split_geoms = sdf.split_antimeridian(inplace=False)
-        >>> max(max(split_geoms.iloc[0][0].exterior.xy))
+        >>> cites_split = sdf.split_antimeridian(inplace=False)
+        >>> max(max(cites_split.trixels[1].geoms[0].exterior.xy))
         180.0
 
         """
-        trixels = geopandas.GeoSeries(self[self._trixel_column_name])
+        if inplace:
+            df = self
+        else:
+            df = self.copy()
+
+        trixels = geopandas.GeoSeries(df[df._trixel_column_name])
 
         split = []
         for row in trixels:
@@ -507,24 +512,25 @@ class STAREDataFrame(geopandas.GeoDataFrame):
                 row = [row]
             row = starepandas.tools.trixel_conversions.split_antimeridian(row)
             split.append(row)
-        split = geopandas.GeoSeries(split, index=self.index)
+        split = geopandas.GeoSeries(split, index=df.index)
 
-        if inplace:
-            self[self._trixel_column_name] = split
-        else:
-            return split
+        df[df._trixel_column_name] = split
 
-    def plot(self, *args, trixels=True, boundary=True, **kwargs):
+        if not inplace:
+            return df
+
+    def plot(self, trixels=True, boundary=True, **kwargs):
         """ Generate a plot with matplotlib.
         Seminal method to
         `GeoDataFrame.plot() <https://geopandas.org/docs/reference/api/geopandas.GeoDataFrame.plot.html>`_
         All GeoDataFrame.plot() kwargs are available.
 
-        :param trixels: Toggle if trixels (rather than the SF geometry) is to be plotted
-        :type trixels: bool
-        :param boundary: Toggle if the ring is to be plotted as a linestring rather than the polygon
-        :type boundary: bool
-        :return: ax
+        Parameters
+        ----------
+        trixels: bool
+            Toggle if trixels (rather than the SF geometry) is to be plotted
+        boundary: bool
+            Toggle if the ring is to be plotted as a linestring rather than the polygon. Only relevant if trixels==True
 
         Examples
         --------
@@ -535,16 +541,18 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         >>> germany = starepandas.STAREDataFrame(germany, add_sids=True, resolution=8, add_trixels=True, n_workers=1)
         >>> ax = germany.plot(trixels=True, boundary=True, color='y', zorder=0)
         """
+        df = self.copy()
+
         if trixels:
             if not self.has_trixels():
                 raise AttributeError('No trixels set (expected in "{}" column)'.format(self._trixel_column_name))
-            df = self.set_geometry(self._trixel_column_name, inplace=False)
+            df.set_geometry(self._trixel_column_name, inplace=True)
+            if boundary:
+                df = df[df.geometry.is_empty == False]
+                df = df.set_geometry(df.geometry.boundary)
         else:
-            df = self.copy()
-        if boundary:
-            df = df[df.geometry.is_empty == False]
-            df = df.set_geometry(df.geometry.boundary)
-        return geopandas.plotting.plot_dataframe(df, *args, **kwargs)
+            df.set_geometry(self._geometry_column_name, inplace=True)
+        return geopandas.plotting.plot_dataframe(df, **kwargs)
 
     def to_scidb(self, connection):
         pass
@@ -745,27 +753,26 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         >>> sids = [2299437706637111721, 2299435211084507593, 2299566194809236969]
         >>> sdf = starepandas.STAREDataFrame(sids=sids)
         >>> sdf.to_stare_resolution(resolution=6, clear_to_resolution=False)
-        0    2299437706637111718
-        1    2299435211084507590
-        2    2299566194809236966
-        Name: sids, dtype: int64
-
+                          sids
+        0  2299437706637111718
+        1  2299435211084507590
+        2  2299566194809236966
         """
 
         if inplace:
-            sids = self[self._sid_column_name]
+            df = self
         else:
-            sids = self[self._sid_column_name].copy()
+            df = self.copy()
 
+        sids = df[df._sid_column_name]
         sids = pystare.spatial_coerce_resolution(sids, resolution)
         if clear_to_resolution:
             # pystare_terminator_mask uses << operator, which requires us to cast to numpy array first
             sids = pystare.spatial_clear_to_resolution(numpy.array(sids))
 
-        if inplace:
-            self[self._sid_column_name] = sids
-        else:
-            return sids
+        df[df._sid_column_name] = sids
+        if not inplace:
+            return df
 
     def clear_to_resolution(self, inplace=False):
         """
@@ -781,18 +788,22 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         >>> sids = [2299437706637111721, 2299435211084507593, 2299566194809236969]
         >>> sdf = starepandas.STAREDataFrame(sids=sids)
         >>> sdf.clear_to_resolution(inplace=False)
-        array([2299437254470270985, 2299435055447015433, 2299564797819093001])
+                          sids
+        0  2299437254470270985
+        1  2299435055447015433
+        2  2299564797819093001
+
         """
         if inplace:
-            sids = self[self._sid_column_name]
+            df = self
         else:
-            sids = self[self._sid_column_name].copy()
+            df = self.copy()
+        sids = df[df._sid_column_name]
         sids = pystare.spatial_clear_to_resolution(numpy.array(sids))
 
-        if inplace:
-            self[self._sid_column_name] = sids
-        else:
-            return sids
+        df[df._sid_column_name] = sids
+        if not inplace:
+            return df
 
     def to_stare_singleres(self, resolution=None, inplace=False):
         """
@@ -817,15 +828,17 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         >>> germany = starepandas.STAREDataFrame(germany, add_sids=True, resolution=6, add_trixels=False)
         >>> len(germany.sids.iloc[0])
         43
-        >>> sids_singleres = germany.to_stare_singleres()
-        >>> len(sids_singleres[0])
+        >>> germany_singleres = germany.to_stare_singleres()
+        >>> len(germany_singleres.sids.iloc[0])
         46
         """
 
         if inplace:
-            sids_col = self[self._sid_column_name]
+            df = self
         else:
-            sids_col = self[self._sid_column_name].copy()
+            df = self.copy()
+
+        sids_col = df[df._sid_column_name]
 
         new_sids_col = []
         for sids in sids_col:
@@ -836,10 +849,9 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             sids = pystare.expand_intervals(sids, level=r, multi_resolution=False)
             new_sids_col.append(sids)
 
-        if inplace:
-            self[self._sid_column_name] = new_sids_col
-        else:
-            return new_sids_col
+        df[df._sid_column_name] = new_sids_col
+        if not inplace:
+            return df
 
     def hex(self):
         """

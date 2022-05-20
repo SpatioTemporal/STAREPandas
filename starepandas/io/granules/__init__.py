@@ -7,7 +7,7 @@ from .ssmis import SSMIS
 from .atms import ATMS
 
 
-class UnsuportedFileError(Exception):
+class UnsupportedFileError(Exception):
     def __init__(self, file_path):
         self.file_path = file_path
         self.message = 'cannot handle {}'.format(file_path)
@@ -81,88 +81,96 @@ def guess_companion_path(granule_path, folder=None, prefix=None):
     else:
         return companions[0]
 
+
 granule_factory_library = {
-    'MOD05|MYD05'       : Mod05,
-    'MOD09|MYD09'       : Mod09,
-    'VNP02DNB|VJ102DNB' : VNP02DNB,
-    'VNP03DNB|VJ103DNB' : VNP03DNB,
-    'VNP03MOD|VJ103MOD' : VNP03MOD,
-    'CLDMSKL2VIIRS'     : CLDMSKL2VIIRS,
-    'SSMIS'             : SSMIS,
-    'ATMS'              : ATMS
+    'MOD05|MYD05': Mod05,
+    'MOD09|MYD09': Mod09,
+    'VNP02DNB|VJ102DNB': VNP02DNB,
+    'VNP03DNB|VJ103DNB': VNP03DNB,
+    'VNP03MOD|VJ103MOD': VNP03MOD,
+    'CLDMSKL2VIIRS': CLDMSKL2VIIRS,
+    'SSMIS': SSMIS,
+    'ATMS': ATMS
 }
+
 
 # Do we need nom_res=None?
 def granule_factory(file_path, sidecar_path=None, nom_res=None):
     """
-    Returns a granule loader from the dictionary starepandas.io.granules.granule_factory_library. The keys in granule_factory_library are regex patterns against which file_path is matched. The values are the classes with constructors of signature (file_path,sidecar). For example:
+    Returns a granule loader from the dictionary starepandas.io.granules.granule_factory_library.
+    The keys in granule_factory_library are regex patterns against which file_path is matched.
+    The values are the classes with constructors of signature (file_path,sidecar). For example:
 
-```
-granule_factory_library = {
-    'MOD05|MYD05'       : Mod05,
-    'MOD09|MYD09'       : Mod09,
-    'VNP02DNB|VJ102DNB' : VNP02DNB,
-    ...
-}
-```
+    ```python
+        granule_factory_library = { 'MOD05|MYD05'       : Mod05,
+                                    'MOD09|MYD09'       : Mod09,
+                                    'VNP02DNB|VJ102DNB' : VNP02DNB,
+                                    ...}
+    ```
 
-    To add a loader for a granule or dataset not presently supported by starepandas, one can add a class implementing the interface defined by starepandas.io.granules.Granule. This can be done by defining a class inheriting Granule or another Granule-derived class (like Modis, Mod09, VIIRSL2, etc.). To see the current list of loaders distributed with starepandas, examine granule_factor_library.
+    To add a loader for a granule or dataset not presently supported by starepandas,
+    one can add a class implementing the interface defined by starepandas.io.granules.Granule.
+    This can be done by defining a class inheriting Granule or
+    another Granule-derived class (like Modis, Mod09, VIIRSL2, etc.).
+    To see the current list of loaders distributed with starepandas, examine granule_factor_library.
 
     An example of adding a new loader follows.
 
-```
+    ```
+    class VNP02IMG(VIIRSL2):
+        "Add loader for VNP02IMG, extending VIIRSL2, which extends Granule.
+        VNP02IMG holds observations. Geolocations are in VNP03IMG, which has its own loader."
 
-class VNP02IMG(VIIRSL2):
-    "Add loader for VNP02IMG, extending VIIRSL2, which extends Granule. VNP02IMG holds observations. Geolocations are in VNP03IMG, which has its own loader."
-    def __init__(self, file_path, sidecar_path=None):
-        super(VNP02IMG, self).__init__(file_path, sidecar_path)
-        self.companion_prefix = 'VNP03IMG'
+        def __init__(self, file_path, sidecar_path=None):
+            super(VNP02IMG, self).__init__(file_path, sidecar_path)
+            self.companion_prefix = 'VNP03IMG'
 
-    def read_data(self):
-        "Read the data of interest."
-        for band in ['I04','I05']:
-            IMG = self.netcdf.groups['observation_data'][band][:].data
-            quality_flags = self.netcdf.groups['observation_data'][band+'_quality_flags'][:].data
-            self.data[band+'_observations']  = IMG
-            self.data[band+'_quality_flags'] = quality_flags
+        def read_data(self):
+            "Read the data of interest."
+            for band in ['I04','I05']:
+                IMG = self.netcdf.groups['observation_data'][band][:].data
+                quality_flags = self.netcdf.groups['observation_data'][band+'_quality_flags'][:].data
+                self.data[band+'_observations']  = IMG
+                self.data[band+'_quality_flags'] = quality_flags
 
-    def read_latlon(self):
-        "Geolocations will be read from VNP03IMG using a separate loader."
-        pass
+        def read_latlon(self):
+            "Geolocations will be read from VNP03IMG using a separate loader."
+            pass
 
-    def read_sidecar_cover(self, sidecar_path=None):
-        "Let VNP03IMG loader handle this."
-        pass
+        def read_sidecar_cover(self, sidecar_path=None):
+            "Let VNP03IMG loader handle this."
+            pass
 
-    def read_sidecar_index(self, sidecar_path=None):
-        "Let VNP03IMG loader handle this."
-        pass
+        def read_sidecar_index(self, sidecar_path=None):
+            "Let VNP03IMG loader handle this."
+            pass
 
-# 'VNP02IMG is the short name for a Suomi National Polar-orbiting Partnership (SNPP) NASA/VIIRS L1B observation product.
-# Add 'VJ102IMG' to the regex pattern for the Joint Polar-orbiting Satellite System (JPSS-1/NOAA20).
-starepandas.io.granules.granule_factory_library['VNP02IMG|VJ102IMG']=VNP02IMG
+    # VNP02IMG is the short name for a Suomi National Polar-orbiting
+    # Partnership (SNPP) NASA/VIIRS L1B observation product.
+    # Add 'VJ102IMG' to the regex pattern for the Joint Polar-orbiting Satellite System (JPSS-1/NOAA20).
 
-```
+    starepandas.io.granules.granule_factory_library['VNP02IMG|VJ102IMG']=VNP02IMG
+    ```
 
-Then to load a granule file into a starepandas dataframe you can do something like the following.
-```
-granule_name="/home/jovyan/data/VNP02IMG.A2021182.0000.001.2021182064359.nc"
-vnp02 = starepandas.read_granule(granule_name, sidecar=False, read_latlon=False, add_stare=False)
+    Then to load a granule file into a starepandas dataframe you can do something like the following.
 
-```
+    ```
+    granule_name="/home/jovyan/data/VNP02IMG.A2021182.0000.001.2021182064359.nc"
+    vnp02 = starepandas.read_granule(granule_name, sidecar=False, read_latlon=False, add_stare=False)
 
-    Please see the examples/user_defined_granule_loader.ipynb in the starepandas distribution, i.e. https://github.com/SpatioTemporal/STAREPandas/tree/master/examples .
+    ```
+    Please see the examples/user_defined_granule_loader.ipynb in the starepandas
+    distribution, i.e. https://github.com/SpatioTemporal/STAREPandas/tree/master/examples .
 
     """
-    for regex,make_granule in granule_factory_library.items():
+
+    for regex, make_granule in granule_factory_library.items():
         if re.search(regex, file_path, re.IGNORECASE):
-            return make_granule(file_path,sidecar_path)
-    raise UnsuportedFileError(file_path)
+            return make_granule(file_path, sidecar_path)
+    raise UnsupportedFileError(file_path)
     return None
 
 
-# def read_granule(file_path, latlon=False, sidecar=False, sidecar_path=None, add_stare=False, adapt_resolution=True
-#                  ,**kwargs):
 def read_granule(file_path,
                  latlon=False,
                  sidecar=False,
@@ -203,8 +211,7 @@ def read_granule(file_path,
     >>> fname = starepandas.datasets.get_path('MOD05_L2.A2019336.0000.061.2019336211522.hdf')
     >>> modis = starepandas.read_granule(fname, latlon=True, sidecar=True)
     """
-    
-#    granule = granule_factory(file_path, sidecar_path)
+
     granule = granule_factory(file_path, sidecar_path, nom_res)
 
     if add_sids:
