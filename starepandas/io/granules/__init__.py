@@ -179,6 +179,7 @@ def read_granule(file_path,
                  adapt_resolution=True,
                  xy=False,
                  nom_res=None,
+                 read_timestamp=False,
                  **kwargs):
     """ Reads a granule into a STAREDataFrame
 
@@ -199,7 +200,9 @@ def read_granule(file_path,
     xy: bool
         toggle wheather to add array coordinates to the dataframe.
     nom_res: str
-        oprional; for multi-resolution products, specify which resolution to read
+        optional; for multi-resolution products, specify which resolution to read
+    read_timestamp:
+        toggle wheather to read the the timestamp
 
     Returns
     --------
@@ -217,6 +220,9 @@ def read_granule(file_path,
     if add_sids:
         latlon = True
         sidecar = False
+
+    if read_timestamp:
+        granule.read_timestamps()
 
     granule.read_data()
 

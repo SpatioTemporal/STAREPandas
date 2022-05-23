@@ -98,6 +98,9 @@ class Granule:
             df['lon'] = self.lon.flatten()
         if self.sids is not None:
             df['sids'] = self.sids.flatten()
+        if self.ts_start is not None and self.ts_end is not None:
+            df['ts_start'] = self.ts_start
+            df['ts_end'] = self.ts_end
         if xy:
             if self.lat is not None:
                 indices = numpy.indices(self.lat.shape)
