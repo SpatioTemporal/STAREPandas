@@ -38,7 +38,7 @@ def test_read_vnp03dnb():
     granule.read_sidecar_cover()
     granule.read_sidecar_index()
     df = granule.to_df()
-    assert 78809088 == df.size
+    assert 105078784 == df.size
 
 
 def test_read_mod05():
@@ -55,7 +55,7 @@ def test_read_mod05():
     granule.read_sidecar_cover()
     granule.read_sidecar_index()
     df = granule.to_df()
-    assert 986580 == df.size
+    assert 1205820 == df.size
 
 
 def test_read_granules():
