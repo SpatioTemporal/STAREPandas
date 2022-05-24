@@ -84,6 +84,8 @@ cd starepandas/
 pytests
 ```
 
+Some of the examples further require bokeh and pandas_bokeh
+
 
 ## Documentation
 starepandas uses sphinx
