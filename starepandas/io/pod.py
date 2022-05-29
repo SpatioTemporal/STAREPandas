@@ -30,8 +30,9 @@ def read_pods(pod_root, sids, pattern, add_podname=False):
         search = '.*{pattern}.*'.format(pattern=pattern)
         pods = list(filter(re.compile(search).match, pickles))
         for pod in pods:
-            df = df.append(pandas.read_pickle(pod))
+            dtmp_ = pandas.read_pickle(pod)
             if add_podname:
-                df['pod'] = pod
+                dtmp_['pod'] = pod
+            df = df.append(dtmp_)
     return df
 
