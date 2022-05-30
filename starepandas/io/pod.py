@@ -20,7 +20,6 @@ def read_pods(pod_root, sids, pattern, add_podname=False):
     :rtype: starepandas.STAREDataFrame
     """
 
-    df = starepandas.STAREDataFrame()
     for sid in sids:
         pod_path = '{pod_root}/{sid}/'.format(pod_root=pod_root, sid=sid)
         if not os.path.exists(pod_path):
@@ -29,13 +28,14 @@ def read_pods(pod_root, sids, pattern, add_podname=False):
         pickles = sorted(glob.glob(os.path.expanduser(pod_path + '/*')))
         search = '.*{pattern}.*'.format(pattern=pattern)
         pods = list(filter(re.compile(search).match, pickles))
-        df_list = []
+        dfs = []
         for pod in pods:
             df = pandas.read_pickle(pod)
             if add_podname:
                 df['pod'] = pod
-            df_list = df_list.append(df)
-
-
+            dfs.append(df)
+    df = pandas.concat(dfs)
+    df.reset_index(inplace=True)
+    df = starepandas.STAREDataFrame(df)
     return df
 
