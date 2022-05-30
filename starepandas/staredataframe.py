@@ -7,10 +7,10 @@ import starepandas
 import netCDF4
 import starepandas.tools.trixel_conversions
 import multiprocessing
-import warnings
-import shapely
+
 
 DEFAULT_SID_COLUMN_NAME = 'sids'
+DEFAULT_TID_COLUMN_NAME = 'tids'
 DEFAULT_TRIXEL_COLUMN_NAME = 'trixels'
 
 
@@ -29,6 +29,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
     _sid_column_name = DEFAULT_SID_COLUMN_NAME
     _trixel_column_name = DEFAULT_TRIXEL_COLUMN_NAME
+    _tid_column_name = DEFAULT_TID_COLUMN_NAME
 
     def __init__(self, *args,
                  sids=None, add_sids=False, resolution=None,
@@ -185,6 +186,12 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
         if not inplace:
             return frame
+
+    def make_tids(self):
+        pass
+
+    def set_tids(self):
+        pass
 
     def has_trixels(self):
         return self._trixel_column_name in self
