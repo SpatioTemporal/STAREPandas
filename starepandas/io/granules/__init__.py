@@ -166,7 +166,7 @@ def granule_factory(file_path, sidecar_path=None, nom_res=None):
 
     for regex, make_granule in granule_factory_library.items():
         if re.search(regex, file_path, re.IGNORECASE):
-            return make_granule(file_path, sidecar_path, nom_res)
+            return make_granule(file_path, sidecar_path)
     raise UnsupportedFileError(file_path)
     return None
 
@@ -216,6 +216,8 @@ def read_granule(file_path,
     """
 
     granule = granule_factory(file_path, sidecar_path, nom_res)
+    if nom_res is not None:
+        granule.nom_res = nom_res
 
     if add_sids:
         latlon = True
