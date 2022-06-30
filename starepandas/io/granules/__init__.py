@@ -216,6 +216,8 @@ def read_granule(file_path,
     """
 
     granule = granule_factory(file_path, sidecar_path, nom_res)
+    if nom_res is not None:
+        granule.nom_res = nom_res
 
     if add_sids:
         latlon = True

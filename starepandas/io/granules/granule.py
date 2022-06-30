@@ -6,7 +6,7 @@ import pystare
 
 class Granule:
 
-    def __init__(self, file_path, sidecar_path=None):
+    def __init__(self, file_path, sidecar_path=None, nom_res=None):
         self.file_path = file_path
         self.sidecar_path = sidecar_path
         self.data = {}
@@ -16,7 +16,7 @@ class Granule:
         self.stare_cover = None
         self.ts_start = None
         self.ts_end = None
-        self.nom_res = None
+        self.nom_res = nom_res
         self.companion_prefix = None
 
     def guess_sidecar_path(self):
