@@ -103,6 +103,7 @@ class Granule:
             df['ts_end'] = self.ts_end
         if xy:
             if self.lat is not None:
+                # Todo: those should probably be int16s, not int64s
                 indices = numpy.indices(self.lat.shape)
             elif self.sids is not None:
                 indices = numpy.indices(self.sids.shape)

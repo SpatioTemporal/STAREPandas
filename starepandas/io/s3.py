@@ -132,7 +132,6 @@ def nc4_dataset_from_s3(s3_client, bucket_name, key, filename='file.nc4'):
 
 
 def nc4_dataset_wrapper(file_path, mode='r', format=None):
-    ds = None
     if 's3://' == file_path[0:5]:
         s3 = parse_s3_url(file_path)
         s3_client = boto3.client('s3')
@@ -144,7 +143,6 @@ def nc4_dataset_wrapper(file_path, mode='r', format=None):
 
 
 def sd_wrapper(file_path):
-    ds = None
     if 's3://' == file_path[0:5]:
         s3 = parse_s3_url(file_path)
         s3_client = boto3.client('s3')
