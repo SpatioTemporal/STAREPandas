@@ -180,6 +180,8 @@ def read_granule(file_path,
                  xy=False,
                  nom_res=None,
                  read_timestamp=False,
+                 datasets=None,
+                 roi=None,
                  **kwargs):
     """ Reads a granule into a STAREDataFrame
 
@@ -226,8 +228,6 @@ def read_granule(file_path,
     if read_timestamp:
         granule.read_timestamps()
 
-    granule.read_data()
-
     if latlon:
         if sidecar:
             granule.read_sidecar_latlon()
@@ -238,6 +238,8 @@ def read_granule(file_path,
         granule.read_sidecar_index(sidecar_path)
     elif add_sids:
         granule.add_sids(adapt_resolution)
+
+    granule.read_data()
 
     df = granule.to_df(xy=xy)
     return df

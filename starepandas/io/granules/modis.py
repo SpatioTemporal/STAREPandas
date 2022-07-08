@@ -73,7 +73,18 @@ class Modis(Granule):
         end_date = meta_group['RANGEENDINGDATE']['VALUE']
         end_time = meta_group['RANGEENDINGTIME']['VALUE']
         self.ts_start = datetime.datetime.strptime(begining_date+begining_time, '"%Y-%m-%d""%H:%M:%S.%f"') 
-        self.ts_end = datetime.datetime.strptime(end_date+end_time, '"%Y-%m-%d""%H:%M:%S.%f"')         
+        self.ts_end = datetime.datetime.strptime(end_date+end_time, '"%Y-%m-%d""%H:%M:%S.%f"')
+
+    def read_dataset(self, dataset_name, resample_factor=None):
+        self.data[dataset_name] = self.hdf.select(dataset_name).get()
+        if resample_factor is not None:
+            self.resample(dataset_name, resample_factor)
+
+    def resample(self, dataset, factor):
+        data = self.data[dataset]
+        data = data.repeat(factor, axis=0)
+        data = data.repeat(factor, axis=1)
+        self.data[dataset] = data
     
 
 class Mod09(Modis):
@@ -94,17 +105,42 @@ class Mod09(Modis):
             self.read_data_250m()
 
     def read_data_1km(self):
-        for dataset_name in dict(filter(lambda elem: '1km' in elem[0], self.hdf.datasets().items())).keys():
-            self.data[dataset_name] = self.hdf.select(dataset_name).get()
+        datasets = dict(filter(lambda elem: '1km' in elem[0], self.hdf.datasets().items())).keys()
+        for dataset_name in datasets:
+            data = self.hdf.select(dataset_name).get()
+            self.data[dataset_name] = data
+            if self.nom_res == '500m':
+                self.resample(dataset_name, factor=2)
 
     def read_data_500m(self):
-        for dataset_name in dict(filter(lambda elem: '500m' in elem[0], self.hdf.datasets().items())).keys():
-           self.data[dataset_name] = self.hdf.select(dataset_name).get()
+        datasets = dict(filter(lambda elem: '500m' in elem[0], self.hdf.datasets().items())).keys()
+        for dataset_name in datasets:
+            self.data[dataset_name] = self.hdf.select(dataset_name).get()
 
     def read_data_250m(self):
-        for dataset_name in dict(filter(lambda elem: '250m' in elem[0], self.hdf.datasets().items())).keys():
+        datasets = dict(filter(lambda elem: '250m' in elem[0], self.hdf.datasets().items())).keys()
+        for dataset_name in datasets:
             self.data[dataset_name] = self.hdf.select(dataset_name).get()
-            
+
+
+class Mod03(Modis):
+    def __init__(self, file_path, sidecar_path=None, nom_res=None):
+        super(Mod03, self).__init__(file_path, sidecar_path)
+        if nom_res is None:
+            self.nom_res = '1km'
+        else:
+            self.nom_res = nom_res
+
+    def read_data(self):
+        self.read_data1km()
+
+    def read_data1km(self):
+        dataset_names = ['SensorAzimuth', 'SensorZenith', 'SolarAzimuth', 'SolarZenith']
+        for dataset_name in dataset_names:
+            self.data[dataset_name] = self.hdf.select(dataset_name).get()
+            if self.nom_res == '500m':
+                self.resample(dataset_name, factor=2)
+
 
 class Mod05(Modis):
 
