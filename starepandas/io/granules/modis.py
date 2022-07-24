@@ -6,10 +6,9 @@ import numpy
 
 def get_hdfeos_metadata(file_path):    
     hdf = starepandas.io.s3.sd_wrapper(file_path)
-    metadata = {}
-    metadata['ArchiveMetadata'] = get_metadata_group(hdf, 'ArchiveMetadata')
-    metadata['StructMetadata']  = get_metadata_group(hdf, 'StructMetadata')
-    metadata['CoreMetadata']    = get_metadata_group(hdf, 'CoreMetadata')    
+    metadata = {'ArchiveMetadata': get_metadata_group(hdf, 'ArchiveMetadata'),
+                'StructMetadata': get_metadata_group(hdf, 'StructMetadata'),
+                'CoreMetadata': get_metadata_group(hdf, 'CoreMetadata')}
     return metadata
 
 
@@ -68,11 +67,11 @@ class Modis(Granule):
     def read_timestamps(self):
         meta = get_hdfeos_metadata(self.file_path)
         meta_group = meta['CoreMetadata']['INVENTORYMETADATA']['RANGEDATETIME']
-        begining_date = meta_group['RANGEBEGINNINGDATE']['VALUE']
-        begining_time = meta_group['RANGEBEGINNINGTIME']['VALUE']
+        beginning_date = meta_group['RANGEBEGINNINGDATE']['VALUE']
+        beginning_time = meta_group['RANGEBEGINNINGTIME']['VALUE']
         end_date = meta_group['RANGEENDINGDATE']['VALUE']
         end_time = meta_group['RANGEENDINGTIME']['VALUE']
-        self.ts_start = datetime.datetime.strptime(begining_date+begining_time, '"%Y-%m-%d""%H:%M:%S.%f"') 
+        self.ts_start = datetime.datetime.strptime(beginning_date+beginning_time, '"%Y-%m-%d""%H:%M:%S.%f"')
         self.ts_end = datetime.datetime.strptime(end_date+end_time, '"%Y-%m-%d""%H:%M:%S.%f"')
 
     def read_dataset(self, dataset_name, resample_factor=None):

@@ -101,7 +101,7 @@ def granule_factory(file_path, sidecar_path=None, nom_res=None):
     The keys in granule_factory_library are regex patterns against which file_path is matched.
     The values are the classes with constructors of signature (file_path,sidecar). For example:
 
-    ```python
+    ```py`thon
         granule_factory_library = { 'MOD05|MYD05'       : Mod05,
                                     'MOD09|MYD09'       : Mod09,
                                     'VNP02DNB|VJ102DNB' : VNP02DNB,
