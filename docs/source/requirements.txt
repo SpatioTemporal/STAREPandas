@@ -12,4 +12,5 @@ sphinxcontrib-jsmath
 sphinxcontrib-qthelp
 sphinxcontrib-serializinghtml
 pystare
+ipykernel
 git+https://github.com/SpatioTemporal/STAREPandas@master
