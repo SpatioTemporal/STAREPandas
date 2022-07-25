@@ -152,6 +152,8 @@ class Mod05(Modis):
                          'Sensor_Zenith', 'Sensor_Azimuth', 'Water_Vapor_Infrared']
     
         dataset_names2 = ['Cloud_Mask_QA', 'Water_Vapor_Near_Infrared', 
-                          'Water_Vaport_Corretion_Factors', 'Quality_Assurance_Near_Infrared', 'Quality_Assurance_Infrared']
+                          'Water_Vaport_Corretion_Factors', 'Quality_Assurance_Near_Infrared',
+                          'Quality_Assurance_Infrared']
+
         for dataset_name in dataset_names:
             self.data[dataset_name] = self.hdf.select(dataset_name).get()
