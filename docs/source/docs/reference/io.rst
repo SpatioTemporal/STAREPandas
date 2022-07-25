@@ -11,6 +11,7 @@ I/O
     read_granule
     read_pods
     read_sql_table
+    read_geotiff
     guess_companion_path
 
     STAREDataFrame.write_pods
