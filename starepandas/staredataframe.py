@@ -1,4 +1,3 @@
-import geopandas
 import geopandas.plotting
 import pystare
 import pandas
