@@ -4,6 +4,7 @@ from starepandas.io.granules import read_granule
 from starepandas.io.granules import guess_companion_path
 from starepandas.io.pod import read_pods
 from starepandas.io.database import read_sql_table
+from starepandas.io.geotiff import read_geotiff
 
 import starepandas.datasets  
 
