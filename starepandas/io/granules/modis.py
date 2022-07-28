@@ -79,7 +79,9 @@ class Modis(Granule):
         data = ds.get()
         if resample_factor is not None:
             data = self.resample(data=data, factor=resample_factor)
+
         attributes = ds.attributes()
+
         if '_FillValue' in attributes.keys():
             fill_value = attributes['_FillValue']
             mask = data == fill_value
@@ -87,7 +89,12 @@ class Modis(Granule):
 
         if 'scale_factor' in attributes.keys():
             scale_factor = attributes['scale_factor']
-            data = data/scale_factor
+            if scale_factor < 1:
+                # This is insane
+                data = data * scale_factor
+            else:
+                data = data / scale_factor
+
         self.data[dataset_name] = data
 
     def resample(self, data, factor):
@@ -169,3 +176,14 @@ class Mod05(Modis):
 
         for dataset_name in dataset_names:
             self.read_dataset(dataset_name=dataset_name, resample_factor=None)
+
+
+class Mod09GA(Modis):
+    def read_latlon(self):
+        pass
+
+    def read_data(self):
+        dataset_names = ['sur_refl_b01_1', 'sur_refl_b02_1', 'sur_refl_b03_1', 'sur_refl_b04_1', 'sur_refl_b05_1',
+                          'sur_refl_b06_1', 'sur_refl_b07_1', 'QC_500m_1', 'obscov_500m_1']
+        for dataset_name in dataset_names:
+            self.read_dataset(dataset_name)

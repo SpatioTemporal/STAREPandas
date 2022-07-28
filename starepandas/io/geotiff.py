@@ -12,7 +12,7 @@ def flatten_values(values):
     return values
 
 
-def read_bands(file_path,bands=None):
+def read_bands(file_path, bands=None):
     values = {}
     with rasterio.open(file_path) as src:
         if bands is None:

@@ -1,8 +1,8 @@
-from starepandas.io.granules.viirsl2 import *
 import glob
 import re
-from .modis import *
-from .viirsl2 import *
+
+from .modis import Mod09GA, Mod05, Mod09, Mod03
+from .viirsl2 import VNP02DNB, VNP03DNB, VNP03MOD, CLDMSKL2VIIRS
 from .ssmis import SSMIS
 from .atms import ATMS
 
@@ -83,6 +83,7 @@ def guess_companion_path(granule_path, folder=None, prefix=None):
 
 
 granule_factory_library = {
+    'MOD09GA|MYD09GA': Mod09GA,
     'MOD05|MYD05': Mod05,
     'MOD09|MYD09': Mod09,
     'VNP02DNB|VJ102DNB': VNP02DNB,
