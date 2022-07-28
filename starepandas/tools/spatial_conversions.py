@@ -442,7 +442,7 @@ def compress_sids(sids):
     return expanded
 
 
-def series_intersects(series, other, method='skiplist', n_workers=1):
+def series_intersects(series, other, method='binsearch', n_workers=1):
     """  Returns a bool series of length len(series).
     True for every row in which row intersects other.
 

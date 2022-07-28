@@ -24,7 +24,7 @@ def get_metadata_group(hdf, group_name):
 
 def parse_hdfeos_metadata(string):
     out = {} 
-    lines0 = [i.replace('\t','') for i in string.split('\n')]
+    lines0 = [i.replace('\t', '') for i in string.split('\n')]
     lines = []
     for line in lines0:
         if "=" in line:
@@ -75,19 +75,35 @@ class Modis(Granule):
         self.ts_end = datetime.datetime.strptime(end_date+end_time, '"%Y-%m-%d""%H:%M:%S.%f"')
 
     def read_dataset(self, dataset_name, resample_factor=None):
-        self.data[dataset_name] = self.hdf.select(dataset_name).get()
+        ds = self.hdf.select(dataset_name)
+        data = ds.get()
         if resample_factor is not None:
-            self.resample(dataset_name, resample_factor)
+            data = self.resample(data=data, factor=resample_factor)
 
-    def resample(self, dataset, factor):
-        data = self.data[dataset]
+        attributes = ds.attributes()
+
+        if '_FillValue' in attributes.keys():
+            fill_value = attributes['_FillValue']
+            mask = data == fill_value
+            data = numpy.ma.array(data, mask=mask)
+
+        if 'scale_factor' in attributes.keys():
+            scale_factor = attributes['scale_factor']
+            if scale_factor < 1:
+                # This is insane
+                data = data * scale_factor
+            else:
+                data = data / scale_factor
+
+        self.data[dataset_name] = data
+
+    def resample(self, data, factor):
         data = data.repeat(factor, axis=0)
         data = data.repeat(factor, axis=1)
-        self.data[dataset] = data
-    
+        return data
+
 
 class Mod09(Modis):
-    
     def __init__(self, file_path, sidecar_path=None, nom_res=None):
         super(Mod09, self).__init__(file_path, sidecar_path)
         if nom_res is None:
@@ -106,20 +122,21 @@ class Mod09(Modis):
     def read_data_1km(self):
         datasets = dict(filter(lambda elem: '1km' in elem[0], self.hdf.datasets().items())).keys()
         for dataset_name in datasets:
-            data = self.hdf.select(dataset_name).get()
-            self.data[dataset_name] = data
             if self.nom_res == '500m':
-                self.resample(dataset_name, factor=2)
+                resample_factor = 2
+            else:
+                resample_factor = None
+            self.read_dataset(dataset_name, resample_factor=resample_factor)
 
     def read_data_500m(self):
         datasets = dict(filter(lambda elem: '500m' in elem[0], self.hdf.datasets().items())).keys()
         for dataset_name in datasets:
-            self.data[dataset_name] = self.hdf.select(dataset_name).get()
+            self.read_dataset(dataset_name=dataset_name, resample_factor=None)
 
     def read_data_250m(self):
         datasets = dict(filter(lambda elem: '250m' in elem[0], self.hdf.datasets().items())).keys()
         for dataset_name in datasets:
-            self.data[dataset_name] = self.hdf.select(dataset_name).get()
+            self.read_dataset(dataset_name=dataset_name, resample_factor=None)
 
 
 class Mod03(Modis):
@@ -136,9 +153,11 @@ class Mod03(Modis):
     def read_data1km(self):
         dataset_names = ['SensorAzimuth', 'SensorZenith', 'SolarAzimuth', 'SolarZenith']
         for dataset_name in dataset_names:
-            self.data[dataset_name] = self.hdf.select(dataset_name).get()
             if self.nom_res == '500m':
-                self.resample(dataset_name, factor=2)
+                resample_factor = 2
+            else:
+                resample_factor = None
+            self.read_dataset(dataset_name=dataset_name, resample_factor=resample_factor)
 
 
 class Mod05(Modis):
@@ -156,4 +175,15 @@ class Mod05(Modis):
                           'Quality_Assurance_Infrared']
 
         for dataset_name in dataset_names:
-            self.data[dataset_name] = self.hdf.select(dataset_name).get()
+            self.read_dataset(dataset_name=dataset_name, resample_factor=None)
+
+
+class Mod09GA(Modis):
+    def read_latlon(self):
+        pass
+
+    def read_data(self):
+        dataset_names = ['sur_refl_b01_1', 'sur_refl_b02_1', 'sur_refl_b03_1', 'sur_refl_b04_1', 'sur_refl_b05_1',
+                          'sur_refl_b06_1', 'sur_refl_b07_1', 'QC_500m_1', 'obscov_500m_1']
+        for dataset_name in dataset_names:
+            self.read_dataset(dataset_name)

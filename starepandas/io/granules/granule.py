@@ -2,6 +2,7 @@ import glob
 import starepandas
 import numpy
 import pystare
+import pandas
 
 
 class Granule:
@@ -104,7 +105,7 @@ class Granule:
         if xy:
             if self.lat is not None:
                 # Todo: those should probably be int16s, not int64s
-                indices = numpy.indices(self.lat.shape)
+                indices = numpy.indices(self.lat.shape, dtype='uint16')
             elif self.sids is not None:
                 indices = numpy.indices(self.sids.shape)
             else:
@@ -113,8 +114,16 @@ class Granule:
             df['x'] = indices[0].flatten()
             df['y'] = indices[1].flatten()
         for key in self.data.keys():
-            # print('saving: ',key)
-            df[key] = self.data[key].flatten()
+            dtype = self.data[key].dtype
+
+            # We have to convert to nullable integer types (IntegerArray) to deal with the masks
+            # https://pandas.pydata.org/docs/user_guide/integer_na.html
+            if dtype.kind == 'i':
+                dtype = dtype.name.replace('i', 'I')
+            elif dtype.kind == 'u':
+                dtype = dtype.name.replace('ui', 'UI')
+            series = pandas.Series(self.data[key].flatten(), dtype=dtype)
+            df[key] = series
         return starepandas.STAREDataFrame(df)
 
 
