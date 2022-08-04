@@ -186,6 +186,11 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         if not inplace:
             return frame
 
+    def drop_nasids(self, inplace=False):
+        frame = self.dropna(subset=[self._sid_column_name], inplace=inplace)
+        if not not inplace:
+            return frame
+
     def make_tids(self):
         pass
 

@@ -483,8 +483,11 @@ def series_intersects(series, other, method='binsearch', n_workers=1):
         n_workers = len(series) - 1
 
     if n_workers == 1:
-        if series.dtype == numpy.int64:
+        if series.dtype in [numpy.dtype('uint64'), numpy.dtype('int64'), pandas.UInt64Dtype(), pandas.Int64Dtype()]:
             # If we have a series of sids; don't need to iterate. Can send the whole array to pystare/
+            if pandas.isna(series).sum() > 0:
+                raise Exception('There are NaN values in the sids. Use e.g. ```sdf.dropna(subset=["sids"], inplace=True)```')
+
             intersects = pystare.intersects(other, series, method)
         else:
             intersects = []
