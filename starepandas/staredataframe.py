@@ -775,7 +775,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         else:
             df = self.copy()
 
-        sids = df[df._sid_column_name]
+        sids = df[df._sid_column_name].astype(numpy.dtype('int64'))
         sids = pystare.spatial_coerce_resolution(sids, resolution)
         if clear_to_resolution:
             # pystare_terminator_mask uses << operator, which requires us to cast to numpy array first
