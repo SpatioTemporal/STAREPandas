@@ -181,6 +181,7 @@ def read_granule(file_path,
                  xy=False,
                  nom_res=None,
                  read_timestamp=False,
+                 keep_na_sids=False,
                  datasets=None,
                  roi=None,
                  **kwargs):
@@ -206,6 +207,8 @@ def read_granule(file_path,
         optional; for multi-resolution products, specify which resolution to read
     read_timestamp:
         toggle wheather to read the the timestamp
+    keep_na_sids:
+        toggle whether or not to keep rows containing NA values for sids
 
     Returns
     --------
@@ -243,4 +246,5 @@ def read_granule(file_path,
     granule.read_data()
 
     df = granule.to_df(xy=xy)
+
     return df

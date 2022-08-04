@@ -99,8 +99,8 @@ class Granule:
             df['lon'] = self.lon.flatten()
         if self.sids is not None:
             # Converting to nullable series
-            sids = pandas.Series(self.sids.flatten(), dtype='UInt64')
-            df['sids'] = sids
+            sids = pandas.Series(pandas.array(self.sids.flatten(), dtype='Int64'))
+            df['sids'] = sids #self.sids.flatten()
         if self.ts_start is not None and self.ts_end is not None:
             df['ts_start'] = self.ts_start
             df['ts_end'] = self.ts_end

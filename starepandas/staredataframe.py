@@ -186,9 +186,15 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         if not inplace:
             return frame
 
-    def drop_nasids(self, inplace=False):
-        frame = self.dropna(subset=[self._sid_column_name], inplace=inplace)
-        if not not inplace:
+    def drop_na_sids(self, inplace=False):
+        """Drop all rows that have NA values for the SIDs and cast the column to numpy.int64 """
+        if inplace:
+            self.dropna(subset=[self._sid_column_name], inplace=inplace)
+            self[self._sid_column_name] = self[self._sid_column_name].astype(numpy.dtype('int64'))
+        else:
+            frame = self.copy()
+            frame = frame.dropna(subset=[frame._sid_column_name], inplace=inplace)
+            frame[frame._sid_column_name] = frame[frame._sid_column_name].astype(numpy.dtype('int64'))
             return frame
 
     def make_tids(self):
