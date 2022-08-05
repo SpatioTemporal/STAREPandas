@@ -486,8 +486,7 @@ def series_intersects(series, other, method='binsearch', n_workers=1):
         if series.dtype in [numpy.dtype('uint64'), numpy.dtype('int64'), pandas.UInt64Dtype(), pandas.Int64Dtype()]:
             # If we have a series of sids; don't need to iterate. Can send the whole array to pystare/
             if pandas.isna(series).sum() > 0:
-                raise Exception('There are NaN values in the sids. Use e.g. ```sdf.dropna(subset=["sids"], inplace=True)```')
-
+                raise Exception('NaN values in the sids. Use e.g. ```sdf.dropna(subset=["sids"], inplace=True)```')
             intersects = pystare.intersects(other, series, method)
         else:
             intersects = []
@@ -506,6 +505,43 @@ def series_intersects(series, other, method='binsearch', n_workers=1):
     return intersects
 
 
+def speedy_subset(df, roi_sids):
+    """ Speedy intersects is meant to subset large (long) STAREDataFrame to a subset that intersects the roi.
+    This method works particularly well if
+     a) the df has significantly more SIDs than the roi_sids
+     b) The SIDs of the df are at higher resolution than the roi_sids
+
+    Parameters
+    -----------
+    df: starepandas.STAREDataFrame
+        the dataframe that is to be subset
+    roi_sids: array-like
+        a set of SIDs describing the roi to whch the df is to be subset
+    """
+    sids_left = df[df._sid_column_name]
+
+    # Dropping values outside of range
+    top_bound = pystare.spatial_clear_to_resolution(roi_sids.max())
+    level = pystare.spatial_resolution(top_bound)
+    top_bound += pystare.spatial_increment_from_level(level)
+    bottom_bound = roi_sids.min()
+    candidate_sids = sids_left[(sids_left >= bottom_bound) * (sids_left <= top_bound)]
+
+    # finding the intersection level
+    left_min_level = pystare.spatial_resolution(candidate_sids).max()
+    right_min_level = pystare.spatial_resolution(roi_sids).max()
+    intersecting_level = min(right_min_level, left_min_level)
+
+    # Clearing to intersecting level, allowing us to group them / extract only the distinct values
+    coerced_sids = pystare.spatial_coerce_resolution(candidate_sids, intersecting_level)
+    cleared_sids = pystare.spatial_clear_to_resolution(coerced_sids)
+    distinct_sids = numpy.unique(cleared_sids)
+
+    # Now doing the intersection on the distinct values
+    intersects = distinct_sids[pystare.intersects(roi_sids, distinct_sids)]
+    intersecting = candidate_sids[cleared_sids.isin(intersects)]
+
+    return df.iloc[intersecting.index]
 
 
 
