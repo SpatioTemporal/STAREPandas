@@ -541,8 +541,7 @@ def trixels_from_stareseries(sids_series, n_workers=1, wrap_lon=True):
         meta = {'trixels': 'object'}
         res = ddf.map_partitions(lambda df:
                                  vectorized.from_shapely(
-                                     trixels_from_stareseries(df, n_workers=1,
-                                                              wrap_lon=wrap_lon)).flatten(),
+                                     trixels_from_stareseries(df, n_workers=1, wrap_lon=wrap_lon)).flatten(),
                                  meta=meta)
         trixels_series = res.compute(scheduler='processes')
         # Since the array would be ragged, we are probably safer with a list of arrays

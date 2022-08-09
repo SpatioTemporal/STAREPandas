@@ -7,6 +7,7 @@ import pystare
 import dask
 import xarray
 
+
 def flatten_values(values):
     for key in values:
         values[key] = values[key].flatten()
