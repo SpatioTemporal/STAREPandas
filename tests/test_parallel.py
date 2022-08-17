@@ -43,5 +43,3 @@ def test_issue62_3():
     # This would recursively spin up more workers
     starepandas.sids_from_geoseries(countries[0:0].geometry, resolution=6, n_workers=1)
 
-
-

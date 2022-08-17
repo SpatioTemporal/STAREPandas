@@ -53,7 +53,8 @@ def sids_from_gdf(gdf, resolution, convex=False, force_ccw=True, n_workers=1):
         lon = gdf.geometry.x
         return pystare.from_latlon(lat, lon, resolution)
     else:
-        return sids_from_geoseries(gdf.geometry, resolution=resolution, convex=convex, force_ccw=force_ccw, n_workers=n_workers)
+        return sids_from_geoseries(gdf.geometry, resolution=resolution, convex=convex, force_ccw=force_ccw,
+                                   n_workers=n_workers)
 
 
 def sids_from_geoseries(series, resolution, convex=False, force_ccw=True, n_workers=1):
@@ -103,8 +104,9 @@ def sids_from_geoseries(series, resolution, convex=False, force_ccw=True, n_work
     else:
         ddf = dask.dataframe.from_pandas(series, npartitions=n_workers)
         meta = {'sids': 'int64'}
-        res = ddf.map_partitions(lambda df: numpy.array(sids_from_geoseries(df, resolution, convex, force_ccw, 1), dtype='object'),
-                                 meta=meta)
+        res = ddf.map_partitions(
+            lambda df: numpy.array(sids_from_geoseries(df, resolution, convex, force_ccw, 1), dtype='object'),
+            meta=meta)
         sids = res.compute(scheduler='processes')
         sids = sids.tolist()
     return sids
@@ -177,7 +179,8 @@ def sids_from_xy_df(df, resolution, n_workers=1):
     df = df.rename(columns=rename_dict)
     if n_workers > 1:
         ddf = dask.dataframe.from_pandas(df, npartitions=n_workers)
-        return ddf.map_partitions(sids_from_latlon_row, resolution, meta=('stare', 'int')).compute(scheduler='processes')
+        return ddf.map_partitions(sids_from_latlon_row, resolution, meta=('stare', 'int')).compute(
+            scheduler='processes')
     else:
         return pystare.from_latlon(df.lat, df.lon, resolution)
 
@@ -518,6 +521,8 @@ def speedy_subset(df, roi_sids):
     roi_sids: array-like
         a set of SIDs describing the roi to whch the df is to be subset
     """
+    roi_sids = numpy.array(roi_sids)
+
     sids_left = df[df._sid_column_name]
 
     # Dropping values outside of range
@@ -526,6 +531,10 @@ def speedy_subset(df, roi_sids):
     top_bound += pystare.spatial_increment_from_level(level)
     bottom_bound = roi_sids.min()
     candidate_sids = sids_left[(sids_left >= bottom_bound) * (sids_left <= top_bound)]
+    if len(candidate_sids) == 0:
+        # return empty df
+        return df[df.sids == 0]
+    candidate_sids = candidate_sids.astype('int64')
 
     # finding the intersection level
     left_min_level = pystare.spatial_resolution(candidate_sids).max()
@@ -542,7 +551,3 @@ def speedy_subset(df, roi_sids):
     intersecting = candidate_sids[cleared_sids.isin(intersects)]
 
     return df.iloc[intersecting.index]
-
-
-
-

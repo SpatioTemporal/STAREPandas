@@ -42,6 +42,7 @@ def make_row(granule_path, add_sf=False):
     granule.read_sidecar_cover()
 
     row = {}
+
     row['granule_path'] = granule_path
     row['sidecar_path'] = granule.sidecar_path
     row['stare_cover'] = granule.stare_cover
