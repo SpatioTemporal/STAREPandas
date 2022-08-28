@@ -735,11 +735,21 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         return aggregated
 
     def spatial_resolution(self):
+        """
+        Returns the spatial resolution of each feature
+        """
         sids = self[self._sid_column_name]
         return pystare.spatial_resolution(sids)
 
     def trixel_area(self, r=None):
-        # r: earth radius
+        """
+        Returns the approximate area of the trixel
+
+        Parameters
+        -------------
+        r: float or int
+             earth radius
+        """
         sids = self[self._sid_column_name]
         solid_angel = pystare.to_area(sids)
         if r is None:

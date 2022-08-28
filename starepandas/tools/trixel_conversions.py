@@ -606,10 +606,14 @@ def split_antimeridian(trixels):
         if not trixel.exterior.is_ccw:
             # If trixels are not CCW they have been constructed incorrectly
             # and we wrap their vertices around the antimeridian
+
+            # This seems to break:
             x = (numpy.array(trixel.exterior.xy[0]) + 180) % 360.0 - 180
             y = numpy.array(trixel.exterior.xy[1])
-            # TODO: this appears to break
-            exploded[idx] = shapely.geometry.Polygon(zip(x, y))
+            #exploded[idx] = shapely.geometry.Polygon(zip(x, y))
+
+            # we might just add empty polygons instead?
+            exploded[idx] = shapely.wkt.loads('POLYGON EMPTY')
 
     inside = exploded.intersection(bbox)
     inside[inside.geom_type != 'Polygon'] = shapely.wkt.loads('POLYGON EMPTY')
