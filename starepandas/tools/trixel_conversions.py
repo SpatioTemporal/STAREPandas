@@ -597,9 +597,7 @@ def split_antimeridian(trixels):
         A collection of trixels.
     """
     bbox = shapely.geometry.Polygon([(-180, -90), (180, -90), (180, 90), (-180, 90)])
-
     trixels = geopandas.GeoSeries(trixels, crs='EPSG:4326')
-
     exploded = trixels.explode(index_parts=True).reset_index(drop=True)
 
     for idx, trixel in exploded.iteritems():
@@ -610,10 +608,10 @@ def split_antimeridian(trixels):
             # This seems to break:
             x = (numpy.array(trixel.exterior.xy[0]) + 180) % 360.0 - 180
             y = numpy.array(trixel.exterior.xy[1])
-            #exploded[idx] = shapely.geometry.Polygon(zip(x, y))
+            exploded[idx] = shapely.geometry.Polygon(zip(x, y))
 
             # we might just add empty polygons instead?
-            exploded[idx] = shapely.wkt.loads('POLYGON EMPTY')
+            #exploded[idx] = shapely.wkt.loads('POLYGON EMPTY')
 
     inside = exploded.intersection(bbox)
     inside[inside.geom_type != 'Polygon'] = shapely.wkt.loads('POLYGON EMPTY')

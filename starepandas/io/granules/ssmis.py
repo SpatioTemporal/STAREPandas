@@ -90,34 +90,42 @@ class SSMIS(Granule):
         self.read_timestamps()
 
     def add_sids(self, adapt_resolution=True):
-        self.stare = {}
+        self.sids = {}
         for scan in self.scans:
-            self.stare[scan] = pystare.from_latlon2D(lat=self.lat[scan], lon=self.lon[scan],
+            self.sids[scan] = pystare.from_latlon2D(lat=self.lat[scan], lon=self.lon[scan],
                                                      adapt_resolution=adapt_resolution)
 
     def read_sidecar_index(self, sidecar_path=None):
-        self.stare = {}
-        if not sidecar_path:
-            sidecar_path = self.sidecar_path
-        ds = starepandas.io.s3.nc4_dataset_wrapper(sidecar_path)
+        self.sids = {}
+        if sidecar_path is not None:
+            scp = sidecar_path
+        elif self.sidecar_path is not None:
+            scp = self.sidecar_path
+        else:
+            scp = self.guess_sidecar_path()
+        ds = starepandas.io.s3.nc4_dataset_wrapper(scp)
         for scan in self.scans:
-            self.stare[scan] = ds[scan]['STARE_index'][:, :].astype(numpy.int64)
+            self.sids[scan] = ds[scan]['STARE_index'][:, :].astype(numpy.int64)
 
     def read_sidecar_cover(self, sidecar_path=None):
-        if not sidecar_path:
-            sidecar_path = self.sidecar_path
-        ds = starepandas.io.s3.nc4_dataset_wrapper(sidecar_path)
+        if sidecar_path is not None:
+            scp = sidecar_path
+        elif self.sidecar_path is not None:
+            scp = self.sidecar_path
+        else:
+            scp = self.guess_sidecar_path()
+        ds = starepandas.io.s3.nc4_dataset_wrapper(scp)
         self.stare_cover = ds['STARE_cover'][:].astype(numpy.int64)
 
-    def to_df(self):
+    def to_df(self, xy=False):
         dfs = {}
         for scan in self.scans:
             df = dict()
             if self.lat is not None:
                 df['lat'] = self.lat[scan].flatten()
                 df['lon'] = self.lon[scan].flatten()
-            if self.stare is not None:
-                df['stare'] = self.stare[scan].flatten()
+            if self.sids is not None:
+                df['sids'] = self.sids[scan].flatten()
             df['timestamp'] = self.timestamps[scan].flatten()
             for key in self.data[scan].keys():
                 df[key] = self.data[scan][key].flatten()

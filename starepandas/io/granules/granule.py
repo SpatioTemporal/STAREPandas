@@ -55,6 +55,7 @@ class Granule:
         try:
             self.sids = ds['STARE_index_{}'.format(self.nom_res)][:, :].astype(numpy.int64)
         except IndexError:
+            # If we don't have a nomres?
             self.sids = ds['STARE_index{}'.format(self.nom_res)][:, :].astype(numpy.int64)
 
     def read_sidecar_cover(self, sidecar_path=None):
@@ -75,8 +76,12 @@ class Granule:
         else:
             scp = self.guess_sidecar_path()
         ds = starepandas.io.s3.nc4_dataset_wrapper(scp)
-        self.lat = ds['Latitude_{}'.format(self.nom_res)][:, :]
-        self.lon = ds['Longitude_{}'.format(self.nom_res)][:, :]
+        try:
+            self.lat = ds['Latitude_{}'.format(self.nom_res)][:, :]
+            self.lon = ds['Longitude_{}'.format(self.nom_res)][:, :]
+        except IndexError:
+            self.lat = ds['Latitude{}'.format(self.nom_res)][:, :]
+            self.lon = ds['Longitude{}'.format(self.nom_res)][:, :]
 
     def to_df(self, xy=False):
         """ Converts the granule object to a dataframe
