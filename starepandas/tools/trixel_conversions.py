@@ -106,9 +106,8 @@ def vertices2centers_ecef(vertices):
 
     lat = vertices[2]
     lon = vertices[3]
-    x = numpy.cos(lon / 360 * math.pi * 2) * numpy.cos(lat / 360 * math.pi * 2)
-    y = numpy.sin(lon / 360 * math.pi * 2) * numpy.cos(lat / 360 * math.pi * 2)
-    z = numpy.sin(lat / 360 * math.pi * 2)
+
+    x, y, z = latlon2ecef(lat, lon)
     centers = numpy.array([x, y, z]).transpose()
     return centers
 
@@ -204,13 +203,18 @@ def corners2ecef(corners):
     lat = corners[:, :, 1]
     length = lat.shape[0]
 
-    x = numpy.cos(lon / 360 * math.pi * 2) * numpy.cos(lat / 360 * math.pi * 2)
-    y = numpy.sin(lon / 360 * math.pi * 2) * numpy.cos(lat / 360 * math.pi * 2)
-    z = numpy.sin(lat / 360 * math.pi * 2)
+    x, y, z = latlon2ecef(lat, lon)
 
     corners_ecef = numpy.array([x, y, z]).transpose()
     corners_ecef = corners_ecef.reshape(length, 3, 3)
     return corners_ecef
+
+
+def latlon2ecef(lat, lon):
+    x = numpy.cos(lon / 360 * math.pi * 2) * numpy.cos(lat / 360 * math.pi * 2)
+    y = numpy.sin(lon / 360 * math.pi * 2) * numpy.cos(lat / 360 * math.pi * 2)
+    z = numpy.sin(lat / 360 * math.pi * 2)
+    return x, y, z
 
 
 def vertices2corners_ecef(vertices):
@@ -461,7 +465,7 @@ def to_trixels(sids, as_multipolygon=False, wrap_lon=True):
         (Collection of) STARE index value(s)
     as_multipolygon: bool
         If more than one sid is passed, toggle if the resulting trixels should be
-        combined into a multipolygon. Otherwise a list of trixels is returned.
+        combined into a multipolygon. Otherwise, a list of trixels is returned.
     wrap_lon: bool
         toggle if trixels should be wraped around antimeridian.
 
@@ -550,42 +554,41 @@ def trixels_from_stareseries(sids_series, n_workers=1, wrap_lon=True):
     return trixels_series
 
 
-def split_antimeridian_series(trixels_series, n_workers=1):
-    npartitions = n_workers
+def split_antimeridian_series(trixels_series, n_workers=1, drop=False):
+    n_partitions = n_workers
 
     if len(trixels_series) <= 1:
-        npartitions = 1
-    elif npartitions >= len(trixels_series):
+        n_partitions = 1
+    elif n_partitions >= len(trixels_series):
         # Cannot have more partitions than rows
-        npartitions = len(trixels_series) - 1
+        n_partitions = len(trixels_series) - 1
 
-    if npartitions == 1:
+    if n_partitions == 1:
         split = []
         for row in trixels_series:
             if row.geom_type == 'Polygon':
                 # We need to catch single Polygons
                 row = [row]
-            row = split_antimeridian(row)
+            row = split_antimeridian(row, drop=drop)
             split.append(row)
         trixels_series = geopandas.GeoSeries(split,
                                              crs='EPSG:4326',
                                              index=trixels_series.index)
     else:
-        ddf = dask.dataframe.from_pandas(trixels_series, npartitions=npartitions)
+        ddf = dask.dataframe.from_pandas(trixels_series, npartitions=n_partitions)
         meta = {'trixels': 'object'}
         res = ddf.map_partitions(lambda df:
-                                 vectorized.from_shapely(split_antimeridian_series(df, n_workers=1)).flatten(),
+                                 vectorized.from_shapely(split_antimeridian_series(df, n_workers=1, drop=drop)).flatten(),
                                  meta=meta)
         trixels_series = res.compute(scheduler='processes')
         # Since the array would be ragged, we are probably safer with a list of arrays
         trixels_series = trixels_series.tolist()
-    trixels_series = geopandas.GeoSeries(trixels_series,
-                                         crs='EPSG:4326',
-                                         index=trixels_series.index)
+
+    trixels_series = geopandas.GeoSeries(trixels_series, crs='EPSG:4326', index=trixels_series.index)
     return trixels_series
 
 
-def split_antimeridian(trixels):
+def split_antimeridian(trixels, drop=False):
     """Splits trixels at the antimeridian
 
     This works on trixels that cross the meridian and whose longitudes have *not* been wrapped around the
@@ -595,6 +598,9 @@ def split_antimeridian(trixels):
     ------------
     trixels: A polygon, multipolygon, collection of polygons, or a geometry series
         A collection of trixels.
+    drop: bool
+        If drop is True, we drop the trixels that cross the antimeridian
+
     """
     bbox = shapely.geometry.Polygon([(-180, -90), (180, -90), (180, 90), (-180, 90)])
     trixels = geopandas.GeoSeries(trixels, crs='EPSG:4326')
@@ -602,16 +608,15 @@ def split_antimeridian(trixels):
 
     for idx, trixel in exploded.iteritems():
         if not trixel.exterior.is_ccw:
-            # If trixels are not CCW they have been constructed incorrectly
-            # and we wrap their vertices around the antimeridian
-
-            # This seems to break:
-            x = (numpy.array(trixel.exterior.xy[0]) + 180) % 360.0 - 180
-            y = numpy.array(trixel.exterior.xy[1])
-            exploded[idx] = shapely.geometry.Polygon(zip(x, y))
-
-            # we might just add empty polygons instead?
-            #exploded[idx] = shapely.wkt.loads('POLYGON EMPTY')
+            # If trixels are not CCW, they have been constructed incorrectly.
+            # We wrap their vertices around the antimeridian
+            if drop:
+                # we might just add empty polygons instead?
+                exploded[idx] = shapely.wkt.loads('POLYGON EMPTY')
+            else:
+                x = (numpy.array(trixel.exterior.xy[0]) + 180) % 360.0 - 180
+                y = numpy.array(trixel.exterior.xy[1])
+                exploded[idx] = shapely.geometry.Polygon(zip(x, y))
 
     inside = exploded.intersection(bbox)
     inside[inside.geom_type != 'Polygon'] = shapely.wkt.loads('POLYGON EMPTY')

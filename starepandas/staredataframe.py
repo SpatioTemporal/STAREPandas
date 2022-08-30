@@ -493,7 +493,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         gring = starepandas.tools.trixel_conversions.corners2gring(corners)
         return gring
 
-    def split_antimeridian(self, inplace=False, n_workers=1):
+    def split_antimeridian(self, inplace=False, n_workers=1, drop=False):
         """Splits trixels at the antimeridian
 
         This works on trixels that cross the meridian and whose longitudes have *not* been wrapped around the
@@ -527,7 +527,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             if row.geom_type == 'Polygon':
                 # We need to catch single Polygons
                 row = [row]
-            row = starepandas.tools.trixel_conversions.split_antimeridian(row)
+            row = starepandas.tools.trixel_conversions.split_antimeridian(row, drop=drop)
             split.append(row)
         split = geopandas.GeoSeries(split, index=df.index)
 
