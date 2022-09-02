@@ -118,6 +118,7 @@ class Granule:
             else:
                 ds = list(self.data.values())[0]
                 indices = numpy.indices(ds.shape)
+            # Argh. not always True; sometimes x i the second index.
             df['x'] = indices[0].flatten()
             df['y'] = indices[1].flatten()
         for key in self.data.keys():

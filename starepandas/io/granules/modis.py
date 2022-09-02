@@ -183,7 +183,18 @@ class Mod09GA(Modis):
         pass
 
     def read_data(self):
+        # Note: those are the 500 m observations!
         dataset_names = ['sur_refl_b01_1', 'sur_refl_b02_1', 'sur_refl_b03_1', 'sur_refl_b04_1', 'sur_refl_b05_1',
-                          'sur_refl_b06_1', 'sur_refl_b07_1', 'QC_500m_1', 'obscov_500m_1']
+                         'sur_refl_b06_1', 'sur_refl_b07_1', 'QC_500m_1', 'obscov_500m_1']
         for dataset_name in dataset_names:
             self.read_dataset(dataset_name)
+
+    def read_timestamps(self):
+        meta = get_hdfeos_metadata(self.file_path)
+        meta_group = meta['CoreMetadata']['INVENTORYMETADATA']['RANGEDATETIME']
+        beginning_date = meta_group['RANGEBEGINNINGDATE']['VALUE']
+        beginning_time = meta_group['RANGEBEGINNINGTIME']['VALUE']
+        end_date = meta_group['RANGEENDINGDATE']['VALUE']
+        end_time = meta_group['RANGEENDINGTIME']['VALUE']
+        self.ts_start = datetime.datetime.strptime(beginning_date+beginning_time, '"%Y-%m-%d %H:%M:%S"')
+        self.ts_end = datetime.datetime.strptime(end_date+end_time, '"%Y-%m-%d %H:%M:%S"')
