@@ -111,13 +111,12 @@ class Granule:
             df['ts_end'] = self.ts_end
         if xy:
             if self.lat is not None:
-                # Todo: those should probably be int16s, not int64s
                 indices = numpy.indices(self.lat.shape, dtype='uint16')
             elif self.sids is not None:
-                indices = numpy.indices(self.sids.shape)
+                indices = numpy.indices(self.sids.shape, dtype='uint16')
             else:
                 ds = list(self.data.values())[0]
-                indices = numpy.indices(ds.shape)
+                indices = numpy.indices(ds.shape, dtype='uint16')
             # Argh. not always True; sometimes x i the second index.
             df['x'] = indices[0].flatten()
             df['y'] = indices[1].flatten()

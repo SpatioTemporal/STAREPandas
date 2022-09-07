@@ -2,6 +2,7 @@ from starepandas.io.granules.granule import Granule
 import starepandas.io.s3
 import datetime
 import numpy
+import pystare
 
 
 def get_hdfeos_metadata(file_path):    
@@ -78,7 +79,7 @@ class Modis(Granule):
         ds = self.hdf.select(dataset_name)
         data = ds.get()
         if resample_factor is not None:
-            data = self.resample(data=data, factor=resample_factor)
+            data = self.resample(array=data, factor=resample_factor)
 
         attributes = ds.attributes()
 
@@ -97,10 +98,77 @@ class Modis(Granule):
 
         self.data[dataset_name] = data
 
-    def resample(self, data, factor):
-        data = data.repeat(factor, axis=0)
-        data = data.repeat(factor, axis=1)
-        return data
+    def resample(self, array, factor):
+        array = array.repeat(factor, axis=0)
+        array = array.repeat(factor, axis=1)
+        return array
+
+    def decode_qa(self):
+        """
+        Decode QA
+
+        31      adjacency correction performed      1: yes; 0: no
+        30      atmospheric correction performed    1: yes; 0: no
+        26-29   band 7 data quality four bit range  0000: highest quality; 0111: noisy detector;
+            1000: dead detector, data interpolated in L1B;
+            1001: solar zenith >= 86 degrees; 1010: solar zenith >= 85 and < 86 degrees; 1011: missing input;
+            1100: internal constant used in place of climatological data for at least one atmospheric constant
+            1101: correction out of bounds pixel constrained to extreme allowable value
+            1110: L1B data faulty; 1111: not processed due to deep ocean or clouds
+        22-25   band 6 data quality four bit range;    SAME AS ABOVE
+        18-21   band 5 data quality four bit range;    SAME AS ABOVE
+        14-17   band 4 data quality four bit range;    SAME AS ABOVE
+        10-13   band 3 data quality four bit range;    SAME AS ABOVE
+        6-9     band 2 data quality four bit range;    SAME AS ABOVE
+        2-5     band 1 data quality four bit range;    SAME AS ABOVE
+        0-1     MODLAND QA bits
+            00: ideal quality all bands;
+            01: less than ideal quality some or all bands corrected product not produced due to;
+            10: cloud effects all bands;
+            11: other reasons some or all bands may be fill value
+        Note that a value of (11) overrides a value of (01).";
+        """
+
+    def decode_state(self, state_ds):
+        """
+        Decode the state
+
+        15  internal snow algorithm flag     1: yes; 0: no
+        14  Salt pan                         1: yes; 0: no
+        13  Pixel is adjacent to cloud       1: yes; 0: no
+        12  MOD35 snow/ice flag              1: yes; 0: no
+        11  internal fire algorithm flag     1: fire; 0: no fire
+        10  internal cloud algorithm flag    1: cloud; 0: no cloud
+        8-9 cirrus detected                 00: none; 01: small; 10: average; 11: high
+        6-7 aerosol quantity                00: climatology; 01: low; 10: average; 11:  high
+        3-5 land/water flag                000: shallow ocean; 001 land; 010: ocean coastlines and lake shorelines
+                                           011: shallow inland water; 100: ephemeral water; 101: deep inland water
+                                           110: continental/moderate ocean; 111: deep ocean
+        2   cloud shadow                     1: yes; 0: no
+        0-1 cloud state                     00: clear; 01: cloudy; 10: mixed; 11: not set assumed clear
+        """
+        state = self.data[state_ds]
+        binary_repr = numpy.vectorize(numpy.binary_repr)
+        state = binary_repr(state, width=16)
+
+        def slicer_vectorized(a, start, end):
+            b = a.data.view((str, 1))
+            # need to flip because of major byte order
+            b = numpy.flip(b)
+            b = b.reshape(a.shape[0], a.shape[1], 16)
+            b = b[:, :, start:end]
+            b = numpy.flip(b)
+            b = numpy.frombuffer(b.tobytes(), dtype=(str, end-start))
+            b = b.reshape(a.shape)
+            b = numpy.ma.masked_array(b, a.mask)
+            b = b.astype('i1')
+            return b
+
+        self.data['cloud'] = slicer_vectorized(state, 0, 2)
+        self.data['cloud_shadow'] = slicer_vectorized(state, 2, 3).astype(bool)
+        self.data['cloud_internal'] = slicer_vectorized(state, 10, 11).astype(bool)
+        self.data['snow_mod35'] = slicer_vectorized(state, 12, 13).astype(bool)
+        self.data['snow_internal'] = slicer_vectorized(state, 15, 16).astype(bool)
 
 
 class Mod09(Modis):
@@ -198,3 +266,86 @@ class Mod09GA(Modis):
         end_time = meta_group['RANGEENDINGTIME']['VALUE']
         self.ts_start = datetime.datetime.strptime(beginning_date+beginning_time, '"%Y-%m-%d %H:%M:%S"')
         self.ts_end = datetime.datetime.strptime(end_date+end_time, '"%Y-%m-%d %H:%M:%S"')
+
+
+def decode_state(state_series):
+    state = state_series.apply(lambda x: '{:016b}'.format(x)[::-1])
+    df = starepandas.STAREDataFrame(index=state.index)
+    df['cloud'] = state.str.slice(start=0, stop=2).apply(lambda x: x[::-1])
+    df['cloud_shadow'] = state.str.slice(start=2, stop=3).astype('u1').astype(bool)
+    df['cloud_internal'] = state.str.slice(start=10, stop=11).astype('u1').astype(bool)
+    df['snow_mod35'] = state.str.slice(start=12, stop=13).astype('u1').astype(bool)
+    df['snow_internal'] = state.str.slice(start=15, stop=16).astype('u1').astype(bool)
+    return df
+
+
+def read_mod09(file_path, roi_sids):
+    # Read the MOD09
+    mod09 = starepandas.io.granules.Mod09(file_path, nom_res='500m')
+    mod09.read_data_500m()
+    mod09.read_sidecar_index()
+    mod09.read_sidecar_latlon()
+    mod09.read_timestamps()
+
+    # Adding the QA State flag
+    ds_name = '1km Reflectance Data State QA'
+    mod09.read_dataset(ds_name, resample_factor=2)
+    states = decode_state(mod09['ds_name'])
+    mod09 = mod09.join(states)
+
+    # Gettin the geolocation info for Sensor and
+    mod03_path = mod09.guess_companion_path(prefix='MOD03')
+    mod03 = starepandas.io.granules.Mod03(mod03_path, nom_res='500m')
+    mod03.read_data()
+
+    # Converting to DF and joining
+    mod09 = mod09.to_df(xy=True)
+    mod03 = mod03.to_df()
+    mod09 = mod09.join(mod03)
+
+    mod09.sids = mod09.sids.astype('int64')
+
+    # Subsetting
+    try:
+        mod09 = starepandas.speedy_subset(mod09, roi_sids)
+    except:
+        print(file_path)
+        raise Exception
+
+    # Adding the lower level SIDS
+    mod09['sids14'] = mod09.to_stare_resolution(14, clear_to_resolution=True).sids
+    mod09['sids15'] = mod09.to_stare_resolution(15, clear_to_resolution=True).sids
+    mod09['sids16'] = mod09.to_stare_resolution(16, clear_to_resolution=True).sids
+    mod09['sids17'] = mod09.to_stare_resolution(17, clear_to_resolution=True).sids
+    mod09['sids18'] = mod09.to_stare_resolution(18, clear_to_resolution=True).sids
+
+    r = 6371007.181
+    mod09['area'] = pystare.to_area(mod09['sids']) * r ** 2 / 1000 / 1000
+    mod09['level'] = pystare.spatial_resolution(mod09['sids'])
+
+    # Converting types
+    mod09.reset_index(inplace=True, drop=True)
+    return mod09
+
+
+def read_mod09ga(file_path, bbox=None):
+    mod09ga = starepandas.io.granules.Mod09GA(file_path)
+    mod09ga.read_data()
+
+    state_name = 'state_1km_1'
+    mod09ga.read_dataset(state_name, resample_factor=2)
+    mod09ga = mod09ga.to_df(xy=True)
+    mod09ga = mod09ga.rename(columns={"x": "y", "y": "x"})
+
+    if bbox:
+        x_min = bbox[0]
+        x_max = bbox[1]
+        y_min = bbox[2]
+        y_max = bbox[3]
+        mod09ga = mod09ga[(mod09ga.x >= x_min) & (mod09ga.x <= x_max) & (mod09ga.y >= y_min) & (mod09ga.y <= y_max)]
+
+    states = decode_state(mod09ga[state_name])
+    mod09ga = mod09ga.join(states)
+    return mod09ga
+
+
