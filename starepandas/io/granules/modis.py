@@ -257,16 +257,6 @@ class Mod09GA(Modis):
         for dataset_name in dataset_names:
             self.read_dataset(dataset_name)
 
-    def read_timestamps(self):
-        meta = get_hdfeos_metadata(self.file_path)
-        meta_group = meta['CoreMetadata']['INVENTORYMETADATA']['RANGEDATETIME']
-        beginning_date = meta_group['RANGEBEGINNINGDATE']['VALUE']
-        beginning_time = meta_group['RANGEBEGINNINGTIME']['VALUE']
-        end_date = meta_group['RANGEENDINGDATE']['VALUE']
-        end_time = meta_group['RANGEENDINGTIME']['VALUE']
-        self.ts_start = datetime.datetime.strptime(beginning_date+beginning_time, '"%Y-%m-%d %H:%M:%S"')
-        self.ts_end = datetime.datetime.strptime(end_date+end_time, '"%Y-%m-%d %H:%M:%S"')
-
 
 def decode_state(state_series):
     state = state_series.apply(lambda x: '{:016b}'.format(x)[::-1])
