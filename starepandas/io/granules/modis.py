@@ -72,8 +72,12 @@ class Modis(Granule):
         beginning_time = meta_group['RANGEBEGINNINGTIME']['VALUE']
         end_date = meta_group['RANGEENDINGDATE']['VALUE']
         end_time = meta_group['RANGEENDINGTIME']['VALUE']
-        self.ts_start = datetime.datetime.strptime(beginning_date+beginning_time, '"%Y-%m-%d""%H:%M:%S.%f"')
-        self.ts_end = datetime.datetime.strptime(end_date+end_time, '"%Y-%m-%d""%H:%M:%S.%f"')
+        try:
+            self.ts_start = datetime.datetime.strptime(beginning_date+beginning_time, '"%Y-%m-%d""%H:%M:%S.%f"')
+            self.ts_end = datetime.datetime.strptime(end_date+end_time, '"%Y-%m-%d""%H:%M:%S.%f"')
+        except ValueError:
+            self.ts_start = datetime.datetime.strptime(beginning_date + beginning_time, '"%Y-%m-%d""%H:%M:%S"')
+            self.ts_end = datetime.datetime.strptime(end_date + end_time, '"%Y-%m-%d""%H:%M:%S"')
 
     def read_dataset(self, dataset_name, resample_factor=None):
         ds = self.hdf.select(dataset_name)
@@ -321,6 +325,7 @@ def read_mod09(file_path, roi_sids):
 def read_mod09ga(file_path, bbox=None):
     mod09ga = starepandas.io.granules.Mod09GA(file_path)
     mod09ga.read_data()
+    mod09ga.read_timestamps()
 
     state_name = 'state_1km_1'
     mod09ga.read_dataset(state_name, resample_factor=2)
