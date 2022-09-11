@@ -245,6 +245,12 @@ class STAREDataFrame(geopandas.GeoDataFrame):
                                                                                        wrap_lon=wrap_lon)
         return trixels_series
 
+    def add_trixels(self, n_workers, inplace=False):
+        """Combination of make_trixels() and set_trixels()"""
+        sid_column = self._sid_column_name
+        trixels = self.make_trixels(sid_column=sid_column, n_workers=n_workers, wrap_lon=True)
+        self.set_trixels(trixels, inplace=inplace)
+
     def set_trixels(self, col, inplace=False):
         """
         Set the trixel column

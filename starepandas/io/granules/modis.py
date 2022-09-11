@@ -54,7 +54,7 @@ def parse_hdfeos_metadata(string):
 
 class Modis(Granule):
     
-    def __init__(self, file_path, sidecar_path=None):                
+    def __init__(self, file_path, sidecar_path=None, nom_res=None):
         super(Modis, self).__init__(file_path, sidecar_path)
         self.hdf = starepandas.io.s3.sd_wrapper(file_path)
     
@@ -251,6 +251,10 @@ class Mod05(Modis):
 
 
 class Mod09GA(Modis):
+    def __init__(self, file_path, sidecar_path=None):
+        super(Mod09GA, self).__init__(file_path, sidecar_path)
+        self.nom_res = '500m'
+
     def read_latlon(self):
         pass
 
@@ -263,6 +267,29 @@ class Mod09GA(Modis):
 
 
 def decode_state(state_series):
+    """
+    Decode the state
+
+    15  internal snow algorithm flag     1: yes; 0: no
+    14  Salt pan                         1: yes; 0: no
+    13  Pixel is adjacent to cloud       1: yes; 0: no
+    12  MOD35 snow/ice flag              1: yes; 0: no
+    11  internal fire algorithm flag     1: fire; 0: no fire
+    10  internal cloud algorithm flag    1: cloud; 0: no cloud
+    8-9 cirrus detected                 00: none; 01: small; 10: average; 11: high
+    6-7 aerosol quantity                00: climatology; 01: low; 10: average; 11:  high
+    3-5 land/water flag                000: shallow ocean;
+                                       001 land;
+                                       010: ocean coastlines and lake shorelines
+                                       011: shallow inland water;
+                                       100: ephemeral water;
+                                       101: deep inland water
+                                       110: continental/moderate ocean;
+                                       111: deep ocean
+    2   cloud shadow                     1: yes; 0: no
+    0-1 cloud state                     00: clear; 01: cloudy; 10: mixed; 11: not set assumed clear
+    """
+
     state = state_series.apply(lambda x: '{:016b}'.format(x)[::-1])
     df = starepandas.STAREDataFrame(index=state.index)
     df['cloud'] = state.str.slice(start=0, stop=2).apply(lambda x: x[::-1])
@@ -270,6 +297,40 @@ def decode_state(state_series):
     df['cloud_internal'] = state.str.slice(start=10, stop=11).astype('u1').astype(bool)
     df['snow_mod35'] = state.str.slice(start=12, stop=13).astype('u1').astype(bool)
     df['snow_internal'] = state.str.slice(start=15, stop=16).astype('u1').astype(bool)
+    return df
+
+
+def decode_qa(state_series):
+    """
+        31      adjacency correction performed      1: yes; 0: no
+        30      atmospheric correction performed    1: yes; 0: no
+        26-29   band 7 data quality four bit range
+            0000: highest quality;
+            0111: noisy detector;
+            1000: dead detector, data interpolated in L1B;
+            1001: solar zenith >= 86 degrees;
+            1010: solar zenith >= 85 and < 86 degrees;
+            1011: missing input;
+            1100: internal constant used in place of climatological data for at least one atmospheric constant
+            1101: correction out of bounds pixel constrained to extreme allowable value
+            1110: L1B data faulty; 1111: not processed due to deep ocean or clouds
+        22-25   band 6 data quality four bit range;    SAME AS ABOVE
+        18-21   band 5 data quality four bit range;    SAME AS ABOVE
+        14-17   band 4 data quality four bit range;    SAME AS ABOVE
+        10-13   band 3 data quality four bit range;    SAME AS ABOVE
+        6-9     band 2 data quality four bit range;    SAME AS ABOVE
+        2-5     band 1 data quality four bit range;    SAME AS ABOVE
+        0-1     MODLAND QA bits
+            0: ideal quality all bands;
+            1: less than ideal quality some or all bands corrected product not produced due to;
+            2: cloud effects all bands;
+            3: other reasons some or all bands may be fill value
+        Note that a value of (11) overrides a value of (01).";
+    """
+    state = state_series.apply(lambda x: '{:032b}'.format(x)[::-1])
+    df = starepandas.STAREDataFrame(index=state.index)
+    df['modland_qa'] = state.str.slice(start=0, stop=2).apply(lambda x: x[::-1]).astype('u1')
+
     return df
 
 
@@ -338,6 +399,10 @@ def read_mod09ga(file_path, bbox=None):
         y_min = bbox[2]
         y_max = bbox[3]
         mod09ga = mod09ga[(mod09ga.x >= x_min) & (mod09ga.x <= x_max) & (mod09ga.y >= y_min) & (mod09ga.y <= y_max)]
+
+    mod09ga = mod09ga.dropna(axis=0, how='any')
+    if mod09ga.empty:
+        return mod09ga
 
     states = decode_state(mod09ga[state_name])
     mod09ga = mod09ga.join(states)
