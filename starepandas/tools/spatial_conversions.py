@@ -54,10 +54,10 @@ def sids_from_gdf(gdf, resolution, convex=False, force_ccw=True, n_workers=1):
         return pystare.from_latlon(lat, lon, resolution)
     else:
         return sids_from_geoseries(gdf.geometry, resolution=resolution, convex=convex, force_ccw=force_ccw,
-                                   n_workers=n_workers)
+                                   n_partitions=n_workers)
 
 
-def sids_from_geoseries(series, resolution, convex=False, force_ccw=True, n_workers=1):
+def sids_from_geoseries(series, resolution, convex=False, force_ccw=True, n_partitions=1, num_workers=1):
     """
     Takes a GeoSeries and returns a corresponding series of sets of trixel indices
 
@@ -71,7 +71,7 @@ def sids_from_geoseries(series, resolution, convex=False, force_ccw=True, n_work
         Toggle if STARE indices for the convex hull rather than the G-Ring should be looked up
     force_ccw: bool
         Toggle if a counter clockwise orientation of the geometries should be enforced
-    n_workers: int
+    n_partitions: int
         Number of workers used to lookup STARE indices in parallel
     
     Returns
@@ -91,23 +91,23 @@ def sids_from_geoseries(series, resolution, convex=False, force_ccw=True, n_work
     """
 
     if len(series) <= 1:
-        n_workers = 1
-    elif n_workers >= len(series):
+        n_partitions = 1
+    elif n_partitions >= len(series):
         # Cannot have more partitions than rows
-        n_workers = len(series) - 1
+        n_partitions = len(series) - 1
 
-    if n_workers == 1:
+    if n_partitions == 1:
         sids = []
         for geom in series:
             sids_row = sids_from_shapely(geom=geom, resolution=resolution, convex=convex, force_ccw=force_ccw)
             sids.append(sids_row)
     else:
-        ddf = dask.dataframe.from_pandas(series, npartitions=n_workers)
+        ddf = dask.dataframe.from_pandas(series, npartitions=n_partitions)
         meta = {'sids': 'int64'}
         res = ddf.map_partitions(
             lambda df: numpy.array(sids_from_geoseries(df, resolution, convex, force_ccw, 1), dtype='object'),
             meta=meta)
-        sids = res.compute(scheduler='processes')
+        sids = res.compute(scheduler='processes', num_workers=num_workers)
         sids = sids.tolist()
     return sids
 
@@ -145,7 +145,7 @@ def sids_from_latlon_row(row, resolution):
     return pystare.from_latlon(row.lat, row.lon, resolution)
 
 
-def sids_from_xy_df(df, resolution, n_workers=1):
+def sids_from_xy_df(df, resolution, n_partitions=1, num_workers=None):
     """ Takes a dataframe and generates an array of STARE index values.
     Assumes latitude column name is {'lat', 'Latitude', 'latitude', or 'y'} and
     longitude column name is {'lon', 'Longitude', 'longitude', or 'x'}
@@ -156,7 +156,7 @@ def sids_from_xy_df(df, resolution, n_workers=1):
         Dataframe containing x/y coordinates    
     resolution: int
         STARE spatial resolution    
-    n_workers: int
+    n_partitions: int
         Number of workers used to lookup STARE indices in parallel
         
     Returns
@@ -177,17 +177,13 @@ def sids_from_xy_df(df, resolution, n_workers=1):
     rename_dict = {'Latitude': 'lat', 'latitude': 'lat', 'y': 'lat',
                    'Longitude': 'lon', 'longitude': 'lon', 'x': 'lon'}
     df = df.rename(columns=rename_dict)
-    if n_workers > 1:
-        ddf = dask.dataframe.from_pandas(df, npartitions=n_workers)
-        return ddf.map_partitions(sids_from_latlon_row, resolution, meta=('stare', 'int')).compute(
-            scheduler='processes')
+    if n_partitions > 1:
+        ddf = dask.dataframe.from_pandas(df, npartitions=n_partitions)
+        res = ddf.map_partitions(sids_from_latlon_row, resolution, meta=('sids', 'int64'))
+        sids = res.compute(scheduler='processes', num_workers=num_workers)
+        return sids
     else:
         return pystare.from_latlon(df.lat, df.lon, resolution)
-
-
-def sids_from_geom_row(row, resolution):
-    """ Dask Helper function"""
-    return sids_from_shapely(geom=row.geometry, resolution=resolution)
 
 
 def sids_from_shapely(geom, resolution, convex=False, force_ccw=False):
@@ -276,7 +272,7 @@ def sid_from_point(point, resolution):
     return index_value
 
 
-def sids_from_ring(ring, resolution, convex=False, force_ccw=False):
+def sids_from_ring(ring, level, convex=False, force_ccw=False):
     """
     Return a range of indices covering the region inside/outside ring.
     Node orientation is relevant!
@@ -285,7 +281,7 @@ def sids_from_ring(ring, resolution, convex=False, force_ccw=False):
     ------------
     ring: shapely.geometry.polygon.LinearRing
         Ring to lookup sids for
-    resolution: int
+    level: int
         Maximum STARE resolution to use for lookup.
     convex: bool
         Toggle if the STARE lookup should be performed on the convex hull rather than the actual geometry of the ring
@@ -302,7 +298,7 @@ def sids_from_ring(ring, resolution, convex=False, force_ccw=False):
     >>> import shapely
     >>> # Note: the ring is clockwise!
     >>> polygon = shapely.geometry.Polygon([(0, 0), (1, 1), (1, 0)])
-    >>> starepandas.sids_from_ring(polygon.exterior, force_ccw=True, resolution=6)
+    >>> starepandas.sids_from_ring(polygon.exterior, force_ccw=True, level=6)
     array([4430697608402436102, 4430838345890791430, 4430979083379146758])
     """
     if force_ccw and not ring.is_ccw:
@@ -311,9 +307,9 @@ def sids_from_ring(ring, resolution, convex=False, force_ccw=False):
     lon = latlon[0]
     lat = latlon[1]
     if convex:
-        range_indices = pystare.cover_from_hull(lat, lon, resolution)
+        range_indices = pystare.cover_from_hull(lat, lon, level)
     else:
-        range_indices = pystare.cover_from_ring(lat, lon, resolution)
+        range_indices = pystare.cover_from_ring(lat, lon, level)
 
     return range_indices
 
@@ -445,7 +441,7 @@ def compress_sids(sids):
     return expanded
 
 
-def series_intersects(series, other, method='binsearch', n_workers=1):
+def series_intersects(series, other, method='binsearch', n_partitions=1, num_workers=None):
     """  Returns a bool series of length len(series).
     True for every row in which row intersects other.
 
@@ -457,9 +453,10 @@ def series_intersects(series, other, method='binsearch', n_workers=1):
         The collection of SIDs to test intersections of the series with
     method: str
         either 'skiplist', 'binsearch', or 'nn'
-    n_workers: int
-        number of workers to use.
-
+    n_partitions: int
+        number of partitions
+    num_workers: int
+        number of workers
     Returns
     --------
     intersects: bool numpy.array
@@ -480,12 +477,12 @@ def series_intersects(series, other, method='binsearch', n_workers=1):
     other = numpy.array([other]).flatten()
 
     if len(series) <= 1:
-        n_workers = 1
-    elif n_workers >= len(series):
+        n_partitions = 1
+    elif n_partitions >= len(series):
         # Cannot have more partitions than rows
-        n_workers = len(series) - 1
+        n_partitions = len(series) - 1
 
-    if n_workers == 1:
+    if n_partitions == 1:
         if series.dtype in [numpy.dtype('uint64'), numpy.dtype('int64'), pandas.UInt64Dtype(), pandas.Int64Dtype()]:
             # If we have a series of sids; don't need to iterate. Can send the whole array to pystare/
             if pandas.isna(series).sum() > 0:
@@ -501,11 +498,53 @@ def series_intersects(series, other, method='binsearch', n_workers=1):
                     intersects.append(pystare.intersects(other, sids, method).any())
             intersects = numpy.array(intersects, dtype='bool')
     else:
-        ddf = dask.dataframe.from_pandas(series, npartitions=n_workers)
+        ddf = dask.dataframe.from_pandas(series, npartitions=n_partitions)
         meta = {'intersects': 'bool'}
         res = ddf.map_partitions(lambda df: numpy.array(series_intersects(df, other, method, 1)), meta=meta)
-        intersects = res.compute(scheduler='processes')
+        intersects = res.compute(scheduler='processes', num_workers=num_workers)
     return intersects
+
+
+def make_circular_sids(df, level, diameter, n_partitions=1, num_workers=None):
+    """Create Circular sids cover
+
+    Parameters
+    -----------
+    df: pandas.DataFrame
+        the dataframe
+    level: int
+        the max stare level for the cover
+    diameter: float
+        circle diameter in degrees; may be approximated from a metric distance d and the earth radius r with:
+        phi = d /2/pi/r*360
+    n_partitions: int
+        number of dask partitions to use
+    num_workers: int
+        number of dask workers to use
+    """
+    if len(df) <= 1:
+        n_partitions = 1
+    elif n_partitions >= len(df):
+        # Cannot have more partitions than rows
+        n_partitions = len(df) - 1
+
+    if n_partitions == 1:
+        sids = []
+        for idx, row in df.iterrows():
+            sid = row.sids
+            sid = pystare.spatial_coerce_resolution(sid, level)
+            sid = pystare.spatial_clear_to_resolution(numpy.array(sid))
+            circle_sids = pystare.sid2circular_cover(sid, diameter, level)
+            sids.append(circle_sids)
+        sids = numpy.array(sids, dtype=object)
+    else:
+        ddf = dask.dataframe.from_pandas(df, npartitions=n_partitions)
+        meta = {'sids': 'int64'}
+        res = ddf.map_partitions(make_circular_sids, level=level, diameter=diameter,
+                                 n_partitions=1, num_workers=1, meta=meta)
+        sids = res.compute(scheduler='processes', num_workers=num_workers)
+        sids = list(sids)
+    return sids
 
 
 def speedy_subset(df, roi_sids):

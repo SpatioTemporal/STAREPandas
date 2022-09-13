@@ -7,7 +7,7 @@ countries = geopandas.read_file(geopandas.datasets.get_path('naturalearth_lowres
 
 def test_sid_lookup():
     europe = countries[countries['continent'] == 'Europe'][0:5]
-    sids = starepandas.sids_from_geoseries(europe.geometry, resolution=6, convex=False, force_ccw=True, n_workers=2)
+    sids = starepandas.sids_from_geoseries(europe.geometry, resolution=6, convex=False, force_ccw=True, n_partitions=2)
     assert sids[0][0] == 3999759419058421766
 
 
@@ -31,15 +31,15 @@ def test_intersects():
 
 def test_issue62():
     # This leads to len(series) > n_workers. resulting in nworkers=0 and thus division by zero
-    starepandas.sids_from_geoseries(countries[0:1].geometry, resolution=6,  n_workers=2)
+    starepandas.sids_from_geoseries(countries[0:1].geometry, resolution=6, n_partitions=2)
 
 
 def test_issue62_2():
     # This leads to more workers than len(series) resulting in a ValueError
-    starepandas.sids_from_geoseries(countries[0:3].geometry, resolution=6,  n_workers=3)
+    starepandas.sids_from_geoseries(countries[0:3].geometry, resolution=6, n_partitions=3)
 
 
 def test_issue62_3():
     # This would recursively spin up more workers
-    starepandas.sids_from_geoseries(countries[0:0].geometry, resolution=6, n_workers=1)
+    starepandas.sids_from_geoseries(countries[0:0].geometry, resolution=6, n_partitions=1)
 

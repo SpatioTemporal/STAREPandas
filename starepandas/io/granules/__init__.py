@@ -85,6 +85,7 @@ def guess_companion_path(granule_path, folder=None, prefix=None):
 granule_factory_library = {
     'MOD09GA|MYD09GA': Mod09GA,
     'MOD05|MYD05': Mod05,
+    'MOD03|MYD03': Mod03,
     'MOD09|MYD09': Mod09,
     'VNP02DNB|VJ102DNB': VNP02DNB,
     'VNP03DNB|VJ103DNB': VNP03DNB,

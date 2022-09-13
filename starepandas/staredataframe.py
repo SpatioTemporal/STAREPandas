@@ -7,7 +7,6 @@ import netCDF4
 import starepandas.tools.trixel_conversions
 import multiprocessing
 
-
 DEFAULT_SID_COLUMN_NAME = 'sids'
 DEFAULT_TID_COLUMN_NAME = 'tids'
 DEFAULT_TRIXEL_COLUMN_NAME = 'trixels'
@@ -79,7 +78,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         if trixels is not None:
             self.set_trixels(trixels, inplace=True)
         elif add_trixels:
-            trixels = self.make_trixels(n_workers=n_workers)
+            trixels = self.make_trixels(n_partitions=n_workers)
             self.set_trixels(trixels, inplace=True)
 
     def __getitem__(self, key):
@@ -145,7 +144,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         """
 
         sids = starepandas.sids_from_geoseries(self.geometry, resolution=resolution, convex=convex,
-                                               force_ccw=force_ccw, n_workers=n_workers)
+                                               force_ccw=force_ccw, n_partitions=n_workers)
         return sids
 
     def set_sids(self, col, inplace=False, resolution=None):
@@ -209,7 +208,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
     def has_sids(self):
         return self._sid_column_name in self
 
-    def make_trixels(self, sid_column=None, n_workers=1, wrap_lon=True):
+    def make_trixels(self, sid_column=None, n_partitions=1, wrap_lon=True, num_workers=1):
         """
         Returns a Polygon or Multipolygon GeoSeries
         containing the trixels referred by the STARE indices
@@ -218,7 +217,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         -----------
         sid_column: str
             Column to use as STARE column. Default: 'stare'
-        n_workers: int
+        n_partitions: int
             number of (dask) workers to use to generate trixels
         wrap_lon: bool
             toggle if trixels should be wraped around antimeridian.
@@ -241,14 +240,14 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         if sid_column not in list(self.columns):
             raise Exception('sids column does not exist')
         trixels_series = starepandas.tools.trixel_conversions.trixels_from_stareseries(self[sid_column],
-                                                                                       n_workers=n_workers,
+                                                                                       n_partitions=n_partitions,
                                                                                        wrap_lon=wrap_lon)
         return trixels_series
 
-    def add_trixels(self, n_workers, inplace=False):
+    def add_trixels(self, n_partitions=1, num_workers=1, inplace=False):
         """Combination of make_trixels() and set_trixels()"""
         sid_column = self._sid_column_name
-        trixels = self.make_trixels(sid_column=sid_column, n_workers=n_workers, wrap_lon=True)
+        trixels = self.make_trixels(sid_column=sid_column, n_partitions=n_partitions, wrap_lon=True)
         self.set_trixels(trixels, inplace=inplace)
 
     def set_trixels(self, col, inplace=False):
@@ -619,7 +618,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         intersects = starepandas.series_intersects(other=other,
                                                    series=self[self._sid_column_name],
                                                    method=method,
-                                                   n_workers=n_workers)
+                                                   n_partitions=n_workers)
         return pandas.Series(intersects)
 
     def stare_disjoint(self, other, method='binsearch', n_workers=1):

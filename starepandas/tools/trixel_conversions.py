@@ -502,7 +502,7 @@ def to_trixels(sids, as_multipolygon=False, wrap_lon=True):
     return trixels
 
 
-def trixels_from_stareseries(sids_series, n_workers=1, wrap_lon=True):
+def trixels_from_stareseries(sids_series, n_partitions=1, num_workers=None, wrap_lon=True):
     """ Takes a series of STARE index values and creates an array of sets of trixels. If a row contains a set of sids
     (rather than a single sid); i.e. representing e.g. a region, a set of trixels will be generated and combined in a
     multipolygon
@@ -511,7 +511,7 @@ def trixels_from_stareseries(sids_series, n_workers=1, wrap_lon=True):
     -----------
     sids_series: array-like
         Series or array-like with STARE index values
-    n_workers: int
+    n_partitions: int
         number of workers to use to lookup geometries in parallel
     wrap_lon: bool
             toggle if trixels should be wraped around antimeridian.
@@ -528,7 +528,7 @@ def trixels_from_stareseries(sids_series, n_workers=1, wrap_lon=True):
     >>> sdf = starepandas.STAREDataFrame(sids=sids)
     >>> trixels = starepandas.trixels_from_stareseries(sdf.sids)
     """
-    npartitions = n_workers
+    npartitions = n_partitions
     if len(sids_series) <= 1:
         npartitions = 1
     elif npartitions >= len(sids_series):
@@ -545,17 +545,17 @@ def trixels_from_stareseries(sids_series, n_workers=1, wrap_lon=True):
         meta = {'trixels': 'object'}
         res = ddf.map_partitions(lambda df:
                                  vectorized.from_shapely(
-                                     trixels_from_stareseries(df, n_workers=1, wrap_lon=wrap_lon)).flatten(),
+                                     trixels_from_stareseries(df, n_partitions=1, wrap_lon=wrap_lon)).flatten(),
                                  meta=meta)
-        trixels_series = res.compute(scheduler='processes')
+        trixels_series = res.compute(scheduler='processes', num_workers=num_workers)
         # Since the array would be ragged, we are probably safer with a list of arrays
         trixels_series = trixels_series.tolist()
     trixels_series = geopandas.GeoSeries(trixels_series, crs='EPSG:4326', index=sids_series.index)
     return trixels_series
 
 
-def split_antimeridian_series(trixels_series, n_workers=1, drop=False):
-    n_partitions = n_workers
+def split_antimeridian_series(trixels_series, n_partitions=1, num_workers=None, drop=False):
+    n_partitions = n_partitions
 
     if len(trixels_series) <= 1:
         n_partitions = 1
@@ -578,9 +578,9 @@ def split_antimeridian_series(trixels_series, n_workers=1, drop=False):
         ddf = dask.dataframe.from_pandas(trixels_series, npartitions=n_partitions)
         meta = {'trixels': 'object'}
         res = ddf.map_partitions(lambda df:
-                                 vectorized.from_shapely(split_antimeridian_series(df, n_workers=1, drop=drop)).flatten(),
+                                 vectorized.from_shapely(split_antimeridian_series(df, n_partitions=1, drop=drop)).flatten(),
                                  meta=meta)
-        trixels_series = res.compute(scheduler='processes')
+        trixels_series = res.compute(scheduler='processes', num_workers=num_workers)
         # Since the array would be ragged, we are probably safer with a list of arrays
         trixels_series = trixels_series.tolist()
 

@@ -17,7 +17,7 @@ def test_points():
     gdf = geopandas.GeoDataFrame(df, geometry=geom)
 
     stare1 = starepandas.sids_from_xy(df.Longitude, df.Latitude, resolution=5)
-    stare2 = starepandas.sids_from_xy_df(gdf, n_workers=1, resolution=5)
+    stare2 = starepandas.sids_from_xy_df(gdf, n_partitions=1, resolution=5)
     stare3 = starepandas.sids_from_gdf(gdf, resolution=5)
     assert numpy.array_equal(stare1, stare2)
     assert numpy.array_equal(stare2, stare3)

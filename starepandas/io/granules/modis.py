@@ -1,11 +1,15 @@
 from starepandas.io.granules.granule import Granule
 import starepandas.io.s3
+import dask
 import datetime
 import numpy
 import pystare
+import shapely
+import matplotlib.patches
+import pyproj
 
 
-def get_hdfeos_metadata(file_path):    
+def get_hdfeos_metadata(file_path):
     hdf = starepandas.io.s3.sd_wrapper(file_path)
     metadata = {'ArchiveMetadata': get_metadata_group(hdf, 'ArchiveMetadata'),
                 'StructMetadata': get_metadata_group(hdf, 'StructMetadata'),
@@ -16,7 +20,7 @@ def get_hdfeos_metadata(file_path):
 def get_metadata_group(hdf, group_name):
     metadata_group = {}
     keys = [s for s in hdf.attributes().keys() if group_name in s]
-    for key in keys:    
+    for key in keys:
         string = hdf.attributes()[key]
         m = parse_hdfeos_metadata(string)
         metadata_group = {**metadata_group, **m}
@@ -24,47 +28,47 @@ def get_metadata_group(hdf, group_name):
 
 
 def parse_hdfeos_metadata(string):
-    out = {} 
+    out = {}
     lines0 = [i.replace('\t', '') for i in string.split('\n')]
     lines = []
     for line in lines0:
         if "=" in line:
-            
+
             key = line.split('=')[0]
             value = '='.join(line.split('=')[1:])
-            lines.append(key.strip()+'='+value.strip())
+            lines.append(key.strip() + '=' + value.strip())
         else:
             lines.append(line)
     i = -1
-    while i < (len(lines))-1:
+    while i < (len(lines)) - 1:
         i += 1
         line = lines[i]
         if "=" in line:
             key = line.split('=')[0]
             value = '='.join(line.split('=')[1:])
             if key in ['GROUP', 'OBJECT']:
-                endIdx = lines[i+1:].index('END_{}={}'.format(key, value))
-                endIdx += i+1
-                out[value] = parse_hdfeos_metadata("\n".join(lines[i+1:endIdx]))
+                endIdx = lines[i + 1:].index('END_{}={}'.format(key, value))
+                endIdx += i + 1
+                out[value] = parse_hdfeos_metadata("\n".join(lines[i + 1:endIdx]))
                 i = endIdx
             elif ('END_GROUP' not in key) and ('END_OBJECT' not in key):
                 out[key] = str(value)
-    return out 
+    return out
 
 
 class Modis(Granule):
-    
+
     def __init__(self, file_path, sidecar_path=None, nom_res=None):
         super(Modis, self).__init__(file_path, sidecar_path)
         self.hdf = starepandas.io.s3.sd_wrapper(file_path)
-    
+
     def read_latlon(self, track_first=False):
         self.lon = self.hdf.select('Longitude').get().astype(numpy.double)
         self.lat = self.hdf.select('Latitude').get().astype(numpy.double)
         if track_first:
             self.lon = numpy.ascontiguousarray(self.lon.transpose())
             self.lat = numpy.ascontiguousarray(self.lat.transpose())
-            
+
     def read_timestamps(self):
         meta = get_hdfeos_metadata(self.file_path)
         meta_group = meta['CoreMetadata']['INVENTORYMETADATA']['RANGEDATETIME']
@@ -73,8 +77,8 @@ class Modis(Granule):
         end_date = meta_group['RANGEENDINGDATE']['VALUE']
         end_time = meta_group['RANGEENDINGTIME']['VALUE']
         try:
-            self.ts_start = datetime.datetime.strptime(beginning_date+beginning_time, '"%Y-%m-%d""%H:%M:%S.%f"')
-            self.ts_end = datetime.datetime.strptime(end_date+end_time, '"%Y-%m-%d""%H:%M:%S.%f"')
+            self.ts_start = datetime.datetime.strptime(beginning_date + beginning_time, '"%Y-%m-%d""%H:%M:%S.%f"')
+            self.ts_end = datetime.datetime.strptime(end_date + end_time, '"%Y-%m-%d""%H:%M:%S.%f"')
         except ValueError:
             self.ts_start = datetime.datetime.strptime(beginning_date + beginning_time, '"%Y-%m-%d""%H:%M:%S"')
             self.ts_end = datetime.datetime.strptime(end_date + end_time, '"%Y-%m-%d""%H:%M:%S"')
@@ -162,7 +166,7 @@ class Modis(Granule):
             b = b.reshape(a.shape[0], a.shape[1], 16)
             b = b[:, :, start:end]
             b = numpy.flip(b)
-            b = numpy.frombuffer(b.tobytes(), dtype=(str, end-start))
+            b = numpy.frombuffer(b.tobytes(), dtype=(str, end - start))
             b = b.reshape(a.shape)
             b = numpy.ma.masked_array(b, a.mask)
             b = b.astype('i1')
@@ -237,12 +241,12 @@ class Mod05(Modis):
     def __init__(self, file_path, sidecar_path=None):
         super(Mod05, self).__init__(file_path, sidecar_path)
         self.nom_res = '5km'
-        
+
     def read_data(self):
-        dataset_names = ['Scan_Start_Time', 'Solar_Zenith', 'Solar_Azimuth', 
+        dataset_names = ['Scan_Start_Time', 'Solar_Zenith', 'Solar_Azimuth',
                          'Sensor_Zenith', 'Sensor_Azimuth', 'Water_Vapor_Infrared']
-    
-        dataset_names2 = ['Cloud_Mask_QA', 'Water_Vapor_Near_Infrared', 
+
+        dataset_names2 = ['Cloud_Mask_QA', 'Water_Vapor_Near_Infrared',
                           'Water_Vaport_Corretion_Factors', 'Quality_Assurance_Near_Infrared',
                           'Quality_Assurance_Infrared']
 
@@ -408,4 +412,89 @@ def read_mod09ga(file_path, bbox=None):
     mod09ga = mod09ga.join(states)
     return mod09ga
 
+
+def zenith2width(zenith):
+    a = 0.09148844
+    b = 40.88432179
+    c = 1
+    return numpy.exp(a * zenith) / b + c
+
+
+def zenith2height(zenith):
+    a = 0.06510478
+    b = 35.23555162
+    c = 0.97762256
+    return numpy.exp(a * zenith) / b + c
+
+
+def transform(geom, from_epsg, to_epsg):
+    from_crs = pyproj.CRS(from_epsg)
+    to_crs = pyproj.CRS(to_epsg)
+
+    project = pyproj.Transformer.from_crs(from_crs, to_crs, always_xy=True).transform
+    return shapely.ops.transform(project, geom)
+
+
+def make_ellipse(center_x, center_y, width, height, angle):
+    ellipse = matplotlib.patches.Ellipse((center_x, center_y), width, height, angle)
+    vertices = ellipse.get_verts()  # get the vertices from the ellipse object
+    ellipse = shapely.geometry.LinearRing(vertices)
+    return ellipse
+
+
+def make_ellipse_sids(df, crs=3857, n_partitions=None, num_workers=None, level=17, modis_resolution=500):
+    """ Create a series of sids corresponding to the STARE cover of an ellipse around the center of
+    each iFOV.
+
+    """
+    if num_workers is not None and n_partitions is None:
+        n_partitions = num_workers*10
+    elif num_workers is None and n_partitions is None:
+        n_partitions = 1
+        num_workers = 1
+
+    if len(df) <= 1:
+        n_partitions = 1
+    elif n_partitions >= len(df):
+        # Cannot have more partitions than rows
+        n_partitions = len(df) - 1
+
+    if n_partitions == 1:
+        ellipses_sids = []
+        for idx, row in df.iterrows():
+            if 'geometry' in row.keys():
+                point = row['geometry']
+            elif 'longitude' in row.keys() and 'latitude' in row.keys():
+                point = shapely.geometry.Point(row['longitude'], row['latitude'])
+            elif 'sids' in row.keys():
+                lat, lon = pystare.to_latlon([row['sids']])
+                point = shapely.geometry.Point(lon, lat)
+            else:
+                raise
+
+            transformed = transform(point, 4326, crs)
+            center_x = transformed.x
+            center_y = transformed.y
+
+            azimuth = row['SensorAzimuth']
+            zenith = row['SensorZenith']
+
+            width = zenith2width(zenith) * modis_resolution
+            height = zenith2height(zenith) * modis_resolution
+
+            angle = 90-azimuth
+            ellipse = make_ellipse(center_x, center_y, width, height, angle)
+            ellipse = transform(ellipse, crs, 4326)
+            ellipse_sids = starepandas.sids_from_ring(ring=ellipse, level=level)
+            ellipses_sids.append(ellipse_sids)
+        ellipses_sids = numpy.array(ellipses_sids, dtype=object)
+    else:
+        ddf = dask.dataframe.from_pandas(df, npartitions=n_partitions)
+        meta = {'sids': 'int64'}
+        res = ddf.map_partitions(make_ellipse_sids, crs=crs, n_partitions=1, num_workers=1,
+                                 level=level, modis_resolution=modis_resolution, meta=meta)
+        ellipses_sids = res.compute(scheduler='processes', num_workers=num_workers)
+        ellipses_sids = list(ellipses_sids)
+
+    return ellipses_sids
 
