@@ -70,9 +70,11 @@ def sids_from_geoseries(series, resolution, convex=False, force_ccw=True, n_part
     convex: bool
         Toggle if STARE indices for the convex hull rather than the G-Ring should be looked up
     force_ccw: bool
-        Toggle if a counter clockwise orientation of the geometries should be enforced
+        Toggle if a counterclockwise orientation of the geometries should be enforced
     n_partitions: int
         Number of workers used to lookup STARE indices in parallel
+    num_workers: int
+        number of workers
     
     Returns
     --------
@@ -92,9 +94,9 @@ def sids_from_geoseries(series, resolution, convex=False, force_ccw=True, n_part
 
     if len(series) <= 1:
         n_partitions = 1
-    elif n_partitions >= len(series):
+    elif n_partitions >= len(series)/2:
         # Cannot have more partitions than rows
-        n_partitions = len(series) - 1
+        n_partitions = int(len(series)/2)
 
     if n_partitions == 1:
         sids = []
