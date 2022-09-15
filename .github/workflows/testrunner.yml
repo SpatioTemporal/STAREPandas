@@ -8,9 +8,16 @@ on:
     branches: [ master ]
   pull_request:
     branches: [ master ]
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - ready_for_review
+
 
 jobs:
   build:
+    if: ! github.event.pull_request.draft
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v2
