@@ -22,7 +22,7 @@ copyright = '2021, Niklas Griessbaum'
 author = 'Niklas Griessbaum'
 
 # The full version, including alpha/beta/rc tags
-release = '2021-05-20'
+release = '2022-09-15'
 
 # -- General configuration ---------------------------------------------------
 
