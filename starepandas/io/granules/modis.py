@@ -111,7 +111,7 @@ class Modis(Granule):
         array = array.repeat(factor, axis=1)
         return array
 
-    def decode_qa(self):
+    def decode_qa(self, qa_name):
         """
         Decode QA
 
@@ -136,6 +136,10 @@ class Modis(Granule):
             11: other reasons some or all bands may be fill value
         Note that a value of (11) overrides a value of (01).";
         """
+        qa = self.data[qa_name]
+        #qa = state_series.apply(lambda x: '{:032b}'.format(x)[::-1])
+        #df = starepandas.STAREDataFrame(index=state.index)
+        #df['modland_qa'] = state.str.slice(start=0, stop=2).apply(lambda x: x[::-1]).astype('u1')
 
     def decode_state(self, state_ds):
         """
