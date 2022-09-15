@@ -8,6 +8,7 @@ import shapely
 import geopandas
 from shapely.geometry import Point
 
+
 def to_vertices(sids, wrap_lon=True):
     """ Converts a (collection of) sid(s) into vertices. Vertices are a tuple of:
 
@@ -47,8 +48,8 @@ def to_vertices(sids, wrap_lon=True):
     if wrap_lon:
         # If the trixel is not counterclockwise, then it is wrapped around the antimeridian
         # and we need to move the vertices over
-        vs[1][vs[1]>180] = (vs[1][vs[1]>180] + 180) % 360.0 - 180
-        vs[3][vs[3]>180] = (vs[3][vs[3]>180] + 180) % 360.0 - 180
+        vs[1][vs[1] > 180] = (vs[1][vs[1] > 180] + 180) % 360.0 - 180
+        vs[3][vs[3] > 180] = (vs[3][vs[3] > 180] + 180) % 360.0 - 180
     return vs
 
 
@@ -226,7 +227,7 @@ def vertices2corners_ecef(vertices):
         vertices data structure
 
     Returns
-    -------
+    ---------
     corners: numpy.array
         First dimension are the sids (same as input first dimension).
         Second dimension the corners (1,2,3).
@@ -578,7 +579,8 @@ def split_antimeridian_series(trixels_series, n_partitions=1, num_workers=None, 
         ddf = dask.dataframe.from_pandas(trixels_series, npartitions=n_partitions)
         meta = {'trixels': 'object'}
         res = ddf.map_partitions(lambda df:
-                                 vectorized.from_shapely(split_antimeridian_series(df, n_partitions=1, drop=drop)).flatten(),
+                                 vectorized.from_shapely(
+                                     split_antimeridian_series(df, n_partitions=1, drop=drop)).flatten(),
                                  meta=meta)
         trixels_series = res.compute(scheduler='processes', num_workers=num_workers)
         # Since the array would be ragged, we are probably safer with a list of arrays
