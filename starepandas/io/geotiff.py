@@ -34,7 +34,7 @@ def read_meta(file_path):
     return meta
 
 
-def read_geotiff(file_path, bands=None, add_sids=True,
+def read_geotiff(file_path, bands=None, add_sids=False,
                  add_pts=False, add_xy=False, add_coordinates=False, add_latlon=False,
                  add_trixels=False, n_workers=1):
     """

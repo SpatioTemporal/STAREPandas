@@ -31,7 +31,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
     def __init__(self, *args,
                  sids=None, add_sids=False, level=None,
-                 trixels=None, add_trixels=False, n_workers=1,
+                 trixels=None, add_trixels=False, n_partitions=1,
                  **kwargs):
         """
         A STAREDataFrame object is a pandas.DataFrame that has a special column
@@ -64,21 +64,22 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
         super(STAREDataFrame, self).__init__(*args, **kwargs)
 
-        if args and isinstance(args[0], STAREDataFrame):
+        if args and isinstance(args[0], (geopandas.GeoDataFrame, STAREDataFrame)):
             self._geometry_column_name = args[0]._geometry_column_name
+            #self.set_crs(args[0].crs, inplace=True)
 
         if sids is not None:
             self.set_sids(sids, inplace=True)
         elif add_sids:
             if level is None:
                 raise ValueError('Level has to be specified if SIDs are to be added')
-            sids = self.make_sids(level=level, n_workers=n_workers)
+            sids = self.make_sids(level=level, n_partitions=n_partitions)
             self.set_sids(sids, inplace=True)
 
         if trixels is not None:
             self.set_trixels(trixels, inplace=True)
         elif add_trixels:
-            trixels = self.make_trixels(n_partitions=n_workers)
+            trixels = self.make_trixels(n_partitions=n_partitions)
             self.set_trixels(trixels, inplace=True)
 
     def __getitem__(self, key):
@@ -104,7 +105,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         else:
             super(STAREDataFrame, self).__setattr__(attr, val)
 
-    def make_sids(self, level, convex=False, force_ccw=True, n_workers=1):
+    def make_sids(self, level, convex=False, force_ccw=True, n_partitions=1):
         """
         Generates and returns the STARE representation of each feauture.
 
@@ -116,7 +117,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             Toggle if STARE indices for the convex hull rather than the G-Ring should be looked up
         force_ccw: bool
             Toggle if a counterclockwise orientation of the geometries should be enforced
-        n_workers: int
+        n_partitions: int
             Number of workers used to lookup STARE indices in parallel
 
         Returns
@@ -147,7 +148,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         """
 
         sids = starepandas.sids_from_geoseries(self.geometry, level=level, convex=convex,
-                                               force_ccw=force_ccw, n_partitions=n_workers)
+                                               force_ccw=force_ccw, n_partitions=n_partitions)
         return sids
 
     def set_sids(self, col, inplace=False):
@@ -255,12 +256,13 @@ class STAREDataFrame(geopandas.GeoDataFrame):
                                                                                        wrap_lon=wrap_lon)
         return trixels_series
 
-    def add_trixels(self, n_partitions=1, num_workers=None, inplace=False):
+    def add_trixels(self, n_partitions=1, num_workers=None, inplace=False, wrap_lon=True):
         """Combination of make_trixels() and set_trixels()"""
         sid_column = self._sid_column_name
         trixels = self.make_trixels(sid_column=sid_column, n_partitions=n_partitions,
-                                    num_workers=num_workers, wrap_lon=True)
-        self.set_trixels(trixels, inplace=inplace)
+                                    num_workers=num_workers, wrap_lon=wrap_lon)
+
+        return self.set_trixels(trixels, inplace=inplace)
 
     def set_trixels(self, col, inplace=False):
         """
@@ -294,6 +296,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             frame._trixel_column_name = col
         else:
             raise ValueError("Must pass array-like object or column name")
+        #frame.set_geometry(col, inplace=True)
 
         if not inplace:
             return frame
@@ -572,7 +575,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         >>> import geopandas
         >>> world = geopandas.read_file(geopandas.datasets.get_path('naturalearth_lowres'))
         >>> germany = world[world.name=='Germany']
-        >>> germany = starepandas.STAREDataFrame(germany, add_sids=True, level=8, add_trixels=True, n_workers=1)
+        >>> germany = starepandas.STAREDataFrame(germany, add_sids=True, level=8, add_trixels=True, n_partitions=1)
         >>> ax = germany.plot(trixels=True, boundary=True, color='y', zorder=0)
         """
         df = self.copy()
@@ -689,7 +692,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             data.append(pystare.intersection(srange, other))
         return pandas.Series(data, index=self.index)
 
-    def stare_dissolve(self, by=None, compress_sids=True, n_workers=1,
+    def stare_dissolve(self, by=None, compress_sids=True, num_workers=1,
                        geom=False, aggfunc="first", **kwargs):
         """
         Dissolves a dataframe subject to a field. I.e. grouping by a field/column.
@@ -702,7 +705,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         compress_sids: bool
             Toggle if STARE index values get dissolved. If not, sids will be appended.
             If not dissolved, there may be repetitive sids and sids that could get merged into the parent sid.
-        n_workers: int
+        num_workers: int
             workers to use for the dissolve
         geom: bool
             Toggle if the geometry column is to be dissolved. Geom column Will be dropped if set to False.
@@ -739,12 +742,12 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
         sids_groups = self.groupby(group_keys=True, by=by)[self._sid_column_name]
 
-        if n_workers == 1:
+        if num_workers == 1:
             dissolved = []
             for group in sids_groups:
                 dissolved.append(compress_sids_group(group))
         else:
-            with multiprocessing.Pool(processes=n_workers) as pool:
+            with multiprocessing.Pool(processes=num_workers) as pool:
                 dissolved = pool.map(compress_sids_group, [group for group in sids_groups])
 
         sdf = STAREDataFrame(dissolved, columns=[by, self._sid_column_name])

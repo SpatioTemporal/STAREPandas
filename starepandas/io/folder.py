@@ -127,4 +127,5 @@ def folder2catalog(path, granule_trunk='', granule_extension='*', add_sf=False, 
     df = starepandas.STAREDataFrame(df, sids='stare_cover')
     if add_sf:
         df.set_geometry('geom', inplace=True)
+    df.reset_index(inplace=True, drop=True)
     return df

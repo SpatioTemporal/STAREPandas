@@ -522,6 +522,12 @@ def make_circular_sids(df, level, diameter, n_partitions=1, num_workers=None):
     num_workers: int
         number of dask workers to use
     """
+    if num_workers is not None and n_partitions is None:
+        n_partitions = num_workers * 10
+    elif num_workers is None and n_partitions is None:
+        n_partitions = 1
+        num_workers = 1
+
     if len(df) <= 1:
         n_partitions = 1
     elif n_partitions >= len(df):
