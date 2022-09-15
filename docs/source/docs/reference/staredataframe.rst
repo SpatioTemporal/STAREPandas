@@ -40,9 +40,9 @@ STARE manipulation
 .. autosummary::
     :toctree: api/
 
-    STAREDataFrame.to_stare_resolution
-    STAREDataFrame.clear_to_resolution
-    STAREDataFrame.to_stare_singleres
+    STAREDataFrame.to_stare_level
+    STAREDataFrame.clear_to_level
+    STAREDataFrame.to_stare_singllevel
     STAREDataFrame.hex
 
 Trixel Functions

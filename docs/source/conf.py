@@ -78,10 +78,16 @@ html_theme_options = {
     "navbar_align": "content",
 }
 
+autosummary_generate = True
 
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
 html_static_path = ['_static']
 
-autosummary_generate = True
+html_css_files = [
+    'style.css',
+]
+
+
+

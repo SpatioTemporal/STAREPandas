@@ -553,6 +553,7 @@ def make_circular_sids(df, level, diameter, n_partitions=1, num_workers=None):
 
 def speedy_subset(df, roi_sids):
     """ Speedy intersects is meant to subset large (long) STAREDataFrame to a subset that intersects the roi.
+
     This method works particularly well if
      a) the df has significantly more SIDs than the roi_sids
      b) The SIDs of the df are at higher level than the roi_sids

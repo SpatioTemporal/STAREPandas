@@ -90,6 +90,7 @@ class Granule:
         -----------
         xy: bool
             If true, add columns for the original array coordinates
+            For MODIS, x will be in scan direction / across swath / data samples
 
         Returns
         --------

@@ -592,7 +592,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
                 raise AttributeError('No trixels set (expected in "{}" column)'.format(self._trixel_column_name))
             df.set_geometry(self._trixel_column_name, inplace=True)
             if boundary:
-                df = df[df.geometry.is_empty is False]
+                df = df[df.geometry.is_empty == False]
                 df = df.set_geometry(df.geometry.boundary)
         else:
             df.set_geometry(self._geometry_column_name, inplace=True)
@@ -862,7 +862,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         if not inplace:
             return df
 
-    def to_stare_singleres(self, level=None, inplace=False):
+    def to_stare_singllevel(self, level=None, inplace=False):
         """
         Changes the STARE index values to single level representation (in contrary to multiresolution).
 
@@ -885,7 +885,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         >>> germany = starepandas.STAREDataFrame(germany, add_sids=True, level=6, add_trixels=False)
         >>> len(germany.sids.iloc[0])
         43
-        >>> germany_singleres = germany.to_stare_singleres()
+        >>> germany_singleres = germany.to_stare_singllevel()
         >>> len(germany_singleres.sids.iloc[0])
         46
         """

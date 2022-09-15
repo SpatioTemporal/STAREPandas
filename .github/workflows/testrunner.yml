@@ -19,26 +19,24 @@ jobs:
       with:
         python-version: 3.9
     - name: Install dependencies
-      run: |        
-        pip install .
+      run: |               
         python -m pip install --upgrade pip
         pip install flake8 pytest 
-        pip install nbmake pytest-xdist
-        # pip install pytest-notebook
+        pip install nbmake pytest-xdist        
         pip install configparser 
         python3 -c "import configparser; c = configparser.ConfigParser(); c.read('setup.cfg'); print(c['options']['install_requires'])" | xargs pip install
     - name: Lint with flake8
       run: |
         # stop the build if there are Python syntax errors or undefined names
-        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+        flake8 starepandas/ --count --select=E9,F63,F7,F82 --show-source --statistics
         # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
         flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
     - name: Test Notebooks
       run: |
         python -m ipykernel install --user --name testkernel
-        pip install .
+        pip install .        
+        # pip install /home/runner/work/STAREPandas/
         pytest --nbmake --nbmake-kernel=testkernel examples/*.ipynb
     - name: Test with pytest
-      run: |        
-        pytest --doctest-modules
+      run: |
         pytest
