@@ -20,8 +20,9 @@ jobs:
         python-version: 3.9
     - name: Install dependencies
       run: |
+        apt -y install libgeos-dev
         python -m pip install --upgrade pip
-        pip install flake8 pytest        
+        pip install flake8 pytest nbmake
         pip install configparser 
         python3 -c "import configparser; c = configparser.ConfigParser(); c.read('setup.cfg'); print(c['options']['install_requires'])" | xargs pip install
     - name: Lint with flake8
@@ -31,5 +32,7 @@ jobs:
         # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
         flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
     - name: Test with pytest
-      run: |        
+      run: |
+        pytest --nbmake --overwrite -n=auto
         pytest
+        
