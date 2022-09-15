@@ -12,3 +12,4 @@ examples/dask-worker-space/*
 docs/source/docs/reference/api/*
 .idea/*
 *dask-worker-space*
+/docs/source/_build/
