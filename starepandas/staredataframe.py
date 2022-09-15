@@ -66,7 +66,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
         if args and isinstance(args[0], (geopandas.GeoDataFrame, STAREDataFrame)):
             self._geometry_column_name = args[0]._geometry_column_name
-            #self.set_crs(args[0].crs, inplace=True)
+            # self.set_crs(args[0].crs, inplace=True)
 
         if sids is not None:
             self.set_sids(sids, inplace=True)
@@ -268,11 +268,18 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         """
         Set the trixel column
 
-        :param col: If array like, will add the array as a new trixel column. If string, will set the df['col'] as the trixel column. If None, will generate trixels from the STARE column.
-        :type col: Array-like, string, or None
-        :param inplace: Modify the StareDataFrame in place (do not create a new object)
-        :type inplace: bool
-        :return: DataFrame or None
+        Parameters
+        ------------
+        col: array-like or string
+            If array like, will add the array as a new trixel column. If string, will set the df['col']
+            as the trixel column. If None, will generate trixels from the STARE column.
+        inplace: bool
+            Modify the StareDataFrame in place (do not create a new object)
+
+        Returns
+        -------
+        df: DataFrame
+            DataFrame or None
 
 
         Examples
@@ -296,7 +303,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             frame._trixel_column_name = col
         else:
             raise ValueError("Must pass array-like object or column name")
-        #frame.set_geometry(col, inplace=True)
+        # frame.set_geometry(col, inplace=True)
 
         if not inplace:
             return frame
@@ -585,7 +592,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
                 raise AttributeError('No trixels set (expected in "{}" column)'.format(self._trixel_column_name))
             df.set_geometry(self._trixel_column_name, inplace=True)
             if boundary:
-                df = df[df.geometry.is_empty == False]
+                df = df[df.geometry.is_empty is False]
                 df = df.set_geometry(df.geometry.boundary)
         else:
             df.set_geometry(self._geometry_column_name, inplace=True)
@@ -1061,7 +1068,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             sids_netcdf[:, :] = sids
             if cover:
                 sids_cover = self.stare_dissolve()
-                l = sids_cover.size
+                l: int = sids_cover.size
                 root_group.createDimension('l', l)
                 cover_netcdf = root_group.createVariable(varname='STARE_cover',
                                                          datatype='u8',
@@ -1080,7 +1087,7 @@ def _dataframe_set_sids(self, col, inplace=False):
             "Can't do inplace setting when converting from (Geo)DataFrame to STAREDataFrame"
         )
     sdf = STAREDataFrame(self)
-    # this will copy so that BlockManager gets copied    
+    # this will copy so that BlockManager gets copied
     return sdf.set_sids(col, inplace=False)
 
 

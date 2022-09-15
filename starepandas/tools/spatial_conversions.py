@@ -1,14 +1,12 @@
 import dask.dataframe
 import shapely
 import pandas
-
-# https://github.com/numpy/numpy/issues/14868
-import os
-
-os.environ["OMP_NUM_THREADS"] = "1"
-
 import numpy
 import pystare
+
+# https://github.com/numpy/numpy/issues/14868
+# import os
+# os.environ["OMP_NUM_THREADS"] = "1"
 
 
 def sids_from_gdf(gdf, level, convex=False, force_ccw=True, n_partitions=1, num_workers=None):
@@ -24,7 +22,7 @@ def sids_from_gdf(gdf, level, convex=False, force_ccw=True, n_partitions=1, num_
     convex: bool
         Toggle if STARE indices for the convex hull rather than the G-Ring should be looked up
     force_ccw: bool
-        Toggle if a counter clockwise orientation of the geometries should be enforced
+        Toggle if a counterclockwise orientation of the geometries should be enforced
     num_workers: int
         Number of workers used to lookup STARE indices in parallel
 
@@ -75,7 +73,7 @@ def sids_from_geoseries(series, level, convex=False, force_ccw=True, n_partition
         Number of workers used to lookup STARE indices in parallel
     num_workers: int
         number of workers
-    
+
     Returns
     --------
     sids
@@ -103,7 +101,7 @@ def sids_from_geoseries(series, level, convex=False, force_ccw=True, n_partition
         sids.name = 'sids'
         return sids
     else:
-        ddf = dask.dataframe.from_pandas(series, npartitions=n_partitions,)
+        ddf = dask.dataframe.from_pandas(series, npartitions=n_partitions, )
         meta = {'name': 'int64'}
         res = ddf.map_partitions(sids_from_geoseries, level=level, convex=convex,
                                  force_ccw=force_ccw, n_partitions=1, num_workers=1, meta=meta)
@@ -150,19 +148,19 @@ def sids_from_xy_df(df, level, n_partitions=1, num_workers=None):
     Assumes latitude column name is {'lat', 'Latitude', 'latitude', or 'y'} and
     longitude column name is {'lon', 'Longitude', 'longitude', or 'x'}
 
-    Parameters 
+    Parameters
     --------------
     df: pandas.DataFrame
-        Dataframe containing x/y coordinates    
+        Dataframe containing x/y coordinates
     level: int
         STARE spatial level
     n_partitions: int
         Number of workers used to lookup STARE indices in parallel
-        
+
     Returns
     --------
-    sids     
-        Array of STARE index values    
+    sids
+        Array of STARE index values
 
     Examples
     ------------
