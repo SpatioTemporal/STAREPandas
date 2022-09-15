@@ -11,7 +11,7 @@ import numpy
 import pystare
 
 
-def sids_from_gdf(gdf, resolution, convex=False, force_ccw=True, n_workers=1):
+def sids_from_gdf(gdf, level, convex=False, force_ccw=True, n_partitions=1, num_workers=None):
     """
     Takes a GeoDataFrame and returns a corresponding series of sets of trixel indices
 
@@ -19,13 +19,13 @@ def sids_from_gdf(gdf, resolution, convex=False, force_ccw=True, n_workers=1):
     -----------
     gdf: geopandas.GeoDataFrame
         A dataframe containing features to look (sets of) STARE indices up for
-    resolution: int
-        STARE resolution
+    level: int
+        STARE level
     convex: bool
         Toggle if STARE indices for the convex hull rather than the G-Ring should be looked up
     force_ccw: bool
         Toggle if a counter clockwise orientation of the geometries should be enforced
-    n_workers: int
+    num_workers: int
         Number of workers used to lookup STARE indices in parallel
 
     Returns
@@ -38,9 +38,9 @@ def sids_from_gdf(gdf, resolution, convex=False, force_ccw=True, n_workers=1):
     >>> import starepandas
     >>> world = geopandas.read_file(geopandas.datasets.get_path('naturalearth_lowres'))
     >>> italy = world[world.name=='Italy']
-    >>> starepandas.sids_from_gdf(italy, resolution=3, convex=False, force_ccw=True, n_workers=1)
-    [array([4269412446747230211, 4548635623644200963, 4566650022153682947,
-           4548635623644200963, 4548635623644200963])]
+    >>> starepandas.sids_from_gdf(italy, level=3, convex=False, force_ccw=True, num_workers=1)
+    141    [4269412446747230211, 4548635623644200963, 456...
+    Name: sids, dtype: object
     """
     if gdf._geometry_column_name in gdf.keys():
         pass
@@ -51,13 +51,13 @@ def sids_from_gdf(gdf, resolution, convex=False, force_ccw=True, n_workers=1):
         # This might be a speedup since we don't need to iterate over python lists
         lat = gdf.geometry.y
         lon = gdf.geometry.x
-        return pystare.from_latlon(lat, lon, resolution)
+        return pystare.from_latlon(lat, lon, level)
     else:
-        return sids_from_geoseries(gdf.geometry, resolution=resolution, convex=convex, force_ccw=force_ccw,
-                                   n_partitions=n_workers)
+        return sids_from_geoseries(gdf.geometry, level=level, convex=convex, force_ccw=force_ccw,
+                                   n_partitions=n_partitions, num_workers=num_workers)
 
 
-def sids_from_geoseries(series, resolution, convex=False, force_ccw=True, n_partitions=1, num_workers=1):
+def sids_from_geoseries(series, level, convex=False, force_ccw=True, n_partitions=1, num_workers=None):
     """
     Takes a GeoSeries and returns a corresponding series of sets of trixel indices
 
@@ -65,8 +65,8 @@ def sids_from_geoseries(series, resolution, convex=False, force_ccw=True, n_part
     -----------
     series: geopandas.GeoSeries
         A geopandas.GeoSeries containing features to look (sets of) STARE indices up for
-    resolution: int
-        STARE resolution
+    level: int
+        STARE level
     convex: bool
         Toggle if STARE indices for the convex hull rather than the G-Ring should be looked up
     force_ccw: bool
@@ -87,34 +87,32 @@ def sids_from_geoseries(series, resolution, convex=False, force_ccw=True, n_part
     >>> import starepandas
     >>> world = geopandas.read_file(geopandas.datasets.get_path('naturalearth_lowres'))
     >>> germany = world[world.name=='Germany']
-    >>> starepandas.sids_from_geoseries(germany.geometry, resolution=3, convex=True)
-    [array([4251398048237748227, 4269412446747230211, 4278419646001971203,
-           4539628424389459971, 4548635623644200963, 4566650022153682947])]
+    >>> starepandas.sids_from_geoseries(germany.geometry, level=3, convex=True)
+    121    [4251398048237748227, 4269412446747230211, 427...
+    Name: sids, dtype: object
     """
 
     if len(series) <= 1:
         n_partitions = 1
-    elif n_partitions >= len(series)/2:
+    elif n_partitions >= len(series) / 2:
         # Cannot have more partitions than rows
-        n_partitions = int(len(series)/2)
+        n_partitions = int(len(series) / 2)
 
     if n_partitions == 1:
-        sids = []
-        for geom in series:
-            sids_row = sids_from_shapely(geom=geom, resolution=resolution, convex=convex, force_ccw=force_ccw)
-            sids.append(sids_row)
+        sids = series.apply(sids_from_shapely, level=level, convex=convex, force_ccw=force_ccw)
+        sids.name = 'sids'
+        return sids
     else:
-        ddf = dask.dataframe.from_pandas(series, npartitions=n_partitions)
-        meta = {'sids': 'int64'}
-        res = ddf.map_partitions(
-            lambda df: numpy.array(sids_from_geoseries(df, resolution, convex, force_ccw, 1), dtype='object'),
-            meta=meta)
+        ddf = dask.dataframe.from_pandas(series, npartitions=n_partitions,)
+        meta = {'name': 'int64'}
+        res = ddf.map_partitions(sids_from_geoseries, level=level, convex=convex,
+                                 force_ccw=force_ccw, n_partitions=1, num_workers=1, meta=meta)
         sids = res.compute(scheduler='processes', num_workers=num_workers)
-        sids = sids.tolist()
+        sids.name = 'sids'
     return sids
 
 
-def sids_from_xy(lon, lat, resolution):
+def sids_from_xy(lon, lat, level):
     """Takes a list/array of lon and lat and returns a (set of) STARE index/ices
 
     Parameters
@@ -123,8 +121,8 @@ def sids_from_xy(lon, lat, resolution):
         Longitude of point
     lat: numerical/float
         Latitude of point
-    resolution: int
-        STARE spatial resolution
+    level: int
+        STARE spatial level
 
     Returns
     ----------
@@ -136,18 +134,18 @@ def sids_from_xy(lon, lat, resolution):
     >>> import starepandas
     >>> x = [10.1, 20.9]
     >>> y = [55.3, 60.1]
-    >>> starepandas.sids_from_xy(x, y, resolution=15)
+    >>> starepandas.sids_from_xy(x, y, level=15)
     array([4254264869405326191, 3640541580264132591])
     """
-    return pystare.from_latlon(lat, lon, resolution)
+    return pystare.from_latlon(lat, lon, level)
 
 
-def sids_from_latlon_row(row, resolution):
+def sids_from_latlon_row(row, level):
     """ Dask helper function """
-    return pystare.from_latlon(row.lat, row.lon, resolution)
+    return pystare.from_latlon(row.lat, row.lon, level)
 
 
-def sids_from_xy_df(df, resolution, n_partitions=1, num_workers=None):
+def sids_from_xy_df(df, level, n_partitions=1, num_workers=None):
     """ Takes a dataframe and generates an array of STARE index values.
     Assumes latitude column name is {'lat', 'Latitude', 'latitude', or 'y'} and
     longitude column name is {'lon', 'Longitude', 'longitude', or 'x'}
@@ -156,8 +154,8 @@ def sids_from_xy_df(df, resolution, n_partitions=1, num_workers=None):
     --------------
     df: pandas.DataFrame
         Dataframe containing x/y coordinates    
-    resolution: int
-        STARE spatial resolution    
+    level: int
+        STARE spatial level
     n_partitions: int
         Number of workers used to lookup STARE indices in parallel
         
@@ -173,7 +171,7 @@ def sids_from_xy_df(df, resolution, n_partitions=1, num_workers=None):
     >>> x = [-119.42, 7.51]
     >>> y = [34.25, 47.59]
     >>> df = pandas.DataFrame({'lat': y, 'lon': x})
-    >>> starepandas.sids_from_xy_df(df, resolution=20)
+    >>> starepandas.sids_from_xy_df(df, level=20)
     array([3331752989521980116, 4271829667422230484])
     """
     rename_dict = {'Latitude': 'lat', 'latitude': 'lat', 'y': 'lat',
@@ -181,14 +179,14 @@ def sids_from_xy_df(df, resolution, n_partitions=1, num_workers=None):
     df = df.rename(columns=rename_dict)
     if n_partitions > 1:
         ddf = dask.dataframe.from_pandas(df, npartitions=n_partitions)
-        res = ddf.map_partitions(sids_from_latlon_row, resolution, meta=('sids', 'int64'))
+        res = ddf.map_partitions(sids_from_latlon_row, level=level, meta=('sids', 'int64'))
         sids = res.compute(scheduler='processes', num_workers=num_workers)
         return sids
     else:
-        return pystare.from_latlon(df.lat, df.lon, resolution)
+        return pystare.from_latlon(df.lat, df.lon, level)
 
 
-def sids_from_shapely(geom, resolution, convex=False, force_ccw=False):
+def sids_from_shapely(geom, level, convex=False, force_ccw=False):
     """ Wrapper for starepandas.from_point(), starepandas.from_ring(),
     starepandas.from_polygon(), starepandas.from_multipolygon()
 
@@ -198,8 +196,8 @@ def sids_from_shapely(geom, resolution, convex=False, force_ccw=False):
     -------------
     geom: shapely.geometry.Point, shapely.geometry.Polygon, shapely.geometry.MultiPolygon
         A shapely geometry to look the sids up for
-    resolution: int
-        Maximum STARE resolution to use for lookup
+    level: int
+        Maximum STARE level to use for lookup
     convex: bool
         Toggle if the STARE lookup should be performed on the convex hull rather than the actual geometry
         of the polygon.
@@ -220,40 +218,40 @@ def sids_from_shapely(geom, resolution, convex=False, force_ccw=False):
     Point:
 
     >>> point = shapely.geometry.Point(10.5, 20)
-    >>> starepandas.sids_from_shapely(point, resolution=27)
+    >>> starepandas.sids_from_shapely(point, level=27)
     4598246232954051067
 
     Polygon:
 
     >>> polygon1 = shapely.geometry.Polygon([(0, 0), (1, 1), (1, 0)])
-    >>> starepandas.sids_from_shapely(polygon1, force_ccw=True, resolution=6)
+    >>> starepandas.sids_from_shapely(polygon1, force_ccw=True, level=6)
     array([4430697608402436102, 4430838345890791430, 4430979083379146758])
 
     Multipolygon:
 
     >>> polygon2 = shapely.geometry.Polygon([(5, 5), (6, 6), (6, 5)])
     >>> multipolygon = shapely.geometry.MultiPolygon([polygon1, polygon2])
-    >>> starepandas.sids_from_shapely(multipolygon, force_ccw=True, resolution=5)
+    >>> starepandas.sids_from_shapely(multipolygon, force_ccw=True, level=5)
     array([4430416133425725445, 4430979083379146757, 4416905334543613957])
 
     """
     if geom.geom_type == 'Point':
-        return sid_from_point(geom, resolution=resolution)
+        return sid_from_point(geom, level=level)
     if geom.geom_type == 'Polygon':
-        return sids_from_polygon(geom, resolution=resolution, convex=convex, force_ccw=force_ccw)
+        return sids_from_polygon(geom, level=level, convex=convex, force_ccw=force_ccw)
     if geom.geom_type == 'MultiPolygon':
-        return sids_from_multipolygon(geom, resolution=resolution, convex=convex, force_ccw=force_ccw)
+        return sids_from_multipolygon(geom, level=level, convex=convex, force_ccw=force_ccw)
 
 
-def sid_from_point(point, resolution):
+def sid_from_point(point, level):
     """Takes a shapely Point, Polygon, or Multipolygon and returns the according SID
 
     Parameters
     -------------
     point: shapely.geometry.Point
         Shapely point
-    resolution: int
-        STARE resolution to use for lookup
+    level: int
+        STARE level to use for lookup
 
     Returns
     ----------
@@ -265,12 +263,12 @@ def sid_from_point(point, resolution):
     >>> import starepandas
     >>> import shapely
     >>> point = shapely.geometry.Point(10.5, 20)
-    >>> starepandas.sid_from_point(point, resolution=20)
+    >>> starepandas.sid_from_point(point, level=20)
     4598246232954051060
     """
     lat = point.y
     lon = point.x
-    index_value = pystare.from_latlon([lat], [lon], resolution)[0]
+    index_value = pystare.from_latlon([lat], [lon], level)[0]
     return index_value
 
 
@@ -284,7 +282,7 @@ def sids_from_ring(ring, level, convex=False, force_ccw=False):
     ring: shapely.geometry.polygon.LinearRing
         Ring to lookup sids for
     level: int
-        Maximum STARE resolution to use for lookup.
+        Maximum STARE level to use for lookup.
     convex: bool
         Toggle if the STARE lookup should be performed on the convex hull rather than the actual geometry of the ring
     force_ccw: bool
@@ -316,7 +314,7 @@ def sids_from_ring(ring, level, convex=False, force_ccw=False):
     return range_indices
 
 
-def sids_from_polygon(polygon, resolution, convex=False, force_ccw=False):
+def sids_from_polygon(polygon, level, convex=False, force_ccw=False):
     """ Lookup STARE index values for a polygon.
     A Polygon is a planar Surface defined by 1 exterior ring and 0 or more interior boundaries. Each interior
     ring defines a hole in the Polygon.
@@ -325,8 +323,8 @@ def sids_from_polygon(polygon, resolution, convex=False, force_ccw=False):
     --------------
     polygon: shapely.geometry.Polygon
         Polygon to look sids up for
-    resolution: int
-        Maximum STARE resolution to use for lookup
+    level: int
+        Maximum STARE level to use for lookup
     convex: bool
         Toggle if the STARE lookup should be performed on the convex hull rather than the actual geometry.
         This will be applied for both the exterior ring and the interior rings.
@@ -344,20 +342,20 @@ def sids_from_polygon(polygon, resolution, convex=False, force_ccw=False):
     >>> import starepandas
     >>> import shapely
     >>> polygon = shapely.geometry.Polygon([(0, 0), (2, 0), (1, 1)])
-    >>> starepandas.sids_from_polygon(polygon, resolution=5)
+    >>> starepandas.sids_from_polygon(polygon, level=5)
     array([4423097784031248389, 4430416133425725445, 4430979083379146757])
     """
 
     if force_ccw:
         polygon = shapely.geometry.polygon.orient(polygon)
-    sids_ext = sids_from_ring(polygon.exterior, resolution, convex, force_ccw)
+    sids_ext = sids_from_ring(polygon.exterior, level, convex, force_ccw)
 
     if len(polygon.interiors) > 0:
         sids_int = []
         for interior in polygon.interiors:
             if interior.is_ccw:
                 interior.coords = list(interior.coords)[::-1]
-            sids_int.append(sids_from_ring(interior, resolution, convex, force_ccw=False))
+            sids_int.append(sids_from_ring(interior, level, convex, force_ccw=False))
         sids_int = numpy.concatenate(sids_int)
         sids = pystare.intersection(sids_int, sids_ext)
     else:
@@ -365,15 +363,15 @@ def sids_from_polygon(polygon, resolution, convex=False, force_ccw=False):
     return sids
 
 
-def sids_from_multipolygon(multipolygon, resolution, convex=False, force_ccw=False):
+def sids_from_multipolygon(multipolygon, level, convex=False, force_ccw=False):
     """ Lookup STARE index values for a multipolygon.
 
     Parameters
     ------------
     multipolygon: shapely.geometry.MultiPolygon
         MultiPolygon to look sids up for
-    resolution: int
-        Maximum STARE resolution to use for lookup
+    level: int
+        Maximum STARE level to use for lookup
     convex: bool
         Toggle if the STARE lookup should be performed on the convex hull rather than the actual geometry.
         This will be applied for both the exterior ring and the interior rings.
@@ -394,12 +392,12 @@ def sids_from_multipolygon(multipolygon, resolution, convex=False, force_ccw=Fal
     >>> polygon1 = shapely.geometry.Polygon([(0, 0), (1, 1), (1, 0)])
     >>> polygon2 = shapely.geometry.Polygon([(3, 1), (4, 2), (2, 1)])
     >>> multipolygon = shapely.geometry.MultiPolygon([polygon1, polygon2])
-    >>> starepandas.sids_from_multipolygon(multipolygon, force_ccw=True, resolution=3)
+    >>> starepandas.sids_from_multipolygon(multipolygon, force_ccw=True, level=3)
     array([4422534834077827075, 4413527634823086083, 4422534834077827075])
     """
     range_indices = []
     for polygon in multipolygon.geoms:
-        range_indices.append(sids_from_polygon(polygon, resolution, convex, force_ccw))
+        range_indices.append(sids_from_polygon(polygon, level, convex, force_ccw))
     range_indices = numpy.concatenate(range_indices)
     return range_indices
 
@@ -553,7 +551,7 @@ def speedy_subset(df, roi_sids):
     """ Speedy intersects is meant to subset large (long) STAREDataFrame to a subset that intersects the roi.
     This method works particularly well if
      a) the df has significantly more SIDs than the roi_sids
-     b) The SIDs of the df are at higher resolution than the roi_sids
+     b) The SIDs of the df are at higher level than the roi_sids
 
     Parameters
     -----------

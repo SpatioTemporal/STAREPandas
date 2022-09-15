@@ -17,15 +17,15 @@ def test_types():
 
 def test_polygon():
     iceland = countries[countries.name == 'Iceland']
-    sids = starepandas.sids_from_gdf(iceland, resolution=8, force_ccw=True)
+    sids = starepandas.sids_from_gdf(iceland, level=8, force_ccw=True)
     fname = starepandas.datasets.get_path('MOD05_L2.A2019336.0000.061.2019336211522.hdf')
     modis = starepandas.read_granule(fname, latlon=False, sidecar=True)
-    intersects = modis.stare_intersects(sids[0])
+    intersects = modis.stare_intersects(sids.iloc[0])
     assert 1384 == sum(intersects)
 
 
 def test_polygon2():
-    brazil_sids = countries[countries.name == 'Brazil'].make_sids(resolution=5)[0]
+    brazil_sids = countries[countries.name == 'Brazil'].make_sids(level=5).iloc[0]
     cities = ['Buenos Aires', 'Brasilia', 'Santiago', 'Bogota', 'Caracas', 'Sao Paulo', 'Bridgetown']
 
     latitudes = [-34.58, -15.78, -33.45, 4.60, 10.48, -23.55, 13.1]
@@ -33,7 +33,7 @@ def test_polygon2():
     data = {'City': cities, 'Latitude': latitudes, 'Longitude': longitudes}
 
     cities = starepandas.STAREDataFrame(data)
-    sids = starepandas.sids_from_xy(cities.Longitude, cities.Latitude, resolution=27)
+    sids = starepandas.sids_from_xy(cities.Longitude, cities.Latitude, level=27)
     cities.set_sids(sids, inplace=True)
 
     intersects_stare = cities.stare_intersects(brazil_sids)

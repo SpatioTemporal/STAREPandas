@@ -16,9 +16,9 @@ def test_points():
     geom = geopandas.points_from_xy(df.Longitude, df.Latitude)
     gdf = geopandas.GeoDataFrame(df, geometry=geom)
 
-    stare1 = starepandas.sids_from_xy(df.Longitude, df.Latitude, resolution=5)
-    stare2 = starepandas.sids_from_xy_df(gdf, n_partitions=1, resolution=5)
-    stare3 = starepandas.sids_from_gdf(gdf, resolution=5)
+    stare1 = starepandas.sids_from_xy(df.Longitude, df.Latitude, level=5)
+    stare2 = starepandas.sids_from_xy_df(gdf, n_partitions=1, level=5)
+    stare3 = starepandas.sids_from_gdf(gdf, level=5)
     assert numpy.array_equal(stare1, stare2)
     assert numpy.array_equal(stare2, stare3)
 
@@ -26,4 +26,4 @@ def test_points():
 def test_polygon():
     world = geopandas.read_file(geopandas.datasets.get_path('naturalearth_lowres'))
     africa = world[world.continent == 'Africa']
-    stare = starepandas.sids_from_gdf(africa, resolution=5, force_ccw=True)
+    stare = starepandas.sids_from_gdf(africa, level=5, force_ccw=True)

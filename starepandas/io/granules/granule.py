@@ -103,9 +103,9 @@ class Granule:
             df['lat'] = self.lat.flatten()
             df['lon'] = self.lon.flatten()
         if self.sids is not None:
-            # Converting to nullable series
+            # Converting to nullable series (capitalized "I" in Int64)
             sids = pandas.Series(pandas.array(self.sids.flatten(), dtype='Int64'))
-            df['sids'] = sids #self.sids.flatten()
+            df['sids'] = sids
         if self.ts_start is not None and self.ts_end is not None:
             df['ts_start'] = self.ts_start
             df['ts_end'] = self.ts_end
@@ -117,9 +117,9 @@ class Granule:
             else:
                 ds = list(self.data.values())[0]
                 indices = numpy.indices(ds.shape, dtype='uint16')
-            # Argh. not always True; sometimes x i the second index.
-            df['x'] = indices[0].flatten()
-            df['y'] = indices[1].flatten()
+            # Careful indices() gives first the row (y), then the column (x) indices
+            df['x'] = indices[1].flatten()
+            df['y'] = indices[0].flatten()
         for key in self.data.keys():
             dtype = self.data[key].dtype
 

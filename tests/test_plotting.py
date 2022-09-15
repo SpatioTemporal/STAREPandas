@@ -15,7 +15,7 @@ df = pandas.DataFrame(data)
 geom = geopandas.points_from_xy(df.Longitude, df.Latitude)
 gdf = geopandas.GeoDataFrame(df, geometry=geom)
 
-stare = starepandas.sids_from_gdf(gdf, resolution=5)
+stare = starepandas.sids_from_gdf(gdf, level=5)
 sdf = starepandas.STAREDataFrame(gdf)
 sdf.set_sids(stare, inplace=True)
 

@@ -4,7 +4,7 @@ import numpy
 
 world = geopandas.read_file(geopandas.datasets.get_path('naturalearth_lowres'))
 west = world[world['continent'].isin(['Europe', 'North America'])]
-west = starepandas.STAREDataFrame(west, add_sids=True, resolution=4, add_trixels=False)
+west = starepandas.STAREDataFrame(west, add_sids=True, level=4, add_trixels=False)
 
 europe_sids = numpy.array([ 648518346341351428,  900719925474099204, 1044835113549955076,
        2760706571578114052, 2762958371391799300, 3503800510094245892,

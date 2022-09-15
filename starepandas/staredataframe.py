@@ -30,7 +30,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
     _tid_column_name = DEFAULT_TID_COLUMN_NAME
 
     def __init__(self, *args,
-                 sids=None, add_sids=False, resolution=None,
+                 sids=None, add_sids=False, level=None,
                  trixels=None, add_trixels=False, n_workers=1,
                  **kwargs):
         """
@@ -45,8 +45,8 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             If str, column to use as stare column. If array, will be set as 'stare' column on STAREDataFrame.
         add_sids : bool
             If true, STARE index values will be generated using a geometry column
-        resolution: int
-            If add_stare is True, then use resolution as the maximum STARE resolution.
+        level: int
+            If add_stare is True, then use level as the maximum STARE level
         trixels : str or array-like
             If str, column to use as trixel column. If array, will be set as 'trixel' column on STAREDataFrame.
         add_trixels : bool
@@ -58,7 +58,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         >>> latitudes = [-34.58, -15.78, -33.45, 4.60, 10.48]
         >>> longitudes = [-58.66, -47.91, -70.66, -74.08, -66.86]
         >>> data =  {'City': cities, 'Latitude': latitudes, 'Longitude': longitudes}
-        >>> sids = starepandas.sids_from_xy(longitudes, latitudes, resolution=5)
+        >>> sids = starepandas.sids_from_xy(longitudes, latitudes, level=5)
         >>> sdf = starepandas.STAREDataFrame(data, sids=sids)
         """
 
@@ -70,9 +70,9 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         if sids is not None:
             self.set_sids(sids, inplace=True)
         elif add_sids:
-            if resolution is None:
-                raise ValueError('Resolution has to be specified if SIDs are to be added')
-            sids = self.make_sids(resolution=resolution, n_workers=n_workers)
+            if level is None:
+                raise ValueError('Level has to be specified if SIDs are to be added')
+            sids = self.make_sids(level=level, n_workers=n_workers)
             self.set_sids(sids, inplace=True)
 
         if trixels is not None:
@@ -104,18 +104,18 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         else:
             super(STAREDataFrame, self).__setattr__(attr, val)
 
-    def make_sids(self, resolution, convex=False, force_ccw=True, n_workers=1):
+    def make_sids(self, level, convex=False, force_ccw=True, n_workers=1):
         """
         Generates and returns the STARE representation of each feauture.
 
         Parameters
         -----------
-        resolution: int; 0<=resolution<=27
-            STARE resolution to use for the STARE lookup
+        level: int; 0<=level<=27
+            STARE level to use for the STARE lookup
         convex: bool
             Toggle if STARE indices for the convex hull rather than the G-Ring should be looked up
         force_ccw: bool
-            Toggle if a counter clockwise orientation of the geometries should be enforced
+            Toggle if a counterclockwise orientation of the geometries should be enforced
         n_workers: int
             Number of workers used to lookup STARE indices in parallel
 
@@ -133,31 +133,39 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         >>> lons = [-41.255402, -42.054047, -41.625336]
         >>> geoms = geopandas.points_from_xy(lons, lats)
         >>> sdf = starepandas.STAREDataFrame(geometry=geoms)
-        >>> sdf.make_sids(resolution=6, convex=False)
-        [2299437706637111654, 2299435211084507366, 2299436587616075270]
+        >>> sdf.make_sids(level=6, convex=False)
+        0    2299437706637111654
+        1    2299435211084507366
+        2    2299436587616075270
+        Name: sids, dtype: int64
 
         From polygons
 
         >>> gdf = geopandas.read_file(geopandas.datasets.get_path("naturalearth_lowres"))
         >>> sdf = starepandas.STAREDataFrame(gdf)
-        >>> sids = sdf.make_sids(resolution=5)
+        >>> sids = sdf.make_sids(level=5)
         """
 
-        sids = starepandas.sids_from_geoseries(self.geometry, resolution=resolution, convex=convex,
+        sids = starepandas.sids_from_geoseries(self.geometry, level=level, convex=convex,
                                                force_ccw=force_ccw, n_partitions=n_workers)
         return sids
 
-    def set_sids(self, col, inplace=False, resolution=None):
+    def set_sids(self, col, inplace=False):
         """ Set the StareDataFrame stare indices using either an existing column or
-        the specified input. By default yields a new object.
+        the specified input. By default, yields a new object.
         The original stare column is replaced with the input.
 
-        :param col:  f stare indices or column name
-        :type col: array-like
-        :param inplace: Modify the StareDataFrame in place (do not create a new object)
-        :type  inplace: Bool
-        :return: df
-        :rtype: StareDataFrame
+        Parameters
+        -------------
+        col: array-like
+            f stare indices or column name
+        inplace: boolean
+            Modify the StareDataFrame in place (do not create a new object)
+
+        Returns
+        ---------
+        df: STAREDataFrame
+            the df with sids
 
         Examples
         --------
@@ -208,7 +216,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
     def has_sids(self):
         return self._sid_column_name in self
 
-    def make_trixels(self, sid_column=None, n_partitions=1, wrap_lon=True, num_workers=1):
+    def make_trixels(self, sid_column=None, n_partitions=1, wrap_lon=True, num_workers=None):
         """
         Returns a Polygon or Multipolygon GeoSeries
         containing the trixels referred by the STARE indices
@@ -221,6 +229,8 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             number of (dask) workers to use to generate trixels
         wrap_lon: bool
             toggle if trixels should be wraped around antimeridian.
+        num_workers: int
+            number of workers to use
 
         Returns
         -----------
@@ -241,13 +251,15 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             raise Exception('sids column does not exist')
         trixels_series = starepandas.tools.trixel_conversions.trixels_from_stareseries(self[sid_column],
                                                                                        n_partitions=n_partitions,
+                                                                                       num_workers=num_workers,
                                                                                        wrap_lon=wrap_lon)
         return trixels_series
 
-    def add_trixels(self, n_partitions=1, num_workers=1, inplace=False):
+    def add_trixels(self, n_partitions=1, num_workers=None, inplace=False):
         """Combination of make_trixels() and set_trixels()"""
         sid_column = self._sid_column_name
-        trixels = self.make_trixels(sid_column=sid_column, n_partitions=n_partitions, wrap_lon=True)
+        trixels = self.make_trixels(sid_column=sid_column, n_partitions=n_partitions,
+                                    num_workers=num_workers, wrap_lon=True)
         self.set_trixels(trixels, inplace=inplace)
 
     def set_trixels(self, col, inplace=False):
@@ -511,7 +523,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         ...           'lat': [28.2, -17.8,  0.2, 21.3282956],
         ...           'lon': [-177.35, 178.1, -176.7, -157.9]}
         >>> sdf = starepandas.STAREDataFrame(cities)
-        >>> sids = starepandas.sids_from_xy(sdf.lon, sdf.lat, resolution=1)
+        >>> sids = starepandas.sids_from_xy(sdf.lon, sdf.lat, level=1)
         >>> sdf.set_sids(sids, inplace=True)
         >>> trixels = sdf.make_trixels(wrap_lon=False)
         >>> sdf.set_trixels(trixels, inplace=True)
@@ -560,7 +572,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         >>> import geopandas
         >>> world = geopandas.read_file(geopandas.datasets.get_path('naturalearth_lowres'))
         >>> germany = world[world.name=='Germany']
-        >>> germany = starepandas.STAREDataFrame(germany, add_sids=True, resolution=8, add_trixels=True, n_workers=1)
+        >>> germany = starepandas.STAREDataFrame(germany, add_sids=True, level=8, add_trixels=True, n_workers=1)
         >>> ax = germany.plot(trixels=True, boundary=True, color='y', zorder=0)
         """
         df = self.copy()
@@ -579,7 +591,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
     def to_scidb(self, connection):
         pass
 
-    def stare_intersects(self, other, method='binsearch', n_workers=1):
+    def stare_intersects(self, other, method='binsearch', n_partitions=1, num_workers=None):
         """Returns a ``Series`` of ``dtype('bool')`` with value ``True`` for
         each geometry that intersects `other`.
         An object is said to intersect `other` if its `ring` and `interior`
@@ -591,8 +603,10 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             The SID collection representing the spatial object to test if is intersected.
         method: str
             Method for STARE intersects test 'skiplist', 'binsearch' or 'nn'. Default: 'binsearch'.
-        n_workers: int
-            number of workers to be used for intersects tests
+        n_partitions: int
+            number of dask dataframe partitions to use
+        num_workers: int:
+            number of dask workers to use
 
         Examples
         --------
@@ -618,7 +632,8 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         intersects = starepandas.series_intersects(other=other,
                                                    series=self[self._sid_column_name],
                                                    method=method,
-                                                   n_partitions=n_workers)
+                                                   n_partitions=n_partitions,
+                                                   num_workers=num_workers)
         return pandas.Series(intersects)
 
     def stare_disjoint(self, other, method='binsearch', n_workers=1):
@@ -662,8 +677,8 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         >>> nodes2 = [[102, 34], [106, 35], [106, 33], [102, 33.5], [102, 34]]
         >>> polygon1 = shapely.geometry.Polygon(nodes1)
         >>> polygon2 = shapely.geometry.Polygon(nodes2)
-        >>> sids1 = starepandas.sids_from_polygon(polygon1, resolution=5, force_ccw=True)
-        >>> sids2 = starepandas.sids_from_polygon(polygon2, resolution=5, force_ccw=True)
+        >>> sids1 = starepandas.sids_from_polygon(polygon1, level=5, force_ccw=True)
+        >>> sids2 = starepandas.sids_from_polygon(polygon2, level=5, force_ccw=True)
 
         >>> df = starepandas.STAREDataFrame(sids=[sids1])
         >>> df.stare_intersection(sids2).iloc[0]
@@ -699,7 +714,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         >>> import geopandas
         >>> world = geopandas.read_file(geopandas.datasets.get_path('naturalearth_lowres'))
         >>> west = world[world['continent'].isin(['Europe', 'North America'])]
-        >>> west = starepandas.STAREDataFrame(west, add_sids=True, resolution=4, add_trixels=False)
+        >>> west = starepandas.STAREDataFrame(west, add_sids=True, level=4, add_trixels=False)
         >>> west.stare_dissolve(by='continent', aggfunc='sum') # doctest: +SKIP
                                                                    stare  ...  gdp_md_est
         continent                                                         ...
@@ -739,9 +754,9 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         aggregated = sdf.join(aggregated_data)
         return aggregated
 
-    def spatial_resolution(self):
+    def spatial_level(self):
         """
-        Returns the spatial resolution of each feature
+        Returns the spatial level of each feature
         """
         sids = self[self._sid_column_name]
         return pystare.spatial_resolution(sids)
@@ -762,19 +777,19 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         else:
             return solid_angel * r ** 2
 
-    def to_stare_resolution(self, resolution, inplace=False, clear_to_resolution=False):
+    def to_stare_level(self, level, inplace=False, clear_to_level=False):
         """
-        Changes resolution of STARE index values to resolution; optionally clears location bits up to resolution.
-        Caution: This methods is not intended for use on feautures represented by sets of sids.
+        Changes level of STARE index values to level; optionally clears location bits up to level.
+        Caution: This method is not intended for use on feautures represented by sets of sids.
 
         Parameters
         ------------
         inplace: bool
             If True, modifies the DataFrame in place (do not create a new object).
-        resolution: int
-            STARE resolution to change to.
-        clear_to_resolution: bool
-            Toggle if the location bits below resolutions should be cleared
+        level: int
+            STARE level to change to.
+        clear_to_level: bool
+            Toggle if the location bits below level should be cleared
 
         Returns
         -------------
@@ -784,7 +799,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         --------
         >>> sids = [2299437706637111721, 2299435211084507593, 2299566194809236969]
         >>> sdf = starepandas.STAREDataFrame(sids=sids)
-        >>> sdf.to_stare_resolution(resolution=6, clear_to_resolution=False)
+        >>> sdf.to_stare_level(level=6, clear_to_level=False)
                           sids
         0  2299437706637111718
         1  2299435211084507590
@@ -797,8 +812,8 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             df = self.copy()
 
         sids = df[df._sid_column_name].astype(numpy.dtype('int64'))
-        sids = pystare.spatial_coerce_resolution(sids, resolution)
-        if clear_to_resolution:
+        sids = pystare.spatial_coerce_resolution(sids, level)
+        if clear_to_level:
             # pystare_terminator_mask uses << operator, which requires us to cast to numpy array first
             sids = pystare.spatial_clear_to_resolution(numpy.array(sids))
 
@@ -806,9 +821,9 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         if not inplace:
             return df
 
-    def clear_to_resolution(self, inplace=False):
+    def clear_to_level(self, inplace=False):
         """
-        Clears location bits to resolution
+        Clears location bits to level
 
         Parameters
         -----------
@@ -819,7 +834,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         ----------
         >>> sids = [2299437706637111721, 2299435211084507593, 2299566194809236969]
         >>> sdf = starepandas.STAREDataFrame(sids=sids)
-        >>> sdf.clear_to_resolution(inplace=False)
+        >>> sdf.clear_to_level(inplace=False)
                           sids
         0  2299437254470270985
         1  2299435055447015433
@@ -837,14 +852,14 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         if not inplace:
             return df
 
-    def to_stare_singleres(self, resolution=None, inplace=False):
+    def to_stare_singleres(self, level=None, inplace=False):
         """
-        Changes the STARE index values to single resolution representation (in contrary to multiresolution).
+        Changes the STARE index values to single level representation (in contrary to multiresolution).
 
         Parameters
         -----------
-        resolution: int
-            resolution to change thre
+        level: int
+            level to change thre
         inplace: bool
             If True, modifies the DataFrame in place (do not create a new object).
 
@@ -857,7 +872,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         >>> import geopandas
         >>> world = geopandas.read_file(geopandas.datasets.get_path('naturalearth_lowres'))
         >>> germany  = world[world.name=='Germany']
-        >>> germany = starepandas.STAREDataFrame(germany, add_sids=True, resolution=6, add_trixels=False)
+        >>> germany = starepandas.STAREDataFrame(germany, add_sids=True, level=6, add_trixels=False)
         >>> len(germany.sids.iloc[0])
         43
         >>> germany_singleres = germany.to_stare_singleres()
@@ -874,8 +889,8 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
         new_sids_col = []
         for sids in sids_col:
-            if resolution:
-                r = resolution
+            if level:
+                r = level
             else:
                 r = int(pystare.spatial_resolution(sids).max())
             sids = pystare.expand_intervals(sids, level=r, multi_resolution=False)
@@ -910,21 +925,21 @@ class STAREDataFrame(geopandas.GeoDataFrame):
                 sids.append(pystare.int2hex(row))
         return sids
 
-    def write_pods(self, pod_root, resolution, chunk_name, hex=True):
-        """ Writes dataframe into a starepods hierarchy
+    def write_pods(self, pod_root, level, chunk_name, hex=True):
+        """ Writes dataframe into a STAREPods hierarchy
 
         Parameters
         --------------
         pod_root: str
-            Root directory of starepods
-        resolution: str
-            resolution of starepods
+            Root directory of STAREPods
+        level: int
+            level of STAREPods
         chunk_name: str
             name of the pod
         hex: bool
             toggle pods being hex vs int
         """
-        grouped = self.groupby(self.to_stare_resolution(resolution=resolution, clear_to_resolution=True))
+        grouped = self.groupby(self.to_stare_level(level=level, clear_to_level=True))
         for group in grouped.groups:
             g = grouped.get_group(group)
             if hex:
@@ -1019,38 +1034,38 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
         return arrays
 
-    def to_sidecar(self, fname, cover=False, shuffle=True, zlib=True):
+    def to_sidecar(self, file_name, cover=False, shuffle=True, zlib=True):
         """ Writes STARE Sidecar
 
         """
         sids = self.to_array(self._sid_column_name)
         # lat = self.to_array(self['lat'])
         # lon = self.to_array(self['lon'])
-        if cover:
-            sids_cover = self.stare_dissolve()
-            l = sids_cover.size
+
         i = sids.shape[0]
         j = sids.shape[1]
-        with netCDF4.Dataset(fname, 'w', format="NETCDF4") as rootgrp:
-            rootgrp.createDimension('i', i)
-            rootgrp.createDimension('j', j)
+        with netCDF4.Dataset(file_name, 'w', format="NETCDF4") as root_group:
+            root_group.createDimension('i', i)
+            root_group.createDimension('j', j)
 
-            sids_netcdf = rootgrp.createVariable(varname='STARE_index',
-                                                 datatype='u8',
-                                                 dimensions=('i', 'j'),
-                                                 chunksizes=[i, j],
-                                                 shuffle=shuffle,
-                                                 zlib=zlib)
+            sids_netcdf = root_group.createVariable(varname='STARE_index',
+                                                    datatype='u8',
+                                                    dimensions=('i', 'j'),
+                                                    chunksizes=[i, j],
+                                                    shuffle=shuffle,
+                                                    zlib=zlib)
             sids_netcdf.long_name = 'SpatioTemporal Adaptive Resolution Encoding (STARE) index'
             sids_netcdf[:, :] = sids
             if cover:
-                rootgrp.createDimension('l', l)
-                cover_netcdf = rootgrp.createVariable(varname='STARE_cover',
-                                                      datatype='u8',
-                                                      dimensions=('l'),
-                                                      chunksizes=[l],
-                                                      shuffle=shuffle,
-                                                      zlib=zlib)
+                sids_cover = self.stare_dissolve()
+                l = sids_cover.size
+                root_group.createDimension('l', l)
+                cover_netcdf = root_group.createVariable(varname='STARE_cover',
+                                                         datatype='u8',
+                                                         dimensions='l',
+                                                         chunksizes=[l],
+                                                         shuffle=shuffle,
+                                                         zlib=zlib)
                 cover_netcdf.long_name = 'SpatioTemporal Adaptive Resolution Encoding (STARE) cover'
                 cover_netcdf[:] = sids_cover
 

@@ -114,7 +114,7 @@ Building on top of fiona and geopandas, STAREPandas allows to read almost any ve
 path = geopandas.datasets.get_path('naturalearth_lowres')
 world = geopandas.read_file(path)
 africa = world[world.continent == 'Africa']
-stare = starepandas.sids_from_gdf(africa, resolution=7, force_ccw=True)
+stare = starepandas.sids_from_gdf(africa, level=7, force_ccw=True)
 africa = starepandas.STAREDataFrame(africa, stare=stare)
 ```
     
@@ -147,13 +147,13 @@ longitudes = [-58.66, -47.91, -70.66, -74.08, -66.86, -46.63, -59.62]
 data = {'City': cities,
         'Latitude': latitudes, 'Longitude': longitudes}
 cities = starepandas.STAREDataFrame(data)
-stare = starepandas.sids_from_xy(cities.Longitude, cities.Latitude, resolution=27)
+stare = starepandas.sids_from_xy(cities.Longitude, cities.Latitude, level=27)
 cities.set_sids(stare, inplace=True)
 
 countries = geopandas.read_file(geopandas.datasets.get_path('naturalearth_lowres'))
 countries = countries.sort_values(by='name')
 samerica = countries[countries.continent == 'South America']
-stare = starepandas.sids_from_gdf(samerica, resolution=10, force_ccw=True)
+stare = starepandas.sids_from_gdf(samerica, level=10, force_ccw=True)
 samerica = starepandas.STAREDataFrame(samerica, stare=stare)
 
 starepandas.stare_join(samerica, cities, how='left').head()
@@ -168,7 +168,7 @@ fname = 'zip://data/amapoly_ivb.zip'
 amazon = geopandas.read_file(fname)  # Nice flex
 amazon = amazon.to_crs('EPSG:4326')
 
-stare = starepandas.sids_from_gdf(amazon, resolution=10, force_ccw=True)
+stare = starepandas.sids_from_gdf(amazon, level=10, force_ccw=True)
 amazon = starepandas.STAREDataFrame(amazon, stare=stare)
 
 stare_amazon = samerica.stare_intersection(amazon.make_sids.iloc[0])
