@@ -21,7 +21,9 @@ jobs:
     - name: Install dependencies
       run: |        
         python -m pip install --upgrade pip
-        pip install flake8 pytest nbmake pytest-xdist
+        pip install flake8 pytest 
+        pip install nbmake pytest-xdist
+        # pip install pytest-notebook
         pip install configparser 
         python3 -c "import configparser; c = configparser.ConfigParser(); c.read('setup.cfg'); print(c['options']['install_requires'])" | xargs pip install
     - name: Lint with flake8
@@ -31,11 +33,10 @@ jobs:
         # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
         flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
     - name: Test Notebooks
-      uses: "treebeardtech/nbmake-action@v0.2"
-      with:
-        path: "./examples"
-        path-output: .
+      run: |
+        python -m ipykernel install --user --name testkernel
+        pytest --nbmake --nbmake-kernel=mycustomkernel examples/*.ipynb
     - name: Test with pytest
       run: |        
+        pytest --doctest-modules
         pytest
-        
