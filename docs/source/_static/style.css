@@ -2,3 +2,7 @@
     max-width: 100%;
 }
 
+.bd-content {
+  flex-grow: 1;
+  max-width: 100%;
+}

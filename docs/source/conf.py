@@ -86,8 +86,8 @@ autosummary_generate = True
 # so a file named "default.css" will overwrite the builtin "default.css".
 html_static_path = ['_static']
 
-# html_css_files = ['style.css']
-html_css_files = ['https://cdn.jupyter.org/notebook/5.1.0/style/style.min.css']
+#html_css_files = ['style.css']
+#html_css_files = ['https://cdn.jupyter.org/notebook/5.1.0/style/style.min.css']
 
 
 #html_sidebars = {"**": []}
