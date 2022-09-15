@@ -35,7 +35,7 @@ jobs:
     - name: Test Notebooks
       run: |
         python -m ipykernel install --user --name testkernel
-        pytest --nbmake --nbmake-kernel=mycustomkernel examples/*.ipynb
+        pytest --nbmake --nbmake-kernel=testkernel examples/*.ipynb
     - name: Test with pytest
       run: |        
         pytest --doctest-modules
