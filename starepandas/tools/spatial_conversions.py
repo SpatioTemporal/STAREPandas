@@ -520,6 +520,7 @@ def make_circular_sids(df, level, diameter, n_partitions=1, num_workers=None):
     num_workers: int
         number of dask workers to use
     """
+
     if num_workers is not None and n_partitions is None:
         n_partitions = num_workers * 10
     elif num_workers is None and n_partitions is None:
@@ -551,7 +552,7 @@ def make_circular_sids(df, level, diameter, n_partitions=1, num_workers=None):
     return sids
 
 
-def speedy_subset(df, roi_sids):
+def speedy_subset(df, right_sids):
     """ Speedy intersects is meant to subset large (long) STAREDataFrame to a subset that intersects the roi.
 
     This method works particularly well if
@@ -562,19 +563,19 @@ def speedy_subset(df, roi_sids):
     -----------
     df: starepandas.STAREDataFrame
         the dataframe that is to be subset
-    roi_sids: array-like
+    right_sids: array-like
         a set of SIDs describing the roi to whch the df is to be subset
     """
-    roi_sids = numpy.array(roi_sids)
+    right_sids = numpy.array(right_sids)
 
-    sids_left = df[df._sid_column_name]
+    left_sids = df[df._sid_column_name]
 
     # Dropping values outside of range
-    top_bound = pystare.spatial_clear_to_resolution(roi_sids.max())
+    top_bound = pystare.spatial_clear_to_resolution(right_sids.max())
     level = pystare.spatial_resolution(top_bound)
     top_bound += pystare.spatial_increment_from_level(level)
-    bottom_bound = roi_sids.min()
-    candidate_sids = sids_left[(sids_left >= bottom_bound) * (sids_left <= top_bound)]
+    bottom_bound = right_sids.min()
+    candidate_sids = left_sids[(left_sids >= bottom_bound) * (left_sids <= top_bound)]
     if len(candidate_sids) == 0:
         # return empty df
         return df[df.sids == 0]
@@ -582,7 +583,7 @@ def speedy_subset(df, roi_sids):
 
     # finding the intersection level
     left_min_level = pystare.spatial_resolution(candidate_sids).max()
-    right_min_level = pystare.spatial_resolution(roi_sids).max()
+    right_min_level = pystare.spatial_resolution(right_sids).max()
     intersecting_level = min(right_min_level, left_min_level)
 
     # Clearing to intersecting level, allowing us to group them / extract only the distinct values
@@ -591,7 +592,7 @@ def speedy_subset(df, roi_sids):
     distinct_sids = numpy.unique(cleared_sids)
 
     # Now doing the intersection on the distinct values
-    intersects = distinct_sids[pystare.intersects(roi_sids, distinct_sids)]
+    intersects = distinct_sids[pystare.intersects(right_sids, distinct_sids)]
     intersecting = candidate_sids[cleared_sids.isin(intersects)]
 
     return df.iloc[intersecting.index]
