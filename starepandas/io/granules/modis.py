@@ -86,6 +86,7 @@ class Modis(Granule):
     def read_dataset(self, dataset_name, resample_factor=None):
         ds = self.hdf.select(dataset_name)
         data = ds.get()
+        dtype = data.dtype
         if resample_factor is not None:
             data = self.resample(array=data, factor=resample_factor)
 
@@ -111,7 +112,7 @@ class Modis(Granule):
         array = array.repeat(factor, axis=1)
         return array
 
-    def decode_qa(self, qa_name):
+    def decode_band_quality(self, qa_name):
         """
         Decode QA
 
@@ -137,9 +138,9 @@ class Modis(Granule):
         Note that a value of (11) overrides a value of (01).";
         """
         qa = self.data[qa_name]
-        #qa = state_series.apply(lambda x: '{:032b}'.format(x)[::-1])
-        #df = starepandas.STAREDataFrame(index=state.index)
-        #df['modland_qa'] = state.str.slice(start=0, stop=2).apply(lambda x: x[::-1]).astype('u1')
+        # qa = state_series.apply(lambda x: '{:032b}'.format(x)[::-1])
+        # df = starepandas.STAREDataFrame(index=state.index)
+        # df['modland_qa'] = state.str.slice(start=0, stop=2).apply(lambda x: x[::-1]).astype('u1')
 
     def decode_state(self, state_ds):
         """
@@ -184,6 +185,7 @@ class Modis(Granule):
 
 
 class Mod09(Modis):
+
     def __init__(self, file_path, sidecar_path=None, nom_res=None):
         super(Mod09, self).__init__(file_path, sidecar_path)
         if nom_res is None:
@@ -308,7 +310,7 @@ def decode_state(state_series):
     return df
 
 
-def decode_qa(state_series):
+def decode_qa(qa_series):
     """
         31      adjacency correction performed      1: yes; 0: no
         30      atmospheric correction performed    1: yes; 0: no
@@ -335,11 +337,11 @@ def decode_qa(state_series):
             3: other reasons some or all bands may be fill value
         Note that a value of (11) overrides a value of (01).";
     """
-    state = state_series.apply(lambda x: '{:032b}'.format(x)[::-1])
-    df = starepandas.STAREDataFrame(index=state.index)
-    df['modland_qa'] = state.str.slice(start=0, stop=2).apply(lambda x: x[::-1]).astype('u1')
-
-    return df
+    qa = qa_series[qa_series.isna() == False]
+    qa = qa.apply(lambda x: '{:032b}'.format(x)[::-1])
+    qa = qa.str.slice(start=0, stop=2)
+    qa = qa.apply(lambda x: x[::-1]).astype('u1')
+    return qa
 
 
 def read_mod09(file_path, roi_sids):
@@ -439,10 +441,14 @@ def transform(geom, from_epsg, to_epsg):
     return shapely.ops.transform(project, geom)
 
 
-def make_ellipse(center_x, center_y, width, height, angle):
+def make_ellipse(point, crs, width, height, angle):
+    transformed = transform(point, 4326, crs)
+    center_x = transformed.x
+    center_y = transformed.y
     ellipse = matplotlib.patches.Ellipse((center_x, center_y), width, height, angle)
     vertices = ellipse.get_verts()  # get the vertices from the ellipse object
     ellipse = shapely.geometry.LinearRing(vertices)
+    ellipse = transform(ellipse, crs, 4326)
     return ellipse
 
 
@@ -452,7 +458,7 @@ def make_ellipse_sids(df, crs=3857, n_partitions=None, num_workers=None, level=1
 
     """
     if num_workers is not None and n_partitions is None:
-        n_partitions = num_workers*10
+        n_partitions = num_workers * 10
     elif num_workers is None and n_partitions is None:
         n_partitions = 1
         num_workers = 1
@@ -476,19 +482,15 @@ def make_ellipse_sids(df, crs=3857, n_partitions=None, num_workers=None, level=1
             else:
                 raise
 
-            transformed = transform(point, 4326, crs)
-            center_x = transformed.x
-            center_y = transformed.y
-
             azimuth = row['SensorAzimuth']
             zenith = row['SensorZenith']
 
             width = zenith2width(zenith) * modis_resolution
             height = zenith2height(zenith) * modis_resolution
 
-            angle = 90-azimuth
-            ellipse = make_ellipse(center_x, center_y, width, height, angle)
-            ellipse = transform(ellipse, crs, 4326)
+            angle = 90 - azimuth
+            ellipse = make_ellipse(point, width, height, angle)
+
             ellipse_sids = starepandas.sids_from_ring(ring=ellipse, level=level)
             ellipses_sids.append(ellipse_sids)
         ellipses_sids = numpy.array(ellipses_sids, dtype=object)
@@ -501,4 +503,3 @@ def make_ellipse_sids(df, crs=3857, n_partitions=None, num_workers=None, level=1
         ellipses_sids = list(ellipses_sids)
 
     return ellipses_sids
-
