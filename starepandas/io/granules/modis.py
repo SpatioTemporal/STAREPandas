@@ -489,7 +489,7 @@ def make_ellipse_sids(df, crs=3857, n_partitions=None, num_workers=None, level=1
             height = zenith2height(zenith) * modis_resolution
 
             angle = 90 - azimuth
-            ellipse = make_ellipse(point, width, height, angle)
+            ellipse = make_ellipse(point, crs, width, height, angle)
 
             ellipse_sids = starepandas.sids_from_ring(ring=ellipse, level=level)
             ellipses_sids.append(ellipse_sids)
