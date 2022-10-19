@@ -341,6 +341,7 @@ def decode_qa(qa_series):
     qa = qa.apply(lambda x: '{:032b}'.format(x)[::-1])
     qa = qa.str.slice(start=0, stop=2)
     qa = qa.apply(lambda x: x[::-1]).astype('u1')
+    qa = qa.rename('modland')
     return qa
 
 
