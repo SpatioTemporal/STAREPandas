@@ -100,6 +100,21 @@ class SSMIS(Granule):
             self.sids[scan] = pystare.from_latlon2D(lat=self.lat[scan], lon=self.lon[scan],
                                                     adapt_resolution=adapt_resolution)
 
+    def read_sidecar_latlon(self, sidecar_path=None):
+        self.lat = {}
+        self.lon = {}
+        if sidecar_path is not None:
+            scp = sidecar_path
+        elif self.sidecar_path is not None:
+            scp = self.sidecar_path
+        else:
+            scp = self.guess_sidecar_path()
+        ds = starepandas.io.s3.nc4_dataset_wrapper(scp)
+
+        for scan in self.scans:
+            self.lat[scan] = ds[scan]['Latitude'][:].astype(numpy.double)
+            self.lon[scan] = ds[scan]['Longitude'][:].astype(numpy.double)
+
     def read_sidecar_index(self, sidecar_path=None):
         self.sids = {}
         if sidecar_path is not None:
@@ -131,7 +146,8 @@ class SSMIS(Granule):
                 df['lon'] = self.lon[scan].flatten()
             if self.sids is not None:
                 df['sids'] = self.sids[scan].flatten()
-            df['timestamp'] = self.timestamps[scan].flatten()
+            if len(self.timestamps.keys()) > 0:
+                df['timestamp'] = self.timestamps[scan].flatten()
             for key in self.data[scan].keys():
                 df[key] = self.data[scan][key].flatten()
             df = starepandas.STAREDataFrame(df)

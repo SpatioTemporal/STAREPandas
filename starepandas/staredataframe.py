@@ -949,7 +949,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         hex: bool
             toggle pods being hex vs int
         """
-        grouped = self.groupby(self.to_stare_level(level=level, clear_to_level=True))
+        grouped = self.groupby(self.to_stare_level(level=level, clear_to_level=True)[self._sid_column_name])
         for group in grouped.groups:
             g = grouped.get_group(group)
             if hex:
