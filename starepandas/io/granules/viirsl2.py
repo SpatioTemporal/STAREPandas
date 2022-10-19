@@ -248,7 +248,9 @@ def read_vnp09(file_path, roi_sids):
 
     # Getting the geolocation info for Sensor and
     vnp03_path = vnp09.guess_companion_path(prefix='VNP03')
-    vnp03 = starepandas.io.granules.VNP03MOD(vnp03_path, nom_res='500m')
+    vnp03 = starepandas.io.granules.VNP03MOD(vnp03_path)
+    vnp03.read_sidecar_index()
+    vnp03.read_sidecar_latlon()
     vnp03.read_data()
 
     # Converting to DF and joining
