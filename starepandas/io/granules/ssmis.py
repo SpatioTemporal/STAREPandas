@@ -17,6 +17,17 @@ class SSMIS(Granule):
         self.stare = None
         self.nom_res = ''
         self.scans = scans
+        self.header = {}
+        self.parse_header()
+
+    def parse_header(self):
+        self.header = {}
+        for h in self.netcdf.FileHeader.replace(';', '').strip().split('\n'):
+            key = h.split('=')[0]
+            value = h.split('=')[1]
+            self.header[key] = value
+        self.ts_start = self.header['StartGranuleDateTime']
+        self.ts_end = self.header['StopGranuleDateTime']
 
     def read_latlon(self):
         self.lat = {}
