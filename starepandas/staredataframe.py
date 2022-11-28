@@ -935,8 +935,10 @@ class STAREDataFrame(geopandas.GeoDataFrame):
                 sids.append(pystare.int2hex(row))
         return sids
 
-    def write_pods(self, pod_root, level, chunk_name, hex=True):
-        """ Writes dataframe into a STAREPods hierarchy
+    def write_pods(self, pod_root, level, chunk_name, hex=True, path_format=None, append=False):
+        """ Writes dataframe into a STAREPods hierarchy.
+
+        Appends the dataframe to the pod (pickle), if it exists.
 
         Parameters
         --------------
@@ -948,7 +950,13 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             name of the pod
         hex: bool
             toggle pods being hex vs int
+        path_format: str
+            defines how pods are to be named 
+            default: '{pod_root}/{pod}/{chunk_name}'
+        append: bool
+            toggle appending to existing pods (default: False)
         """
+        path_format = '{pod_root}/{pod}/{chunk_name}' if path_format is None else path_format
         grouped = self.groupby(self.to_stare_level(level=level, clear_to_level=True))
         for group in grouped.groups:
             g = grouped.get_group(group)
@@ -956,7 +964,24 @@ class STAREDataFrame(geopandas.GeoDataFrame):
                 pod = pystare.int2hex(group)
             else:
                 pod = group
-            g.to_pickle('{pod_root}/{pod}/{chunk_name}'.format(pod_root=pod_root, pod=pod, chunk_name=chunk_name))
+
+    TIV grouping?
+
+            # Original
+            # g.to_pickle('{pod_root}/{pod}/{chunk_name}'.format(pod_root=pod_root, pod=pod, chunk_name=chunk_name))
+
+            # New MLR 2022-1117-1
+            # Note: with the following approach we could update a headr that includes extent information.
+            #
+            fname = path_format.format(pod_root=pod_root, pod=pod, chunk_name=chunk_name)
+            if( append ):
+                with open(fname,'a+b') as f:
+                    pickle.dump(g,f)
+            else:
+                # Overwrite
+                with open(fname,'w+b') as f:
+                    pickle.dump(g,f)
+            
 
     @property
     def _constructor(self):
