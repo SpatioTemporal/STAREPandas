@@ -38,6 +38,10 @@ def read_pods(pod_root, sids=None, tivs=None, pattern=None, add_podname=False, p
     ...                             pattern='SSMIS.XCAL2016',
     ...                             add_podname=True)
     >>>
+
+    tivs=['0x1f98000000000000_16']
+    pattern='*-SSMIS.XCAL2016'
+
     """
 
     sids           = None if sids is None else sids
