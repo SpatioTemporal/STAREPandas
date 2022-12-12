@@ -5,7 +5,9 @@ import re
 import pandas
 
 
-def read_pods(pod_root, sids=None, tivs=None, pattern=None, add_podname=False, path_format=None):
+def read_pods(pod_root, sids=None, tivs=None, pattern=None, add_podname=False, path_format=None
+                  ,path_delimiter=None
+                  ):
     """ Reads a STAREDataframe from a directory of STAREPods
 
     Parameters
@@ -14,6 +16,8 @@ def read_pods(pod_root, sids=None, tivs=None, pattern=None, add_podname=False, p
         Root directory containing the pods
     sids: array-like
         STARE index values to read pods for
+    tivs: array-like
+        STARE temporal index values to read pods for
     pattern: str
         name pattern of chunks to read
     add_podname: bool
@@ -36,21 +40,28 @@ def read_pods(pod_root, sids=None, tivs=None, pattern=None, add_podname=False, p
     >>>
     """
 
-    sids        = None if sids is None else sids
-    tivs        = None if tivs is None else tivs
-    pattern     = "*" if pattern is None else pattern
+    sids           = None if sids is None else sids
+    tivs           = None if tivs is None else tivs
+    pattern        = "*" if pattern is None else pattern
+    path_delimiter = '/' if path_delimiter is None else path_delimiter
+    
 
     if tivs is None:
-        path_format = '{pod_root}/{sid}' if path_format is None else path_format
+        path_format = '{pod_root}{delim1}{sid}' if path_format is None else path_format
+        tivs = [None]
     else:
-        path_format = '{pod_root}/{sid}/{tivs}' if path_format is None else path_format
+        path_format = '{pod_root}{delim1}{sid}{delim2}{tiv}' if path_format is None else path_format
     
     dfs = []
     for sid in sids:
         for tiv in tivs:
-            pod_path = path_format'.format(pod_root=pod_root, sid=sid, tiv=tivs)
+            if tiv is None:
+                pod_path = path_format.format(pod_root=pod_root,delim1=path_delimiter,sid=sid)
+            else:
+                pod_path = path_format.format(pod_root=pod_root,delim1=path_delimiter,sid=sid,delim2=path_delimiter,tiv=tivs)
             if not os.path.exists(pod_path):
-                print('no pod exists for {}'.format(sid))
+                # print('no pod exists for {}'.format(sid))
+                print('no pod exists for {}'.format(pod_path))
                 continue
             pickles = sorted(glob.glob(os.path.expanduser(pod_path + '/*')))
             search = '.*{pattern}.*'.format(pattern=pattern)
@@ -74,4 +85,3 @@ def read_pods(pod_root, sids=None, tivs=None, pattern=None, add_podname=False, p
     df.reset_index(inplace=True, drop=True)
     df = starepandas.STAREDataFrame(df)
     return df
-
