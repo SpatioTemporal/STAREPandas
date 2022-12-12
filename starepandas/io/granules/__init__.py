@@ -207,7 +207,7 @@ def read_granule(file_path,
     nom_res: str
         optional; for multi-resolution products, specify which resolution to read
     read_timestamp:
-        toggle wheather to read the the timestamp
+        toggle whether to read the timestamp
     keep_na_sids:
         toggle whether or not to keep rows containing NA values for sids
 

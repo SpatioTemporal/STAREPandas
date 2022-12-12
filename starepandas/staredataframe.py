@@ -935,7 +935,11 @@ class STAREDataFrame(geopandas.GeoDataFrame):
                 sids.append(pystare.int2hex(row))
         return sids
 
-    def write_pods(self, pod_root, level, chunk_name, hex=True, path_format=None, append=False):
+    def write_pods(self, pod_root, level, chunk_name, hex=True, path_format=None
+                       , append=False
+                       , temporal_chunking=None
+                       , temporal_resolution=None
+                       ):
         """ Writes dataframe into a STAREPods hierarchy.
 
         Appends the dataframe to the pod (pickle), if it exists.
@@ -955,8 +959,20 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             default: '{pod_root}/{pod}/{chunk_name}'
         append: bool
             toggle appending to existing pods (default: False)
+            Not implemented.
+        temporal_chunking: bool
+            toggle writing into temporal pods (default: False)
+        temporal_resolution: int
+            sets the resolution of the pod/chunks (default: 16 => month chunk (28 days))
         """
-        path_format = '{pod_root}/{pod}/{chunk_name}' if path_format is None else path_format
+        temporal_chunking   = False if temporal_chunking is None else temporal_chunking
+        temporal_resolution = 16 if temporal_resolution is None else temporal_resolution
+
+        if not temporal_chunking:
+            path_format = '{pod_root}/{pod}/{chunk_name}' if path_format is None else path_format
+        else:
+            path_format = '{pod_root}/{pod}/{tpod}/{tchunk_name}-{chunk_name}' if path_format is None else path_format
+
         grouped = self.groupby(self.to_stare_level(level=level, clear_to_level=True))
         for group in grouped.groups:
             g = grouped.get_group(group)
@@ -965,7 +981,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             else:
                 pod = group
 
-    TIV grouping?
+###    TIV grouping?
 
             # Original
             # g.to_pickle('{pod_root}/{pod}/{chunk_name}'.format(pod_root=pod_root, pod=pod, chunk_name=chunk_name))
@@ -973,7 +989,20 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             # New MLR 2022-1117-1
             # Note: with the following approach we could update a headr that includes extent information.
             #
-            fname = path_format.format(pod_root=pod_root, pod=pod, chunk_name=chunk_name)
+            if not temporal_chunking:
+                fname = path_format.format(pod_root=pod_root, pod=pod, chunk_name=chunk_name)
+            else:
+                ds_tiv  = tiv_from_datetime2([self.ts_start,self.ts_end])
+                ds_tpod = make_tpod_tuple(ds_tiv,temporal_resolution)
+                tpod        = hex16(ds_tpod[0])
+                tchunk_name = hex16(ds_tiv)
+                fname = path_format.format(pod_root=pod_root
+                                               , pod=pod
+                                               , chunk_name=chunk_name
+                                               , tpod=tpod
+                                               , tchunk_name=tchunk_name
+                                               )
+            
             if( append ):
                 with open(fname,'a+b') as f:
                     pickle.dump(g,f)

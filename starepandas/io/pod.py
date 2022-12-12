@@ -5,7 +5,7 @@ import re
 import pandas
 
 
-def read_pods(pod_root, sids, tivs, pattern, add_podname=False, path_format=None):
+def read_pods(pod_root, sids=None, tivs=None, pattern=None, add_podname=False, path_format=None):
     """ Reads a STAREDataframe from a directory of STAREPods
 
     Parameters
@@ -35,7 +35,15 @@ def read_pods(pod_root, sids, tivs, pattern, add_podname=False, path_format=None
     ...                             add_podname=True)
     >>>
     """
-    path_format = '{pod_root}/{sid}/{tivs}' if path_format is None else path_format
+
+    sids        = None if sids is None else sids
+    tivs        = None if tivs is None else tivs
+    pattern     = "*" if pattern is None else pattern
+
+    if tivs is None:
+        path_format = '{pod_root}/{sid}' if path_format is None else path_format
+    else:
+        path_format = '{pod_root}/{sid}/{tivs}' if path_format is None else path_format
     
     dfs = []
     for sid in sids:
