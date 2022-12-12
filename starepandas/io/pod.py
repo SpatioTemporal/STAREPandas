@@ -40,6 +40,9 @@ def read_pods(pod_root, sids=None, tivs=None, pattern=None, add_podname=False, p
     >>>
 
     tivs=['0x1f98000000000000_16']
+
+### We could do a more general cmp_temporal with tivs...
+
     pattern='*-SSMIS.XCAL2016'
 
     """
@@ -70,11 +73,20 @@ def read_pods(pod_root, sids=None, tivs=None, pattern=None, add_podname=False, p
             pickles = sorted(glob.glob(os.path.expanduser(pod_path + '/*')))
             search = '.*{pattern}.*'.format(pattern=pattern)
             pods = list(filter(re.compile(search).match, pickles))
+
+### Note: we could parse out a tiv from the path and compare with the tivs.
+
+### Somehow only read a file once... If we're doing symlinks... cf. write_pods
+            pods = cull_duplicates(pods)
+###            
             for pod in pods:
                 # df = pandas.read_pickle(pod)
                 # if add_podname:
                 #     df['pod'] = pod
                 # dfs.append(df)
+
+
+                
                 while True:
                     with open(pod,'rb') as input:
                         try:

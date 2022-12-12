@@ -1010,7 +1010,20 @@ class STAREDataFrame(geopandas.GeoDataFrame):
                 # Overwrite
                 with open(fname,'w+b') as f:
                     pickle.dump(g,f)
-            
+
+            if temporal_chunking:
+                # link other pods to this one? sigh... no chunking really.
+                tpods = pods_in_query(ds_tiv,temporal_resolution)
+                for tp_ in tpods:
+                    tp=hex16(tp_[0])
+                    if tp != tpod:
+                        dst_name = path_format.format(pod_root=pod_root
+                                               , pod=pod
+                                               , chunk_name=chunk_name
+                                               , tpod=tp
+                                               , tchunk_name=tchunk_name
+                                               )
+                        os.symlink(fname,dst_name) # creates dst_name symlinking to fname (the src)
 
     @property
     def _constructor(self):
