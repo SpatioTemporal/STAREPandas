@@ -1,9 +1,11 @@
-import starepandas
-import glob
-import os
-import re
-import pandas
 
+import glob
+import numpy
+import os
+import pandas
+import pystare
+import re
+import starepandas
 
 def read_pods(pod_root
                   , sids=None
@@ -75,8 +77,8 @@ def read_pods(pod_root
     dfs = []
     for sid in sids:
 ### If we have temporal pods, then the following makes sense.
-###        for tid in tids:
-        if True:
+        for tid in tids:
+###        if True:
             if tids[0] is None:
                 pod_path = path_format.format(pod_root=pod_root,delim1=path_delimiter,sid=sid)
             else:
@@ -90,15 +92,23 @@ def read_pods(pod_root
             pickles = sorted(glob.glob(os.path.expanduser(pod_path + '/*')))
             search = '.*{pattern}.*'.format(pattern=pattern)
             pods = list(filter(re.compile(search).match, pickles))
+            pods_dict = {}
 
             if tid is not None:
                 # 1. parse a tid out of a pod name.
                 # 2. if the tid is in tids, then keep, else don't load.
                 #
                 # 1.
-                regexp = pod_base+path_delimiter+'(.*)'+path_delimiter+'(.*)-.*'
+#                regexp = pod_path+path_delimiter+'(.*)'+path_delimiter+'(.*)-.*'
+                regexp = pod_path+path_delimiter+'(.*)'
                 p = re.compile(regexp)
-                pods_tids = [ p.match(p_).groups()[1] for p_ in pods ]
+                pods_tids = []
+                for p_ in pods:
+                    m = p.match(p_)
+                    if m is not None:
+                        tid = m.groups()[1]
+                        pods_tids.append(tid)
+                        pods_dict[tid] = p_
                 #
                 # 2.
                 pods_to_keep = []
@@ -113,10 +123,10 @@ def read_pods(pod_root
                         cmp = pystare.temporal_value_intersection_if_overlap(tids_cmp,pt_cmp)
                         # -1 signals no overlap
                         idx = numpy.where(cmp > 0)
-                    if len(idx) > 0:
-                       pods_to_keep.append(pt_)
-                       continue
-                pods=pods[pods.index(pods_to_keep)]
+                        if len(idx) > 0:
+                            pods_to_keep.append(pods_dict[pt_])
+                            continue
+                pods = pods_to_keep
 
 ### Note: we could parse out a tid from the path and compare with the tids.
 ### Somehow only read a file once... If we're doing symlinks... cf. write_pods
