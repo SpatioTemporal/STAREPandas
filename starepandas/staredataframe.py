@@ -6,6 +6,9 @@ import starepandas
 import netCDF4
 import starepandas.tools.trixel_conversions
 import multiprocessing
+import pickle
+
+from pathlib import Path
 
 DEFAULT_SID_COLUMN_NAME = 'sids'
 DEFAULT_TID_COLUMN_NAME = 'tids'
@@ -967,21 +970,28 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         """
         temporal_chunking   = False if temporal_chunking is None else temporal_chunking
         temporal_resolution = 16 if temporal_resolution is None else temporal_resolution
-
+        
         if not temporal_chunking:
-            path_format = '{pod_root}/{pod}/{chunk_name}' if path_format is None else path_format
+            pod_path_format = '{pod_root}/{pod}'
+            path_format     = '{pod_path_format}/{chunk_name}' if path_format is None else path_format
         else:
-            path_format = '{pod_root}/{pod}/{tpod}/{tchunk_name}-{chunk_name}' if path_format is None else path_format
+            # path_format = '{pod_root}/{pod}/{tpod}/{tchunk_name}-{chunk_name}' if path_format is None else path_format
+            # Start simple, no tpodding
+            pod_path_format = '{pod_root}/{pod}'
+            path_format = '{pod_path_format}/{tchunk_name}-{chunk_name}' if path_format is None else path_format            
 
-        grouped = self.groupby(self.to_stare_level(level=level, clear_to_level=True))
+        grouped = self.groupby(self.to_stare_level(level=level, clear_to_level=True)[self._sid_column_name])
         for group in grouped.groups:
+            # print('group: ',group,type(group),grouped.get_group(group).size)
+            if group < 0:
+                continue
             g = grouped.get_group(group)
             if hex:
                 pod = pystare.int2hex(group)
             else:
                 pod = group
 
-###    TIV grouping?
+###    TID grouping? Not yet...
 
             # Original
             # g.to_pickle('{pod_root}/{pod}/{chunk_name}'.format(pod_root=pod_root, pod=pod, chunk_name=chunk_name))
@@ -989,20 +999,26 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             # New MLR 2022-1117-1
             # Note: with the following approach we could update a headr that includes extent information.
             #
+            dname = pod_path_format.format(pod_root=pod_root,pod=pod)
+            if not Path(dname).exists():
+                Path(dname).mkdir()
             if not temporal_chunking:
-                fname = path_format.format(pod_root=pod_root, pod=pod, chunk_name=chunk_name)
+                fname = path_format.format(pod_path_format=dname, chunk_name=chunk_name)
             else:
-                ds_tiv  = tiv_from_datetime2([self.ts_start,self.ts_end])
-                ds_tpod = make_tpod_tuple(ds_tiv,temporal_resolution)
-                tpod        = hex16(ds_tpod[0])
-                tchunk_name = hex16(ds_tiv)
-                fname = path_format.format(pod_root=pod_root
-                                               , pod=pod
+
+                t_mnmx  = min(self.ts_start),max(self.ts_end)
+                dt_mnmx = [t.to_pydatetime() for t in t_mnmx]
+                ds_tid  = pystare.tiv_from_datetime2(dt_mnmx)
+
+                # ds_tpod = pystare.make_tpod_tuple(ds_tid,temporal_resolution)
+                # tpod        = pystare.hex16(ds_tpod[0])
+                tchunk_name = pystare.hex16(ds_tid)
+                fname = path_format.format(pod_path_format=dname
                                                , chunk_name=chunk_name
-                                               , tpod=tpod
                                                , tchunk_name=tchunk_name
                                                )
-            
+
+            print('Writing to :',fname)
             if( append ):
                 with open(fname,'a+b') as f:
                     pickle.dump(g,f)
@@ -1011,19 +1027,19 @@ class STAREDataFrame(geopandas.GeoDataFrame):
                 with open(fname,'w+b') as f:
                     pickle.dump(g,f)
 
-            if temporal_chunking:
-                # link other pods to this one? sigh... no chunking really.
-                tpods = pods_in_query(ds_tiv,temporal_resolution)
-                for tp_ in tpods:
-                    tp=hex16(tp_[0])
-                    if tp != tpod:
-                        dst_name = path_format.format(pod_root=pod_root
-                                               , pod=pod
-                                               , chunk_name=chunk_name
-                                               , tpod=tp
-                                               , tchunk_name=tchunk_name
-                                               )
-                        os.symlink(fname,dst_name) # creates dst_name symlinking to fname (the src)
+            ### if temporal_chunking:
+            ###     # link other pods to this one? sigh... no chunking really.
+            ###     tpods = pystare.pods_in_query(ds_tid,temporal_resolution)
+            ###     for tp_ in tpods:
+            ###         tp=pystare.hex16(tp_[0])
+            ###         if tp != tpod:
+            ###             dst_name = path_format.format(pod_root=pod_root
+            ###                                    , pod=pod
+            ###                                    , chunk_name=chunk_name
+            ###                                    , tpod=tp
+            ###                                    , tchunk_name=tchunk_name
+            ###                                    )
+            ###             os.symlink(fname,dst_name) # creates dst_name symlinking to fname (the src)
 
     @property
     def _constructor(self):
