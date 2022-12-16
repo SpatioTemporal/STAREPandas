@@ -15,23 +15,23 @@ def test_read_cldmsk_viirsl2():
 
 
 def test_read_vnp02dnb():
-    fname = 'tests/data/granules/VNP02DNB.A2020219.0742.001.2020219125654.nc'
+    fname = 'tests/data/granules/viirs/VNP02DNB.A2022308.1930.002.2022309051542.nc'
     granule = starepandas.io.granules.VNP02DNB(fname)
     granule.read_timestamps()
-    assert granule.ts_start == '2020-08-06T07:42:00.000Z'
-    assert granule.ts_end == '2020-08-06T07:48:00.000Z'
+    assert granule.ts_start == '2022-11-04T19:30:00.000Z'
+    assert granule.ts_end == '2022-11-04T19:36:00.000Z'
     granule.read_data()
 
 
 def test_read_vnp03dnb():
-    fname = 'tests/data/granules/VNP03DNB.A2020219.0742.001.2020219124651.nc'
+    fname = 'tests/data/granules/viirs/VNP03DNB.A2022308.1930.002.2022309041547.nc'
     granule = starepandas.io.granules.VNP03DNB(fname)
     scp = granule.guess_sidecar_path()
-    assert scp == 'tests/data/granules/VNP03DNB.A2020219.0742.001.2020219124651_stare.nc'
+    assert scp == 'tests/data/granules/viirs/VNP03DNB.A2022308.1930.002.2022309041547_stare.nc'
 
     granule.read_timestamps()
-    assert granule.ts_start == '2020-08-06T07:42:00.000Z'
-    assert granule.ts_end == '2020-08-06T07:48:00.000Z'
+    assert granule.ts_start == '2022-11-04T19:30:00.000Z'
+    assert granule.ts_end == '2022-11-04T19:36:00.000Z'
 
     granule.read_data()
     granule.read_latlon()
@@ -39,7 +39,6 @@ def test_read_vnp03dnb():
     granule.read_sidecar_index()
     df = granule.to_df()
     assert 105078784 == df.size
-
 
 def test_read_mod05():
     fname = 'tests/data/granules/MOD05_L2.A2019336.0000.061.2019336211522.hdf'
@@ -60,7 +59,7 @@ def test_read_mod05():
 
 def test_read_granules():
     starepandas.read_granule('tests/data/granules/MOD05_L2.A2019336.0000.061.2019336211522.hdf')
-    starepandas.read_granule('tests/data/granules/VNP02DNB.A2020219.0742.001.2020219125654.nc')
+    starepandas.read_granule('tests/data/granules/viirs/VNP02DNB.A2022308.1930.002.2022309051542.nc')
 
 
 def test_sidecar_not_found():
@@ -84,6 +83,6 @@ def test_find_sidecar():
 
 
 def test_find_companion():
-    granule = starepandas.io.granules.VNP02DNB('tests/data/granules/VNP02DNB.A2020219.0742.001.2020219125654.nc')
+    granule = starepandas.io.granules.VNP02DNB('tests/data/granules/viirs/VNP02DNB.A2022308.1930.002.2022309051542.nc')
     companion = granule.guess_companion_path(prefix='VNP03DNB')
-    assert companion == 'tests/data/granules/VNP03DNB.A2020219.0742.001.2020219124651.nc'
+    assert companion == 'tests/data/granules/viirs/VNP03DNB.A2022308.1930.002.2022309041547.nc'
