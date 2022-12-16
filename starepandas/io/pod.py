@@ -28,6 +28,7 @@ def read_pods(pod_root
                   , path_delimiter=None
                   , temporal_pattern=None
                   , temporal_pattern_tid_index=None
+                  , verbose = False
                   ):
     """ Reads a STAREDataframe from a directory of STAREPods
 
@@ -84,7 +85,7 @@ And later on...
                     if m is not None:
                         tid_ = int(m.groups()[temporal_pattern_tid_index],16)
 
-### A potentially simple way to to temporal podding/chunking is as follows...
+### A potentially simple way to temporal podding/chunking is as follows...
 
 <pod-root>/<sid>/<tpod>-<tcover>-<dataset-name-patter>
 
@@ -100,6 +101,34 @@ temporal_pattern_tid_index = 1
 As currently written, temporal_pattern_tid_index = 1 will check on temporal overlap with the cover,
 while temporal_pattern_tid_index = 0 will check temporal overlap with the t-pod--but that isn't
 implemented and runs into the issue that the t-pod name isn't currently a valid tid.
+
+### A few examples...
+
+# This is the original case.
+
+if case == 'spatial':
+    tids = None
+    pattern='/MOD09.*'
+    
+    temporal_pattern           = None
+    temporal_pattern_tid_index = None
+
+# The following are emerging functionalities.
+
+if case == 'granule':
+    tids = tids_
+    pattern='.*-MOD09.*'
+
+    temporal_pattern           = '{pod_path}(0x.{{16}})-(?!0x).*'
+    temporal_pattern_tid_index = 0
+
+if case == 'tpod':
+    tids = tids_
+    pattern='.*-MOD09.*'
+
+    tpod_resolution            = 16
+    temporal_pattern           = '{pod_path}(0x.{{16}})_%s-(0x.{{16}})-.*'%tpod_resolution
+    temporal_pattern_tid_index = 1 
 
 ### tids should be of the form...
 
@@ -164,7 +193,7 @@ implemented and runs into the issue that the t-pod name isn't currently a valid 
             pods = list(filter(re.compile(search).match, pickles))
             pods_dict = {}
 
-            print('190 pods: ',pods)
+#+            print('190 pods: ',pods)
 
             if tids is not None:
                 # 1. parse a tid out of a pod name.
@@ -175,7 +204,7 @@ implemented and runs into the issue that the t-pod name isn't currently a valid 
 #                regexp = pod_path+path_delimiter+'(.*)'
 #+                regexp = pod_path+'(.*)-.*'
                 regexp = temporal_pattern.format(pod_path=pod_path)
-                print('regexp: ',regexp)
+#+                print('regexp: ',regexp)
                 p = re.compile(regexp)
                 pods_tids = []
                 for p_ in pods:
@@ -225,7 +254,8 @@ implemented and runs into the issue that the t-pod name isn't currently a valid 
 #-                print()
                 not_done = True
                 with open(pod,'rb') as input:
-                    print('reading ',pod)
+                    if verbose:
+                        print('reading ',pod)
                     while not_done:
                         try:
                             df = pickle.load(input)

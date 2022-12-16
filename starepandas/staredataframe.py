@@ -985,7 +985,6 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
         return
         
-
     def write_pods_granule(self, pod_root, level, chunk_name, hex=True, path_format=None, append=False):
         pod_path_format = '{pod_root}/{pod}'
         path_format = '{pod_path_format}/{tchunk_name}-{chunk_name}' if path_format is None else path_format
