@@ -62,7 +62,33 @@ def read_pods(pod_root
 
         pickles = sorted(glob.glob(os.path.expanduser(pod_path + '/*')))
         search = '.*{pattern}.*'.format(pattern=pattern)
-        pods = list(filter(re.compile(search).match, pickles)) 
+        pods = list(filter(re.compile(search).match, pickles))
+
+And later on...
+                regexp = temporal_pattern.format(pod_path=pod_path)
+                p = re.compile(regexp)
+                pods_tids = []
+                for p_ in pods:
+                    m = p.match(p_)
+                    if m is not None:
+                        tid_ = int(m.groups()[temporal_pattern_tid_index],16)
+
+### A potentially simple way to to temporal podding/chunking is as follows...
+
+<pod-root>/<sid>/<tpod>-<tcover>-<dataset-name-patter>
+
+E.g. 
+
+/pods/0x0a00000000000004/0x1f4a000000000000_16-0x1f4aa87342001e79-MOD09.A2002299.0710.006.2015151173939.pkl
+
+With a search pattern of
+
+temporal_pattern           = '{pod_path}(.*)-(.*)-.*'
+temporal_pattern_tid_index = 1
+
+As currently written, temporal_pattern_tid_index = 1 will check on temporal overlap with the cover,
+while temporal_pattern_tid_index = 0 will check temporal overlap with the t-pod--but that isn't
+implemented and runs into the issue that the t-pod name isn't currently a valid tid.
 
 ### tids should be of the form...
 
