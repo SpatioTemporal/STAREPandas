@@ -8,6 +8,17 @@ import pystare
 import re
 import starepandas
 
+
+## def read_pods_spatial:
+##     return
+## 
+## def read_pods_granule:
+##     return
+## 
+## def read_pods_tpod:
+##     return
+## 
+
 def read_pods(pod_root
                   , sids=None
                   , tids=None
@@ -104,12 +115,15 @@ implemented and runs into the issue that the t-pod name isn't currently a valid 
 
     """
 
+#    print('tids: ',tids)
+    
     sids                       = None if sids is None else sids
     tids                       = None if tids is None else tids
     pattern                    = "*" if pattern is None else pattern
     path_delimiter             = '/' if path_delimiter is None else path_delimiter
     temporal_pattern           = '{pod_path}(.*)-.*' if temporal_pattern is None else temporal_pattern
     temporal_pattern_tid_index = 0 if temporal_pattern_tid_index is None else temporal_pattern_tid_index
+
 
     if tids is None:
         path_format = '{pod_root}{delim1}{sid}' if path_format is None else path_format
@@ -150,7 +164,7 @@ implemented and runs into the issue that the t-pod name isn't currently a valid 
             pods = list(filter(re.compile(search).match, pickles))
             pods_dict = {}
 
-#-            print('190 pods: ',pods)
+            print('190 pods: ',pods)
 
             if tids is not None:
                 # 1. parse a tid out of a pod name.
@@ -160,14 +174,14 @@ implemented and runs into the issue that the t-pod name isn't currently a valid 
 #                regexp = pod_path+path_delimiter+'(.*)'+path_delimiter+'(.*)-.*'
 #                regexp = pod_path+path_delimiter+'(.*)'
 #+                regexp = pod_path+'(.*)-.*'
-#-                print('regexp: ',regexp)
                 regexp = temporal_pattern.format(pod_path=pod_path)
+                print('regexp: ',regexp)
                 p = re.compile(regexp)
                 pods_tids = []
                 for p_ in pods:
                     m = p.match(p_)
-#-                    print('200: ',m.groups())
                     if m is not None:
+#-                        print('200: ',m.groups())
                         tid_ = int(m.groups()[temporal_pattern_tid_index],16)
 #-                        print('201: ',pystare.hex16(tid_),pystare.tiv_utc_to_string(pystare.expanded_tiv(numpy.int64(tid_))))
                         pods_tids.append(tid_)
@@ -211,7 +225,7 @@ implemented and runs into the issue that the t-pod name isn't currently a valid 
 #-                print()
                 not_done = True
                 with open(pod,'rb') as input:
-#-                    print('reading ',pod)
+                    print('reading ',pod)
                     while not_done:
                         try:
                             df = pickle.load(input)

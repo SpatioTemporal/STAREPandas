@@ -25,6 +25,18 @@ def compress_sids_group(group):
     return tuple([group[0], sids])
 
 
+def write_pod_pickle(g,fname,append=False):
+    "Write or append to a pickle."
+    print('Writing to pickle:',fname)
+    if append :
+        with open(fname,'a+b') as f:
+            pickle.dump(g,f)
+    else:
+        # Overwrite
+        with open(fname,'w+b') as f:
+            pickle.dump(g,f)
+            return
+
 class STAREDataFrame(geopandas.GeoDataFrame):
     _metadata = ['_sid_column_name', '_trixel_column_name', '_geometry_column_name', '_crs']
 
@@ -938,10 +950,144 @@ class STAREDataFrame(geopandas.GeoDataFrame):
                 sids.append(pystare.int2hex(row))
         return sids
 
+    def write_pods_spatial(self
+                               , pod_root, level, chunk_name, hex=True, path_format=None
+                               , append=False
+                               ):
+
+        pod_path_format = '{pod_root}/{pod}'
+        path_format     = '{pod_path_format}/{chunk_name}' if path_format is None else path_format
+        
+        grouped = self.groupby(self.to_stare_level(level=level, clear_to_level=True)[self._sid_column_name])
+        for group in grouped.groups:
+            # print('group: ',group,type(group),grouped.get_group(group).size)
+            if group < 0:
+                continue
+            g = grouped.get_group(group)
+            if hex:
+                pod = pystare.int2hex(group)
+            else:
+                pod = group
+
+            # Original
+            # g.to_pickle('{pod_root}/{pod}/{chunk_name}'.format(pod_root=pod_root, pod=pod, chunk_name=chunk_name))
+
+            # New MLR 2022-1117-1
+            # Note: with the following approach we could update a headr that includes extent information.
+            #
+            dname = pod_path_format.format(pod_root=pod_root,pod=pod)
+            if not Path(dname).exists():
+                Path(dname).mkdir()
+
+            fname = path_format.format(pod_path_format=dname, chunk_name=chunk_name)
+
+            write_pod_pickle(g,fname,append)
+
+        return
+        
+
+    def write_pods_granule(self, pod_root, level, chunk_name, hex=True, path_format=None, append=False):
+        pod_path_format = '{pod_root}/{pod}'
+        path_format = '{pod_path_format}/{tchunk_name}-{chunk_name}' if path_format is None else path_format
+
+        grouped = self.groupby(self.to_stare_level(level=level, clear_to_level=True)[self._sid_column_name])
+        for group in grouped.groups:
+            # print('group: ',group,type(group),grouped.get_group(group).size)
+            if group < 0:
+                continue
+            g = grouped.get_group(group)
+            if hex:
+                pod = pystare.int2hex(group)
+            else:
+                pod = group
+
+            dname = pod_path_format.format(pod_root=pod_root,pod=pod)
+            if not Path(dname).exists():
+                Path(dname).mkdir()
+                pass
+
+            t_mnmx  = min(self.ts_start),max(self.ts_end)
+            dt_mnmx = [t.to_pydatetime() for t in t_mnmx]
+            ds_tid  = pystare.tiv_from_datetime2(dt_mnmx)
+
+            # ds_tpod = pystare.make_tpod_tuple(ds_tid,temporal_resolution)
+            # tpod        = pystare.hex16(ds_tpod[0])
+            tchunk_name = pystare.hex16(ds_tid)
+            fname = path_format.format(pod_path_format=dname
+                                           , chunk_name=chunk_name
+                                           , tchunk_name=tchunk_name
+                                           )
+            write_pod_pickle(g,fname,append)
+        
+        return
+        
+        
+    def write_pods_tpod(self
+                               , pod_root, level, chunk_name, hex=True, path_format=None
+                               , append=False
+                               , temporal_chunking_resolution=16 # Native month (28 days)
+                               ):
+        """
+        TODO: Add temporal partitioning. Currently broken.
+        """
+        pod_path_format = '{pod_root}/{pod}'
+        path_format = '{pod_path_format}/{tpod_name}-{tchunk_name}-{chunk_name}' if path_format is None else path_format
+
+        grouped = self.groupby(self.to_stare_level(level=level, clear_to_level=True)[self._sid_column_name])
+        for group in grouped.groups:
+            # print('group: ',group,type(group),grouped.get_group(group).size)
+            if group < 0:
+                continue
+            g = grouped.get_group(group)
+            if hex:
+                pod = pystare.int2hex(group)
+            else:
+                pod = group
+                
+            dname = pod_path_format.format(pod_root=pod_root,pod=pod)
+            if not Path(dname).exists():
+                Path(dname).mkdir()
+                pass
+
+            t_mnmx  = min(self.ts_start),max(self.ts_end)
+            dt_mnmx = [t.to_pydatetime() for t in t_mnmx]
+            ds_tid  = pystare.tiv_from_datetime2(dt_mnmx)
+
+            tpod_name = pystare.format_tpod(pystare.make_tpod_tuple(ds_tid,temporal_chunking_resolution))
+
+            # ds_tpod = pystare.make_tpod_tuple(ds_tid,temporal_resolution)
+            # tpod        = pystare.hex16(ds_tpod[0])
+            tchunk_name = pystare.hex16(ds_tid)
+            fname = path_format.format(pod_path_format=dname
+                                           , tpod_name=tpod_name
+                                           , tchunk_name=tchunk_name
+                                           , chunk_name=chunk_name
+                                           )
+            write_pod_pickle(g,fname,append)
+        
+        return
+
+    ### Just stashing this here for the moment.
+    
+            ### if temporal_chunking:
+            ###     # link other pods to this one? sigh... no chunking really.
+            ###     tpods = pystare.pods_in_query(ds_tid,temporal_resolution)
+            ###     for tp_ in tpods:
+            ###         tp=pystare.hex16(tp_[0])
+            ###         if tp != tpod:
+            ###             dst_name = path_format.format(pod_root=pod_root
+            ###                                    , pod=pod
+            ###                                    , chunk_name=chunk_name
+            ###                                    , tpod=tp
+            ###                                    , tchunk_name=tchunk_name
+            ###                                    )
+            ###             os.symlink(fname,dst_name) # creates dst_name symlinking to fname (the src)
+    
+
+                    
     def write_pods(self, pod_root, level, chunk_name, hex=True, path_format=None
                        , append=False
                        , temporal_chunking=None
-                       , temporal_resolution=None
                        ):
         """ Writes dataframe into a STAREPods hierarchy.
 
@@ -963,83 +1109,44 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         append: bool
             toggle appending to existing pods (default: False)
             Not implemented.
-        temporal_chunking: bool
-            toggle writing into temporal pods (default: False)
-        temporal_resolution: int
-            sets the resolution of the pod/chunks (default: 16 => month chunk (28 days))
+        temporal_chunking: dict
+            toggle writing into temporal pods (default: None)
+            Supported options...
+            - {'partitioning':'granule'}
+            - {'partitioning':'pod','resolution':16 } # 16 => month chunk (28 days)
         """
-        temporal_chunking   = False if temporal_chunking is None else temporal_chunking
-        temporal_resolution = 16 if temporal_resolution is None else temporal_resolution
-        
-        if not temporal_chunking:
-            pod_path_format = '{pod_root}/{pod}'
-            path_format     = '{pod_path_format}/{chunk_name}' if path_format is None else path_format
-        else:
-            # path_format = '{pod_root}/{pod}/{tpod}/{tchunk_name}-{chunk_name}' if path_format is None else path_format
-            # Start simple, no tpodding
-            pod_path_format = '{pod_root}/{pod}'
-            path_format = '{pod_path_format}/{tchunk_name}-{chunk_name}' if path_format is None else path_format            
 
-        grouped = self.groupby(self.to_stare_level(level=level, clear_to_level=True)[self._sid_column_name])
-        for group in grouped.groups:
-            # print('group: ',group,type(group),grouped.get_group(group).size)
-            if group < 0:
-                continue
-            g = grouped.get_group(group)
-            if hex:
-                pod = pystare.int2hex(group)
-            else:
-                pod = group
-
-###    TID grouping? Not yet...
-
-            # Original
-            # g.to_pickle('{pod_root}/{pod}/{chunk_name}'.format(pod_root=pod_root, pod=pod, chunk_name=chunk_name))
-
-            # New MLR 2022-1117-1
-            # Note: with the following approach we could update a headr that includes extent information.
-            #
-            dname = pod_path_format.format(pod_root=pod_root,pod=pod)
-            if not Path(dname).exists():
-                Path(dname).mkdir()
-            if not temporal_chunking:
-                fname = path_format.format(pod_path_format=dname, chunk_name=chunk_name)
-            else:
-
-                t_mnmx  = min(self.ts_start),max(self.ts_end)
-                dt_mnmx = [t.to_pydatetime() for t in t_mnmx]
-                ds_tid  = pystare.tiv_from_datetime2(dt_mnmx)
-
-                # ds_tpod = pystare.make_tpod_tuple(ds_tid,temporal_resolution)
-                # tpod        = pystare.hex16(ds_tpod[0])
-                tchunk_name = pystare.hex16(ds_tid)
-                fname = path_format.format(pod_path_format=dname
+        if temporal_chunking is None:
+            return self.write_pods_spatial(pod_root=pod_root
+                                               , level=level
                                                , chunk_name=chunk_name
-                                               , tchunk_name=tchunk_name
+                                               , hex=hex
+                                               , path_format=path_format
+                                               , append=append
                                                )
 
-            print('Writing to :',fname)
-            if( append ):
-                with open(fname,'a+b') as f:
-                    pickle.dump(g,f)
-            else:
-                # Overwrite
-                with open(fname,'w+b') as f:
-                    pickle.dump(g,f)
+        if temporal_chunking['partitioning'] == 'granule':
+            return self.write_pods_granule(pod_root=pod_root
+                                               , level=level
+                                               , chunk_name=chunk_name
+                                               , hex=hex
+                                               , path_format=path_format
+                                               , append=append
+                                               )
 
-            ### if temporal_chunking:
-            ###     # link other pods to this one? sigh... no chunking really.
-            ###     tpods = pystare.pods_in_query(ds_tid,temporal_resolution)
-            ###     for tp_ in tpods:
-            ###         tp=pystare.hex16(tp_[0])
-            ###         if tp != tpod:
-            ###             dst_name = path_format.format(pod_root=pod_root
-            ###                                    , pod=pod
-            ###                                    , chunk_name=chunk_name
-            ###                                    , tpod=tp
-            ###                                    , tchunk_name=tchunk_name
-            ###                                    )
-            ###             os.symlink(fname,dst_name) # creates dst_name symlinking to fname (the src)
+        if temporal_chunking['partitioning'] == 'pod':
+            return self.write_pods_tpod(pod_root=pod_root
+                                               , level=level
+                                               , chunk_name=chunk_name
+                                               , hex=hex
+                                               , path_format=path_format
+                                               , append=append
+                                               , temporal_chunking_resolution=temporal_chunking['resolution']
+                                               )
+
+        raise(Exception('Pod configuration not supported. temporal_chunking = %s'%(temporal_chunking)))
+        
+        return  # write_pods
 
     @property
     def _constructor(self):
