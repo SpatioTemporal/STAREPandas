@@ -47,7 +47,7 @@ jobs:
       run: |
         python -m ipykernel install --user --name testkernel
         pip install .
-        pip3 install ipympl
+        pip install ipympl
         # pip install /home/runner/work/STAREPandas/
         pytest --nbmake --nbmake-kernel=testkernel examples/*.ipynb
 
