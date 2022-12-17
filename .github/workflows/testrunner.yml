@@ -20,7 +20,7 @@ jobs:
     if: github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v2
       with:
         lfs: 'true'
     - name: Set up Python 3.9
@@ -46,8 +46,7 @@ jobs:
     - name: Test Notebooks
       run: |
         python -m ipykernel install --user --name testkernel
-        pip install .
-        pip install ipympl
+        pip install .        
         # pip install /home/runner/work/STAREPandas/
         pytest --nbmake --nbmake-kernel=testkernel examples/*.ipynb
 
