@@ -49,7 +49,7 @@ jobs:
         pip install .
         pip install ipympl
         # pip install /home/runner/work/STAREPandas/
-        #pytest --nbmake --nbmake-kernel=testkernel examples/*.ipynb
+        pytest --nbmake --nbmake-kernel=testkernel examples/*.ipynb
     - name: Setup tmate session
       uses: mxschmitt/action-tmate@v3
       #if: ${{ github.event_name == 'pull_request' && inputs.debug_enabled }}
