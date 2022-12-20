@@ -62,7 +62,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         >>> sdf = starepandas.STAREDataFrame(data, sids=sids)
         """
 
-        super(STAREDataFrame, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
 
         if args and isinstance(args[0], (geopandas.GeoDataFrame, STAREDataFrame)):
             self._geometry_column_name = args[0]._geometry_column_name
@@ -84,7 +84,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
     def __getitem__(self, key):
 
-        result = super(STAREDataFrame, self).__getitem__(key)
+        result = super().__getitem__(key)
         sid_col = self._sid_column_name
 
         if isinstance(result, (geopandas.GeoDataFrame, pandas.DataFrame, starepandas.STAREDataFrame)):
@@ -103,7 +103,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         if attr == "stare":
             object.__setattr__(self, attr, val)
         else:
-            super(STAREDataFrame, self).__setattr__(attr, val)
+            super().__setattr__(attr, val)
 
     def make_sids(self, level, convex=False, force_ccw=True, n_partitions=1):
         """

@@ -7,26 +7,102 @@ import pystare
 
 
 class VIIRSL2(Granule):
-    
-    def __init__(self, file_path, sidecar_path=None):
-        super(VIIRSL2, self).__init__(file_path, sidecar_path)
-        self.nom_res = '750m'
+
+    def __init__(self, file_path, sidecar_path=None, nom_res='750m'):
+        super().__init__(file_path, sidecar_path)
+        self.nom_res = nom_res
         self.netcdf = starepandas.io.s3.nc4_dataset_wrapper(self.file_path, 'r', format='NETCDF4')
-    
+
     def read_timestamps(self):
         self.ts_start = self.netcdf.time_coverage_start
-        self.ts_end = self.netcdf.time_coverage_end       
-    
-    def read_latlon(self):        
+        self.ts_end = self.netcdf.time_coverage_end
+
+    def read_latlon(self):
         self.lat = self.netcdf.groups['geolocation_data']['latitude'][:].astype(numpy.double)
         self.lon = self.netcdf.groups['geolocation_data']['longitude'][:].astype(numpy.double)
 
 
+class VNP03DNB(VIIRSL2):
+
+    def __init__(self, file_path, sidecar_path=None):
+        super().__init__(file_path, sidecar_path)
+
+    def read_data(self):
+        """
+        reads the data from a VNP03DNB granule into the self.data dictionary.
+        Three variables are read:
+
+        a) moon_illumination_fraction
+        b) land_water_mask
+        1: Shallow_Ocean 2: Land 3: Coastline 4: Shallow_Inland 5: Ephemeral 6: Deep_Inland 7: Continental 8: Deep_Ocean
+        c) quality_flag
+        1: Input_invalid 2: Pointing_bad 3: Terrain_bad
+        :return:
+        """
+
+        group = self.netcdf.groups['geolocation_data']
+        self.data['moon_illumination_fraction'] = group['moon_illumination_fraction'][:]
+        self.data['land_water_mask'] = group['land_water_mask'][:]
+        self.data['quality_flag'] = group['quality_flag'][:]
+
+
+class VNP03MOD(VIIRSL2):
+
+    def __init__(self, file_path, sidecar_path=None, nom_res='750m'):
+        super().__init__(file_path, sidecar_path=sidecar_path, nom_res=nom_res)
+
+    def read_data(self):
+        """
+        reads the data from a VNP03MOD granule into the self.data dictionary.
+        """
+
+        self.data['land_water_mask'] = self.netcdf.groups['geolocation_data']['land_water_mask'][:]
+        self.data['quality_flag'] = self.netcdf.groups['geolocation_data']['quality_flag'][:]
+
+        self.data['sensor_azimuth'] = self.netcdf.groups['geolocation_data']['sensor_azimuth'][:]
+        self.data['sensor_zenith'] = self.netcdf.groups['geolocation_data']['sensor_zenith'][:]
+        self.data['solar_azimuth'] = self.netcdf.groups['geolocation_data']['solar_azimuth'][:]
+        self.data['solar_zenith'] = self.netcdf.groups['geolocation_data']['solar_zenith'][:]
+
+        self.read_latlon()
+        # self.read_timestamps()
+
+
+class VNP03IMG(VNP03MOD):
+
+    def __init__(self, file_path, sidecar_path=None, nom_res='375m'):
+        super().__init__(file_path, sidecar_path=sidecar_path, nom_res=nom_res)
+
+
+class VNP02DNB(VIIRSL2):
+
+    def __init__(self, file_path, sidecar_path=None):
+        super(VNP02DNB, self).__init__(file_path, sidecar_path)
+        self.companion_prefix = 'VNP03DNB'
+
+    def read_data(self):
+        dnb = self.netcdf.groups['observation_data']['DNB_observations'][:]
+        quality_flags = self.netcdf.groups['observation_data']['DNB_quality_flags'][:]
+        self.data['DNB_observations'] = dnb
+        self.data['DNB_quality_flags'] = quality_flags
+
+    def read_latlon(self):
+        pass
+
+
+class VNP02MOD(VIIRSL2):
+    pass
+
+
+class VNP02IMG(VIIRSL2):
+    pass
+
+
 class CLDMSKL2VIIRS(VIIRSL2):
-    
+
     def __init__(self, file_path, sidecar_path=None):
         super(CLDMSKL2VIIRS, self).__init__(file_path, sidecar_path)
-        
+
     def read_data(self):
         """
         reads the data from a CLDMSKL2VIIRS granule into the self.data dictionary.
@@ -41,29 +117,6 @@ class CLDMSKL2VIIRS(VIIRSL2):
         # There appear to be 10 QA dimensions which are nowhere documented. Leaving this open for now
         # Cloud Mask QA (1km) Bit 1: 0 not useful 1 useful. Bit 2-7: confidence levels
         # self.data['Quality_Assurance'] = self.netcdf.groups['geophysical_data']['Quality_Assurance'][:]
-
-
-class VNP03MOD(VIIRSL2):
-
-    def __init__(self, file_path, sidecar_path=None):
-        super().__init__(file_path, sidecar_path)
-
-    def read_data(self):
-        """
-        reads the data from a VNP03MOD granule into the self.data dictionary.
-
-        """
-
-        self.data['land_water_mask'] = self.netcdf.groups['geolocation_data']['land_water_mask'][:]
-        self.data['quality_flag'] = self.netcdf.groups['geolocation_data']['quality_flag'][:]
-
-        self.data['sensor_azimuth'] = self.netcdf.groups['geolocation_data']['sensor_azimuth'][:]
-        self.data['sensor_zenith'] = self.netcdf.groups['geolocation_data']['sensor_zenith'][:]
-        self.data['solar_azimuth'] = self.netcdf.groups['geolocation_data']['solar_azimuth'][:]
-        self.data['solar_zenith'] = self.netcdf.groups['geolocation_data']['solar_zenith'][:]
-
-        self.read_latlon()
-        #self.read_timestamps()
 
 
 class VNP09(Modis):
@@ -109,7 +162,7 @@ class VNP09(Modis):
         attributes = ds.attributes()
 
         if 'FILL_VALUES' in attributes.keys():
-            #fill_values = attributes['FILL_VALUES']
+            # fill_values = attributes['FILL_VALUES']
             mask = data < 0
             data = numpy.ma.array(data, mask=mask)
 
@@ -134,46 +187,6 @@ class VNP09(Modis):
         except ValueError:
             self.ts_start = datetime.datetime.strptime(self.ts_start, '%Y-%m-%d %H:%M:%S')
             self.ts_end = datetime.datetime.strptime(self.ts_end, '%Y-%m-%d %H:%M:%S')
-
-
-class VNP03DNB(VIIRSL2):
-    
-    def __init__(self, file_path, sidecar_path=None):
-        super().__init__(file_path, sidecar_path)
-    
-    def read_data(self):
-        """
-        reads the data from a VNP03DNB granule into the self.data dictionary.
-        Three variables are read:
-
-        a) moon_illumination_fraction
-        b) land_water_mask
-        1: Shallow_Ocean 2: Land 3: Coastline 4: Shallow_Inland 5: Ephemeral 6: Deep_Inland 7: Continental 8: Deep_Ocean
-        c) quality_flag
-        1: Input_invalid 2: Pointing_bad 3: Terrain_bad
-        :return:
-        """
-
-        group = self.netcdf.groups['geolocation_data']
-        self.data['moon_illumination_fraction'] = group['moon_illumination_fraction'][:]
-        self.data['land_water_mask'] = group['land_water_mask'][:]
-        self.data['quality_flag'] = group['quality_flag'][:]
-
-
-class VNP02DNB(VIIRSL2):
-
-    def __init__(self, file_path, sidecar_path=None):
-        super(VNP02DNB, self).__init__(file_path, sidecar_path)
-        self.companion_prefix = 'VNP03DNB'
-
-    def read_data(self):
-        dnb = self.netcdf.groups['observation_data']['DNB_observations'][:]
-        quality_flags = self.netcdf.groups['observation_data']['DNB_quality_flags'][:]
-        self.data['DNB_observations'] = dnb
-        self.data['DNB_quality_flags'] = quality_flags
-
-    def read_latlon(self):
-        pass
 
 
 def decode_qf1(qf):
@@ -240,47 +253,66 @@ def decode_qf2(qf):
     return df
 
 
-def read_vnp09(file_path, roi_sids):
-    # Read the MOD09
-    vnp09 = VNP09(file_path, nom_res='750m')
-    vnp09.read_data_750m()
-    vnp09.read_timestamps()
+def read_vnp09(file_path,
+               latlon=False,
+               sidecar=True,
+               sidecar_path=None,
+               xy=False,
+               nom_res='750m',
+               read_timestamp=False,
+               roi_sids=None,
+               companion_folder=None,
+               add_area=False,
+               add_level=False,
+               **kwargs):
 
-    # Getting the geolocation info for Sensor and
-    vnp03_path = vnp09.guess_companion_path(prefix='VNP03')
+    # Read the VNP09
+    vnp09 = VNP09(file_path, nom_res=nom_res)
+    vnp09.read_data()
+
+    # Getting the geolocation info
+    if nom_res == '750m':
+        vnp03_path = vnp09.guess_companion_path(prefix='VNP03MOD', folder=companion_folder)
+    elif nom_res == '375m':
+        vnp03_path = vnp09.guess_companion_path(prefix='VNP03IMG', folder=companion_folder)
     vnp03 = starepandas.io.granules.VNP03MOD(vnp03_path)
-    vnp03.read_sidecar_index()
-    vnp03.read_sidecar_latlon()
     vnp03.read_data()
 
+    if read_timestamp:
+        vnp09.read_timestamps()
+
+    if latlon:
+        if sidecar:
+            vnp03.read_sidecar_latlon()
+        else:
+            vnp03.read_latlon()
+
+    if sidecar:
+        vnp03.read_sidecar_index(sidecar_path)
+
     # Converting to DF and joining
-    vnp09 = vnp09.to_df(xy=True)
+    vnp09 = vnp09.to_df(xy=xy)
     vnp03 = vnp03.to_df()
     vnp09 = vnp09.join(vnp03)
     vnp09.dropna(inplace=True)
-    vnp09.sids = vnp09.sids.astype('int64')
 
     qf1 = starepandas.io.granules.viirsl2.decode_qf1(vnp09['QF1 Surface Reflectance'])
     qf2 = starepandas.io.granules.viirsl2.decode_qf2(vnp09['QF2 Surface Reflectance'])
     vnp09 = vnp09.join(qf1).join(qf2)
 
     # Subsetting
-    try:
-        vnp09 = starepandas.speedy_subset(vnp09, roi_sids)
-    except:
-        print(file_path)
-        raise Exception
+    if roi_sids is not None:
+        try:
+            vnp09 = starepandas.speedy_subset(vnp09, roi_sids)
+        except:
+            print(file_path)
+            raise Exception
 
-    # Adding the lower level SIDS
-    vnp09['sids14'] = vnp09.to_stare_level(14, clear_to_level=True).sids
-    vnp09['sids15'] = vnp09.to_stare_level(15, clear_to_level=True).sids
-    vnp09['sids16'] = vnp09.to_stare_level(16, clear_to_level=True).sids
-    vnp09['sids17'] = vnp09.to_stare_level(17, clear_to_level=True).sids
-    vnp09['sids18'] = vnp09.to_stare_level(18, clear_to_level=True).sids
-
-    r = 6371007.181
-    vnp09['area'] = pystare.to_area(vnp09['sids']) * r ** 2 / 1000 / 1000
-    vnp09['level'] = pystare.spatial_resolution(vnp09['sids'])
+    if add_area:
+        r = 6371007.181
+        vnp09['area'] = pystare.to_area(vnp09['sids']) * r ** 2 / 1000 / 1000
+    if add_level:
+        vnp09['level'] = pystare.spatial_resolution(vnp09['sids'])
 
     # Converting types
     vnp09.reset_index(inplace=True, drop=True)

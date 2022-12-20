@@ -38,7 +38,7 @@ def test_issue47():
 
 
 def test_granule_guescompanion():
-    granule_path = 'tests/data/granules/VNP02DNB.A2020219.0742.001.2020219125654.nc'
+    granule_path = 'tests/data/granules/viirs/VNP02DNB.A2022308.1930.002.2022309051542.nc'
     granule = starepandas.io.granules.VNP02DNB(granule_path)
-    companion_test = granule.guess_companion_path(prefix='VNP03DNB', folder='tests/data/granules/')
-    assert companion_test == 'tests/data/granules/VNP03DNB.A2020219.0742.001.2020219124651.nc'
+    companion_test = granule.guess_companion_path(prefix='VNP03DNB', folder='tests/data/granules/viirs/')
+    assert companion_test == 'tests/data/granules/viirs/VNP03DNB.A2022308.1930.002.2022309041547.nc'
