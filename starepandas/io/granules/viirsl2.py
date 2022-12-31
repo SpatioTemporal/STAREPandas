@@ -1,6 +1,7 @@
 from starepandas.io.granules.granule import Granule
 import starepandas.io.s3
 import numpy
+import datetime
 
 
 class VIIRSL2(Granule):
@@ -11,8 +12,8 @@ class VIIRSL2(Granule):
         self.netcdf = starepandas.io.s3.nc4_dataset_wrapper(self.file_path, 'r', format='NETCDF4')
     
     def read_timestamps(self):
-        self.ts_start = self.netcdf.time_coverage_start
-        self.ts_end = self.netcdf.time_coverage_end       
+        ts_start = self.netcdf.time_coverage_start
+        ts_end = self.netcdf.time_coverage_end
     
     def read_latlon(self):        
         self.lat = self.netcdf.groups['geolocation_data']['latitude'][:].astype(numpy.double)

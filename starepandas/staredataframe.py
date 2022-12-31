@@ -8,6 +8,9 @@ import starepandas.tools.trixel_conversions
 import multiprocessing
 import pickle
 
+import logging
+import time
+
 from pathlib import Path
 
 DEFAULT_SID_COLUMN_NAME = 'sids'
@@ -27,15 +30,26 @@ def compress_sids_group(group):
 
 def write_pod_pickle(g,fname,append=False):
     "Write or append to a pickle."
-    print('Writing to pickle:',fname)
+    logging.info('Writing to pickle: %s'%fname)
     if append :
         with open(fname,'a+b') as f:
             pickle.dump(g,f)
     else:
         # Overwrite
+        start = time.time()
         with open(fname,'w+b') as f:
             pickle.dump(g,f)
+            logging.info('Writing chunk %s took %d seconds.'%(fname,time.time()-start))
             return
+
+def write_pod_hdf(g,fname,append=False):
+    "Write or append to an HDF file."
+    raise NotImplementedError
+    if append :
+        pass
+    else:
+        pass
+    return 
 
 class STAREDataFrame(geopandas.GeoDataFrame):
     _metadata = ['_sid_column_name', '_trixel_column_name', '_geometry_column_name', '_crs']
@@ -957,6 +971,8 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
         pod_path_format = '{pod_root}/{pod}'
         path_format     = '{pod_path_format}/{chunk_name}' if path_format is None else path_format
+
+        pods_written = []
         
         grouped = self.groupby(self.to_stare_level(level=level, clear_to_level=True)[self._sid_column_name])
         for group in grouped.groups:
@@ -983,18 +999,71 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
             write_pod_pickle(g,fname,append)
 
-        return
-        
+            pods_written.append(fname)
+
+        return pods_written
+
+#    def write_pods_granule_group(self,args):
+#        group=args[0]
+#        pod_path_format=args[1]
+#        pod_root=args[2]
+#        chunk_name=args[3]
+#
+#        if True:
+#            # print('group: ',group,type(group),grouped.get_group(group).size)
+#            if group < 0:
+#                continue
+#            g = grouped.get_group(group)
+#            if hex:
+#                pod = pystare.int2hex(group)
+#            else:
+#                pod = group
+#
+#            dname = pod_path_format.format(pod_root=pod_root,pod=pod)
+#            if not Path(dname).exists():
+#                Path(dname).mkdir()
+#                pass
+#
+#            # One might cheat and use the fact that ts_start and ts_end are for the granule, so index to [0]        
+#            t_mnmx  = min(self.ts_start),max(self.ts_end)
+#            dt_mnmx = [t.to_pydatetime() for t in t_mnmx]
+#            ds_tid  = pystare.tiv_from_datetime2(dt_mnmx)
+#
+#            # ds_tpod = pystare.make_tpod_tuple(ds_tid,temporal_resolution)
+#            # tpod        = pystare.hex16(ds_tpod[0])
+#            tchunk_name = pystare.hex16(ds_tid)
+#            fname = path_format.format(pod_path_format=dname
+#                                           , chunk_name=chunk_name
+#                                           , tchunk_name=tchunk_name
+#                                           )
+#            write_pod_pickle(g,fname,append)
+#        
+#        return
+    
     def write_pods_granule(self, pod_root, level, chunk_name, hex=True, path_format=None, append=False):
+        start0 = time.time()
         pod_path_format = '{pod_root}/{pod}'
         path_format = '{pod_path_format}/{tchunk_name}-{chunk_name}' if path_format is None else path_format
 
+        pods_written = []
+
+        start = time.time()
         grouped = self.groupby(self.to_stare_level(level=level, clear_to_level=True)[self._sid_column_name])
+        logging.info('Grouping chunk %s took %d seconds.'%(chunk_name,time.time()-start)) 
+        
         for group in grouped.groups:
+
+# Future            
+#            self.write_pods_granule_group(self,(group,pod_path_format,pod_root,chunk_name))
+            
             # print('group: ',group,type(group),grouped.get_group(group).size)
             if group < 0:
                 continue
+            
+            start = time.time()
             g = grouped.get_group(group)
+            logging.info('Get group %s took %d seconds.'%(group,time.time()-start)) 
+            
             if hex:
                 pod = pystare.int2hex(group)
             else:
@@ -1005,9 +1074,16 @@ class STAREDataFrame(geopandas.GeoDataFrame):
                 Path(dname).mkdir()
                 pass
 
-            t_mnmx  = min(self.ts_start),max(self.ts_end)
+            # One might cheat and use the fact that ts_start and ts_end are for the granule, so index to [0]
+            start = time.time()
+            # t_mnmx  = min(self.ts_start),max(self.ts_end)
+            t_mnmx  = (self['ts_start'].min(),self['ts_end'].max())
+            logging.info('Get group %s min/max took %d seconds.'%(group,time.time()-start))
+
+            start = time.time()
             dt_mnmx = [t.to_pydatetime() for t in t_mnmx]
             ds_tid  = pystare.tiv_from_datetime2(dt_mnmx)
+            logging.info('Get group %s min/max tiv took %d seconds.'%(group,time.time()-start)) 
 
             # ds_tpod = pystare.make_tpod_tuple(ds_tid,temporal_resolution)
             # tpod        = pystare.hex16(ds_tpod[0])
@@ -1017,8 +1093,10 @@ class STAREDataFrame(geopandas.GeoDataFrame):
                                            , tchunk_name=tchunk_name
                                            )
             write_pod_pickle(g,fname,append)
-        
-        return
+            pods_written.append(fname)
+
+        logging.info('write_pods_granule chunk %s took %d seconds total.'%(chunk_name,time.time()-start0)) 
+        return pods_written
         
         
     def write_pods_tpod(self
@@ -1031,6 +1109,8 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         """
         pod_path_format = '{pod_root}/{pod}'
         path_format = '{pod_path_format}/{tpod_name}-{tchunk_name}-{chunk_name}' if path_format is None else path_format
+
+        pods_written = []
 
         grouped = self.groupby(self.to_stare_level(level=level, clear_to_level=True)[self._sid_column_name])
         for group in grouped.groups:
@@ -1063,8 +1143,9 @@ class STAREDataFrame(geopandas.GeoDataFrame):
                                            , chunk_name=chunk_name
                                            )
             write_pod_pickle(g,fname,append)
+            pods_written.append(fname)
         
-        return
+        return pods_written
 
     ### Just stashing this here for the moment.
     
@@ -1092,6 +1173,8 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
         Appends the dataframe to the pod (pickle), if it exists.
 
+        Returns list of pods written.
+
         Parameters
         --------------
         pod_root: str
@@ -1113,6 +1196,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             Supported options...
             - {'partitioning':'granule'}
             - {'partitioning':'pod','resolution':16 } # 16 => month chunk (28 days)
+
         """
 
         if temporal_chunking is None:
@@ -1134,6 +1218,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
                                                )
 
         if temporal_chunking['partitioning'] == 'pod':
+            raise NotImplementedError
             return self.write_pods_tpod(pod_root=pod_root
                                                , level=level
                                                , chunk_name=chunk_name
@@ -1145,7 +1230,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
         raise(Exception('Pod configuration not supported. temporal_chunking = %s'%(temporal_chunking)))
         
-        return  # write_pods
+        return [] # write_pods
 
     @property
     def _constructor(self):
