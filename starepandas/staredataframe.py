@@ -5,6 +5,7 @@ import numpy
 import starepandas
 import netCDF4
 import starepandas.tools.trixel_conversions
+import starepandas.tools.temporal_conversions
 import multiprocessing
 import pickle
 
@@ -234,11 +235,82 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             frame[frame._sid_column_name] = frame[frame._sid_column_name].astype(numpy.dtype('int64'))
             return frame
 
-    def make_tids(self):
-        pass
+    def make_tids(self, column='ts_start', end_column=None, forward_res=48, reverse_res=48):
+        """
+        Generates and returns the STARE representation of each feauture.
 
-    def set_tids(self):
-        pass
+        Parameters
+        -----------
+        column: str
+            column name containing datetime
+        end_column: str
+            optional. Column containing the end of the timestamp
+        forward_res: int
+            forward resolution
+        reverse_res: int
+            reverse resolution
+        Returns
+        ---------
+        tids: numpy.ndarray
+            array of (set of) STARE index values
+
+        Examples
+        ----------
+        From points
+
+        >>> import starepandas, geopandas
+        """
+        # Autoadjust resolution
+
+        tids = starepandas.tivs_from_timeseries(self[column],
+                                                scale='utc',
+                                                format='datetime64',
+                                                forward_res=forward_res,
+                                                reverse_res=reverse_res)
+        return tids
+
+    def set_sids(self, col, inplace=False):
+        """ Set the StareDataFrame  spatial indices using either an existing column or
+        the specified input. By default, yields a new object.
+        The original tid column is replaced with the input.
+
+        Parameters
+        -------------
+        col: array-like
+            f stare tids or column name
+        inplace: boolean
+            Modify the StareDataFrame in place (do not create a new object)
+
+        Returns
+        ---------
+        df: STAREDataFrame
+            the df with tids
+
+        Examples
+        --------
+        >>> import starepandas
+        >>> sdf = starepandas.STAREDataFrame()
+        >>> tids = [4611686018427387903, 2299435211084507590, 2299566194809236966]
+        >>> sdf.set_tids(tids, inplace=True)
+        """
+
+        # Most of the code here is taken from GeoDataFrame.set_geometry()
+        if inplace:
+            frame = self
+        else:
+            frame = self.copy()
+
+        if isinstance(col, (list, numpy.ndarray, pandas.Series)):
+            frame[frame._tid_column_name] = col
+        elif hasattr(col, "ndim") and col.ndim != 1:
+            raise ValueError("Must pass array with one dimension only.")
+        elif isinstance(col, str) and col in frame.columns:
+            frame._tid_column_name = col
+        else:
+            raise ValueError("Must pass array-like object or column name")
+
+        if not inplace:
+            return frame
 
     def has_trixels(self):
         return self._trixel_column_name in self
@@ -673,7 +745,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
                                                    method=method,
                                                    n_partitions=n_partitions,
                                                    num_workers=num_workers)
-        return pandas.Series(intersects)
+        return pandas.Series(intersects, index=self.index)
 
     def stare_disjoint(self, other, method='binsearch', n_workers=1):
         """  Returns a ``Series`` of ``dtype('bool')`` with value ``True`` for

@@ -1,4 +1,3 @@
-
 import glob
 import numpy
 import os
@@ -28,12 +27,14 @@ def read_pods(pod_root
                   , path_delimiter=None
                   , temporal_pattern=None
                   , temporal_pattern_tid_index=None
-                  , verbose = False
+                  , verbose=False
                   ):
     """ Reads a STAREDataframe from a directory of STAREPods
 
     Parameters
     -----------
+    verbose
+    path_delimiter
     pod_root: str
         Root directory containing the pods
     sids: array-like
@@ -274,5 +275,5 @@ if case == 'tpod':
         df = None
 
 #-    print('..')
-        
+
     return df

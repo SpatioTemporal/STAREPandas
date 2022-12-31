@@ -101,7 +101,7 @@ def sids_from_geoseries(series, level, convex=False, force_ccw=True, n_partition
         sids.name = 'sids'
         return sids
     else:
-        ddf = dask.dataframe.from_pandas(series, npartitions=n_partitions, )
+        ddf = dask.dataframe.from_pandas(series, npartitions=n_partitions)
         meta = {'name': 'int64'}
         res = ddf.map_partitions(sids_from_geoseries, level=level, convex=convex,
                                  force_ccw=force_ccw, n_partitions=1, num_workers=1, meta=meta)
@@ -563,7 +563,7 @@ def speedy_subset(df, roi_sids):
     df: starepandas.STAREDataFrame
         the dataframe that is to be subset
     roi_sids: array-like
-        a set of SIDs describing the roi to whch the df is to be subset
+        a set of SIDs describing the roi to which the df is to be subset
     """
     roi_sids = numpy.array(roi_sids)
 
