@@ -608,7 +608,7 @@ def split_antimeridian(trixels, drop=False):
     trixels = geopandas.GeoSeries(trixels, crs='EPSG:4326')
     exploded = trixels.explode(index_parts=True).reset_index(drop=True)
 
-    for idx, trixel in exploded.iteritems():
+    for idx, trixel in exploded.items(): # future warning; items or iter
         if not trixel.exterior.is_ccw:
             # If trixels are not CCW, they have been constructed incorrectly.
             # We wrap their vertices around the antimeridian
