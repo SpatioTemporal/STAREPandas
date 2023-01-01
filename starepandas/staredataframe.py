@@ -1062,37 +1062,6 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
         return pods_written
 
-    def write_pods_granule_group(self, args):
-       group=args[0]
-       pod_path_format=args[1]
-       pod_root=args[2]
-       chunk_name=args[3]
-
-       if True:
-           if group < 0:
-               return
-           g = grouped.get_group(group)
-           if hex:
-               pod = pystare.int2hex(group)
-           else:
-               pod = group
-
-           dname = pod_path_format.format(pod_root=pod_root,pod=pod)
-           if not Path(dname).exists():
-               Path(dname).mkdir()
-               pass
-
-           # One might cheat and use the fact that ts_start and ts_end are for the granule, so index to [0]
-           t_mnmx  = min(self.ts_start),max(self.ts_end)
-           dt_mnmx = [t.to_pydatetime() for t in t_mnmx]
-           ds_tid  = pystare.tiv_from_datetime2(dt_mnmx)
-
-           # ds_tpod = pystare.make_tpod_tuple(ds_tid,temporal_resolution)
-           # tpod        = pystare.hex16(ds_tpod[0])
-           tchunk_name = pystare.hex16(ds_tid)
-           fname = path_format.format(pod_path_format=dname, chunk_name=chunk_name, tchunk_name=tchunk_name)
-           write_pod_pickle(g, fname, append)
-    
     def write_pods_granule(self, pod_root, level, chunk_name, hex=True, path_format=None, append=False):
         start0 = time.time()
         pod_path_format = '{pod_root}/{pod}'
