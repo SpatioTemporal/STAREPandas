@@ -247,7 +247,7 @@ class Mod03(Modis):
             self.read_dataset(dataset_name=dataset_name, resample_factor=resample_factor)
 
     def read_scan_times(self):
-        "C.f. https://modis.gsfc.nasa.gov/data/atbd/atbd_mod28_v3.pdf page 3-23."
+        """C.f. https://modis.gsfc.nasa.gov/data/atbd/atbd_mod28_v3.pdf page 3-23."""
 
         raise NotImplementedError
         
@@ -257,12 +257,12 @@ class Mod03(Modis):
         t_0 = ds_ev_start_time.get() #
         print('t_0 shape, type: ',t_0.shape,type(t_0),t_0.dtype,type(t_0[0]))
         t_frame   = 333.333e-6 # seconds
-        t_latch0k = numpy.zeros([203,1354],dtype=ev_type)
-        t_offsetj  = numpy.zeros([36],dtype=ev_type)
-        F_30 = -14 # leading band location
+        t_latch_0k = numpy.zeros([203,1354],dtype=ev_type)
+        t_offset_j  = numpy.zeros([36],dtype=ev_type)
+        f_30 = -14 # leading band location
 
         # cf. ATBD Table 3.3 pg 3-18
-        Fj = {
+        f_j = {
             'Ideal Band': 0,
             0: 0,
             1: 0.25,
@@ -307,27 +307,26 @@ class Mod03(Modis):
             36: 8
             }
 
-        Foffsetj = {1:0.75,2:0.75} # 250m
-        for j in range(3,7): # 500m
-            Foffsetj[j] = 0.5
-        for j in range(8,36): # 1km            
-            Foffsetj[j] = 0   
+        f_offset_j = {1:0.75, 2:0.75} # 250m
+        for j in range(3, 7): # 500m
+            f_offset_j[j] = 0.5
+        for j in range(8, 36): # 1km            
+            f_offset_j[j] = 0   
 
-        Nsamp = {1:4,2:4} # 250m
-        for j in range(3,7): # 500m
-            Nsamp[j] = 2
+        n_samples = {1:4, 2:4} # 250m
+        for j in range(3, 7): # 500m
+            n_samples[j] = 2
         for j in range(8,36): # 1km
-            Nsamp[j] = 1 
+            n_samples[j] = 1 
     
         for s in range(203): # scan
             for k in range(1354): # frame
-                t_latch0k[s,k] = t_0[s] + t_frame * (k - F_30)
+                t_latch_0k[s, k] = t_0[s] + t_frame * (k - f_30)
 
         for j in range(36):
-            t_offsetj[j] = t_frame*(Fj[j]-Foffsetj[j])
+            t_offset_j[j] = t_frame*(f_j[j]-f_offset_j[j])
 
         # "The time offsets t_offset of the samples i of higher resolution bands are: t_o_ij = t_o_j+T_f*((i-1)/Nsamp[j])
-
         if self.nom_res == '500m':
             resample_factor_along  = 20
             resample_factor_across = 2
@@ -336,14 +335,12 @@ class Mod03(Modis):
             resample_factor_along = 10
             resample_factor_across = None
             t_latch_ijk = numpy.zeros([203,1354],dtype=ev_type)
-            t_latch_ijk[:] = t_latch0k[:] + 0.0 # need to add t_ovvsetj[j] but what j to use?
+            t_latch_ijk[:] = t_latch_0k[:] + 0.0 # need to add t_ovvsetj[j] but what j to use?
 
-        t_ = t_latch0k.repeat(resample_factor_along,axis=0)
+        t_ = t_latch_0k.repeat(resample_factor_along,axis=0)
         if resample_factor_across is not None:
-            t_ = t_latch0k.repeat(resample_factor_across,axis=1)
-        
-        self.data['t_'] = t_
-        
+            t_ = t_latch_0k.repeat(resample_factor_across,axis=1)        
+        self.data['t_'] = t_  # not a good variable name!
         return
 
 class Mod05(Modis):

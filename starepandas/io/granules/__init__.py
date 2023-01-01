@@ -170,7 +170,6 @@ def granule_factory(file_path, sidecar_path=None, nom_res=None):
 
     for regex, make_granule in granule_factory_library.items():
         if re.search(regex, file_path, re.IGNORECASE):
-            print('regex, make_granule: ',regex,make_granule,file_path,sidecar_path)
             return make_granule(file_path, sidecar_path)
     raise UnsupportedFileError(file_path)
     return None

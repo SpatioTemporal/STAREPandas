@@ -33,7 +33,7 @@ def tivs_from_timeseries(series, scale='utc', format='datetime64', forward_res=4
     | 12-00       | Year                       |
     +-------------+----------------------------+
 
-        ..tabularcolumns::
+    ..tabularcolumns::
     +-------------+----------------------------+
     | Resolutions | Unit                       |
     +=============+============================+
