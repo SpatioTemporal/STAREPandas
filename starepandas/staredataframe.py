@@ -5,6 +5,7 @@ import numpy
 import starepandas
 import netCDF4
 import starepandas.tools.trixel_conversions
+import starepandas.tools.temporal_conversions
 import multiprocessing
 import pickle
 
@@ -29,7 +30,7 @@ def compress_sids_group(group):
 
 
 def write_pod_pickle(g,fname,append=False):
-    "Write or append to a pickle."
+    """Write or append to a pickle."""
     logging.info('Writing to pickle: %s'%fname)
     if append :
         with open(fname,'a+b') as f:
@@ -40,16 +41,14 @@ def write_pod_pickle(g,fname,append=False):
         with open(fname,'w+b') as f:
             pickle.dump(g,f)
             logging.info('Writing chunk %s took %d seconds.'%(fname,time.time()-start))
-            return
 
-def write_pod_hdf(g,fname,append=False):
-    "Write or append to an HDF file."
+def write_pod_hdf(g, fname, append=False):
+    """Write or append to an HDF file."""
     raise NotImplementedError
-    if append :
+    if append:
         pass
     else:
         pass
-    return 
 
 class STAREDataFrame(geopandas.GeoDataFrame):
     _metadata = ['_sid_column_name', '_trixel_column_name', '_geometry_column_name', '_crs']
@@ -91,7 +90,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         >>> sdf = starepandas.STAREDataFrame(data, sids=sids)
         """
 
-        super(STAREDataFrame, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
 
         if args and isinstance(args[0], (geopandas.GeoDataFrame, STAREDataFrame)):
             self._geometry_column_name = args[0]._geometry_column_name
@@ -113,7 +112,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
     def __getitem__(self, key):
 
-        result = super(STAREDataFrame, self).__getitem__(key)
+        result = super().__getitem__(key)
         sid_col = self._sid_column_name
 
         if isinstance(result, (geopandas.GeoDataFrame, pandas.DataFrame, starepandas.STAREDataFrame)):
@@ -132,7 +131,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         if attr == "stare":
             object.__setattr__(self, attr, val)
         else:
-            super(STAREDataFrame, self).__setattr__(attr, val)
+            super().__setattr__(attr, val)
 
     def make_sids(self, level, convex=False, force_ccw=True, n_partitions=1):
         """
@@ -180,15 +179,60 @@ class STAREDataFrame(geopandas.GeoDataFrame):
                                                force_ccw=force_ccw, n_partitions=n_partitions)
         return sids
 
+    def drop_na_sids(self, inplace=False):
+        """Drop all rows that have NA values for the SIDs and cast the column to numpy.int64 """
+        if inplace:
+            self.dropna(subset=[self._sid_column_name], inplace=inplace)
+            self[self._sid_column_name] = self[self._sid_column_name].astype(numpy.dtype('int64'))
+        else:
+            frame = self.copy()
+            frame = frame.dropna(subset=[frame._sid_column_name], inplace=inplace)
+            frame[frame._sid_column_name] = frame[frame._sid_column_name].astype(numpy.dtype('int64'))
+            return frame
+
+    def make_tids(self, column='ts_start', end_column=None, forward_res=48, reverse_res=48):
+        """
+        Generates and returns the STARE representation of each feauture.
+
+        Parameters
+        -----------
+        column: str
+            column name containing datetime
+        end_column: str
+            optional. Column containing the end of the timestamp
+        forward_res: int
+            forward resolution
+        reverse_res: int
+            reverse resolution
+        Returns
+        ---------
+        tids: numpy.ndarray
+            array of (set of) STARE index values
+
+        Examples
+        ----------
+        From points
+
+        >>> import starepandas, geopandas
+        """
+        # Autoadjust resolution
+
+        tids = starepandas.tivs_from_timeseries(self[column],
+                                                scale='utc',
+                                                format='datetime64',
+                                                forward_res=forward_res,
+                                                reverse_res=reverse_res)
+        return tids
+
     def set_sids(self, col, inplace=False):
-        """ Set the StareDataFrame stare indices using either an existing column or
+        """ Set the StareDataFrame  spatial indices using either an existing column or
         the specified input. By default, yields a new object.
-        The original stare column is replaced with the input.
+        The original tid column is replaced with the input.
 
         Parameters
         -------------
         col: array-like
-            f stare indices or column name
+            f stare sids or column name
         inplace: boolean
             Modify the StareDataFrame in place (do not create a new object)
 
@@ -223,22 +267,48 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         if not inplace:
             return frame
 
-    def drop_na_sids(self, inplace=False):
-        """Drop all rows that have NA values for the SIDs and cast the column to numpy.int64 """
+    def set_tids(self, col, inplace=False):
+        """ Set the StareDataFrame temporal indices using either an existing column or
+        the specified input. By default, yields a new object.
+        The original tid column is replaced with the input.
+
+        Parameters
+        -------------
+        col: array-like
+            f stare tids or column name
+        inplace: boolean
+            Modify the StareDataFrame in place (do not create a new object)
+
+        Returns
+        ---------
+        df: STAREDataFrame
+            the df with tids
+
+        Examples
+        --------
+        >>> import starepandas
+        >>> sdf = starepandas.STAREDataFrame()
+        >>> tids = [4611686018427387903, 2299435211084507590, 2299566194809236966]
+        >>> sdf.set_tids(tids, inplace=True)
+        """
+
+        # Most of the code here is taken from GeoDataFrame.set_geometry()
         if inplace:
-            self.dropna(subset=[self._sid_column_name], inplace=inplace)
-            self[self._sid_column_name] = self[self._sid_column_name].astype(numpy.dtype('int64'))
+            frame = self
         else:
             frame = self.copy()
-            frame = frame.dropna(subset=[frame._sid_column_name], inplace=inplace)
-            frame[frame._sid_column_name] = frame[frame._sid_column_name].astype(numpy.dtype('int64'))
+
+        if isinstance(col, (list, numpy.ndarray, pandas.Series)):
+            frame[frame._tid_column_name] = col
+        elif hasattr(col, "ndim") and col.ndim != 1:
+            raise ValueError("Must pass array with one dimension only.")
+        elif isinstance(col, str) and col in frame.columns:
+            frame._tid_column_name = col
+        else:
+            raise ValueError("Must pass array-like object or column name")
+
+        if not inplace:
             return frame
-
-    def make_tids(self):
-        pass
-
-    def set_tids(self):
-        pass
 
     def has_trixels(self):
         return self._trixel_column_name in self
@@ -549,7 +619,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         gring = starepandas.tools.trixel_conversions.corners2gring(corners)
         return gring
 
-    def split_antimeridian(self, inplace=False, n_workers=1, drop=False):
+    def split_antimeridian(self, inplace=False, drop=False):
         """Splits trixels at the antimeridian
 
         This works on trixels that cross the meridian and whose longitudes have *not* been wrapped around the
@@ -673,7 +743,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
                                                    method=method,
                                                    n_partitions=n_partitions,
                                                    num_workers=num_workers)
-        return pandas.Series(intersects)
+        return pandas.Series(intersects, index=self.index)
 
     def stare_disjoint(self, other, method='binsearch', n_workers=1):
         """  Returns a ``Series`` of ``dtype('bool')`` with value ``True`` for
@@ -728,8 +798,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             data.append(pystare.intersection(srange, other))
         return pandas.Series(data, index=self.index)
 
-    def stare_dissolve(self, by=None, compress_sids=True, num_workers=1,
-                       geom=False, aggfunc="first", **kwargs):
+    def stare_dissolve(self, by=None, num_workers=1, geom=False, aggfunc="first", **kwargs):
         """
         Dissolves a dataframe subject to a field. I.e. grouping by a field/column.
         Seminal method to GeoDataFrame.dissolve()
@@ -738,9 +807,6 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         -------------
         by: str
             column to use the dissolve on. If None, dissolve all rows.
-        compress_sids: bool
-            Toggle if STARE index values get dissolved. If not, sids will be appended.
-            If not dissolved, there may be repetitive sids and sids that could get merged into the parent sid.
         num_workers: int
             workers to use for the dissolve
         geom: bool
@@ -819,7 +885,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
     def to_stare_level(self, level, inplace=False, clear_to_level=False):
         """
         Changes level of STARE index values to level; optionally clears location bits up to level.
-        Caution: This method is not intended for use on feautures represented by sets of sids.
+        Caution: This method is not intended for use on features represented by sets of sids.
 
         Parameters
         ------------
@@ -891,14 +957,14 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         if not inplace:
             return df
 
-    def to_stare_singllevel(self, level=None, inplace=False):
+    def to_stare_singlelevel(self, level=None, inplace=False):
         """
         Changes the STARE index values to single level representation (in contrary to multiresolution).
 
         Parameters
         -----------
         level: int
-            level to change thre
+            level to change the sids to
         inplace: bool
             If True, modifies the DataFrame in place (do not create a new object).
 
@@ -914,7 +980,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         >>> germany = starepandas.STAREDataFrame(germany, add_sids=True, level=6, add_trixels=False)
         >>> len(germany.sids.iloc[0])
         43
-        >>> germany_singleres = germany.to_stare_singllevel()
+        >>> germany_singleres = germany.to_stare_singlelevel()
         >>> len(germany_singleres.sids.iloc[0])
         46
         """
@@ -964,14 +1030,9 @@ class STAREDataFrame(geopandas.GeoDataFrame):
                 sids.append(pystare.int2hex(row))
         return sids
 
-    def write_pods_spatial(self
-                               , pod_root, level, chunk_name, hex=True, path_format=None
-                               , append=False
-                               ):
-
+    def write_pods_spatial(self, pod_root, level, chunk_name, hex=True, path_format=None, append=False):
         pod_path_format = '{pod_root}/{pod}'
         path_format     = '{pod_path_format}/{chunk_name}' if path_format is None else path_format
-
         pods_written = []
         
         grouped = self.groupby(self.to_stare_level(level=level, clear_to_level=True)[self._sid_column_name])
@@ -996,50 +1057,11 @@ class STAREDataFrame(geopandas.GeoDataFrame):
                 Path(dname).mkdir()
 
             fname = path_format.format(pod_path_format=dname, chunk_name=chunk_name)
-
             write_pod_pickle(g,fname,append)
-
             pods_written.append(fname)
 
         return pods_written
 
-#    def write_pods_granule_group(self,args):
-#        group=args[0]
-#        pod_path_format=args[1]
-#        pod_root=args[2]
-#        chunk_name=args[3]
-#
-#        if True:
-#            # print('group: ',group,type(group),grouped.get_group(group).size)
-#            if group < 0:
-#                continue
-#            g = grouped.get_group(group)
-#            if hex:
-#                pod = pystare.int2hex(group)
-#            else:
-#                pod = group
-#
-#            dname = pod_path_format.format(pod_root=pod_root,pod=pod)
-#            if not Path(dname).exists():
-#                Path(dname).mkdir()
-#                pass
-#
-#            # One might cheat and use the fact that ts_start and ts_end are for the granule, so index to [0]        
-#            t_mnmx  = self.ts_start.min(),self.ts_start.max() # Fixed 2022-1231
-#            dt_mnmx = [t.to_pydatetime() for t in t_mnmx]
-#            ds_tid  = pystare.tiv_from_datetime2(dt_mnmx)
-#
-#            # ds_tpod = pystare.make_tpod_tuple(ds_tid,temporal_resolution)
-#            # tpod        = pystare.hex16(ds_tpod[0])
-#            tchunk_name = pystare.hex16(ds_tid)
-#            fname = path_format.format(pod_path_format=dname
-#                                           , chunk_name=chunk_name
-#                                           , tchunk_name=tchunk_name
-#                                           )
-#            write_pod_pickle(g,fname,append)
-#        
-#        return
-    
     def write_pods_granule(self, pod_root, level, chunk_name, hex=True, path_format=None, append=False):
         start0 = time.time()
         pod_path_format = '{pod_root}/{pod}'
@@ -1053,11 +1075,10 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         
         for group in grouped.groups:
 
-# Future            
-#            self.write_pods_granule_group(self,(group,pod_path_format,pod_root,chunk_name))
-            
+            # Future            
+            # self.write_pods_granule_group(self,(group,pod_path_format,pod_root,chunk_name))            
             # print('group: ',group,type(group),grouped.get_group(group).size)
-            if group < 0:
+            if group < 0: # This cannot be right. group is a dictionary.
                 continue
             
             start = time.time()
@@ -1087,34 +1108,46 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             # ds_tpod = pystare.make_tpod_tuple(ds_tid,temporal_resolution)
             # tpod        = pystare.hex16(ds_tpod[0])
             tchunk_name = pystare.hex16(ds_tid)
-            fname = path_format.format(pod_path_format=dname
-                                           , chunk_name=chunk_name
-                                           , tchunk_name=tchunk_name
-                                           )
+            fname = path_format.format(pod_path_format=dname, chunk_name=chunk_name, tchunk_name=tchunk_name)
             write_pod_pickle(g,fname,append)
             pods_written.append(fname)
 
-        logging.info('write_pods_granule chunk %s took %d seconds total.'%(chunk_name,time.time()-start0)) 
+        logging.info('write_pods_granule chunk %s took %d seconds total.'%(chunk_name, time.time()-start0))
         return pods_written
-        
-        
-    def write_pods_tpod(self
-                               , pod_root, level, chunk_name, hex=True, path_format=None
-                               , append=False
-                               , temporal_chunking_resolution=16 # Native month (28 days)
-                               ):
+
+    def write_pods_tpod(self, pod_root, level, chunk_name, hex=True, path_format=None, append=False,
+                        temporal_chunking_resolution=16):
+        """
+        Parameters
+        ----------
+        pod_root: str
+        level: int
+        chunk_name: str
+        hex: bool
+            toggle hex
+        path_format
+        append: bool
+        temporal_chunking_resolution: int
+            defaults to 16 (28 days)
+
+        Returns
+        -------
+
+        """
+
         """
         TODO: Add temporal partitioning. Currently broken.
         """
+        raise NotImplementedError
+
         pod_path_format = '{pod_root}/{pod}'
         path_format = '{pod_path_format}/{tpod_name}-{tchunk_name}-{chunk_name}' if path_format is None else path_format
-
         pods_written = []
 
         grouped = self.groupby(self.to_stare_level(level=level, clear_to_level=True)[self._sid_column_name])
         for group in grouped.groups:
             # print('group: ',group,type(group),grouped.get_group(group).size)
-            if group < 0:
+            if group < 0: # cannot be right. group is a dictionary
                 continue
             g = grouped.get_group(group)
             if hex:
@@ -1161,13 +1194,8 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             ###                                    , tchunk_name=tchunk_name
             ###                                    )
             ###             os.symlink(fname,dst_name) # creates dst_name symlinking to fname (the src)
-    
 
-                    
-    def write_pods(self, pod_root, level, chunk_name, hex=True, path_format=None
-                       , append=False
-                       , temporal_chunking=None
-                       ):
+    def write_pods(self, pod_root, level, chunk_name, hex=True, path_format=None, append=False, temporal_chunking=None):
         """ Writes dataframe into a STAREPods hierarchy.
 
         Appends the dataframe to the pod (pickle), if it exists.
@@ -1195,41 +1223,20 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             Supported options...
             - {'partitioning':'granule'}
             - {'partitioning':'pod','resolution':16 } # 16 => month chunk (28 days)
-
         """
 
         if temporal_chunking is None:
-            return self.write_pods_spatial(pod_root=pod_root
-                                               , level=level
-                                               , chunk_name=chunk_name
-                                               , hex=hex
-                                               , path_format=path_format
-                                               , append=append
-                                               )
-
-        if temporal_chunking['partitioning'] == 'granule':
-            return self.write_pods_granule(pod_root=pod_root
-                                               , level=level
-                                               , chunk_name=chunk_name
-                                               , hex=hex
-                                               , path_format=path_format
-                                               , append=append
-                                               )
-
-        if temporal_chunking['partitioning'] == 'pod':
-            raise NotImplementedError
-            return self.write_pods_tpod(pod_root=pod_root
-                                               , level=level
-                                               , chunk_name=chunk_name
-                                               , hex=hex
-                                               , path_format=path_format
-                                               , append=append
-                                               , temporal_chunking_resolution=temporal_chunking['resolution']
-                                               )
-
-        raise(Exception('Pod configuration not supported. temporal_chunking = %s'%(temporal_chunking)))
-        
-        return [] # write_pods
+            return self.write_pods_spatial(pod_root=pod_root, level=level, chunk_name=chunk_name, hex=hex,
+                                           path_format=path_format, append=append)
+        elif temporal_chunking['partitioning'] == 'granule':
+            return self.write_pods_granule(pod_root=pod_root, level=level, chunk_name=chunk_name, hex=hex,
+                                           path_format=path_format, append=append)
+        elif temporal_chunking['partitioning'] == 'pod':
+            return self.write_pods_tpod(pod_root=pod_root, level=level, chunk_name=chunk_name, hex=hex,
+                                        path_format=path_format, append=append,
+                                        temporal_chunking_resolution=temporal_chunking['resolution'])
+        else:
+            raise(Exception('Pod configuration not supported. temporal_chunking = %s'%(temporal_chunking)))
 
     @property
     def _constructor(self):
@@ -1356,9 +1363,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 def _dataframe_set_sids(self, col, inplace=False):
     # We create a function here so that we can take conventional DataFrames and convert them to sdfs
     if inplace:
-        raise ValueError(
-            "Can't do inplace setting when converting from (Geo)DataFrame to STAREDataFrame"
-        )
+        raise ValueError("Can't do inplace setting when converting from (Geo)DataFrame to STAREDataFrame")
     sdf = STAREDataFrame(self)
     # this will copy so that BlockManager gets copied
     return sdf.set_sids(col, inplace=False)

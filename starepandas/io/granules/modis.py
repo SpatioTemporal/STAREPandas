@@ -86,7 +86,7 @@ class Modis(Granule):
     def read_dataset(self, dataset_name, resample_factor=None):
         ds = self.hdf.select(dataset_name)
         data = ds.get()
-        print('data shape: ',data.shape)
+        dtype = data.dtype
         if resample_factor is not None:
             data = self.resample(array=data, factor=resample_factor)
 
@@ -112,7 +112,7 @@ class Modis(Granule):
         array = array.repeat(factor, axis=1)
         return array
 
-    def decode_qa(self, qa_name):
+    def decode_band_quality(self, qa_name):
         """
         Decode QA
 
@@ -138,9 +138,9 @@ class Modis(Granule):
         Note that a value of (11) overrides a value of (01).";
         """
         qa = self.data[qa_name]
-        #qa = state_series.apply(lambda x: '{:032b}'.format(x)[::-1])
-        #df = starepandas.STAREDataFrame(index=state.index)
-        #df['modland_qa'] = state.str.slice(start=0, stop=2).apply(lambda x: x[::-1]).astype('u1')
+        # qa = state_series.apply(lambda x: '{:032b}'.format(x)[::-1])
+        # df = starepandas.STAREDataFrame(index=state.index)
+        # df['modland_qa'] = state.str.slice(start=0, stop=2).apply(lambda x: x[::-1]).astype('u1')
 
     def decode_state(self, state_ds):
         """
@@ -185,6 +185,7 @@ class Modis(Granule):
 
 
 class Mod09(Modis):
+
     def __init__(self, file_path, sidecar_path=None, nom_res=None):
         super(Mod09, self).__init__(file_path, sidecar_path)
         if nom_res is None:
@@ -246,7 +247,7 @@ class Mod03(Modis):
             self.read_dataset(dataset_name=dataset_name, resample_factor=resample_factor)
 
     def read_scan_times(self):
-        "C.f. https://modis.gsfc.nasa.gov/data/atbd/atbd_mod28_v3.pdf page 3-23."
+        """C.f. https://modis.gsfc.nasa.gov/data/atbd/atbd_mod28_v3.pdf page 3-23."""
 
         raise NotImplementedError
         
@@ -256,12 +257,12 @@ class Mod03(Modis):
         t_0 = ds_ev_start_time.get() #
         print('t_0 shape, type: ',t_0.shape,type(t_0),t_0.dtype,type(t_0[0]))
         t_frame   = 333.333e-6 # seconds
-        t_latch0k = numpy.zeros([203,1354],dtype=ev_type)
-        t_offsetj  = numpy.zeros([36],dtype=ev_type)
-        F_30 = -14 # leading band location
+        t_latch_0k = numpy.zeros([203,1354],dtype=ev_type)
+        t_offset_j  = numpy.zeros([36],dtype=ev_type)
+        f_30 = -14 # leading band location
 
         # cf. ATBD Table 3.3 pg 3-18
-        Fj = {
+        f_j = {
             'Ideal Band': 0,
             0: 0,
             1: 0.25,
@@ -306,27 +307,26 @@ class Mod03(Modis):
             36: 8
             }
 
-        Foffsetj = {1:0.75,2:0.75} # 250m
-        for j in range(3,7): # 500m
-            Foffsetj[j] = 0.5
-        for j in range(8,36): # 1km            
-            Foffsetj[j] = 0   
+        f_offset_j = {1:0.75, 2:0.75} # 250m
+        for j in range(3, 7): # 500m
+            f_offset_j[j] = 0.5
+        for j in range(8, 36): # 1km            
+            f_offset_j[j] = 0   
 
-        Nsamp = {1:4,2:4} # 250m
-        for j in range(3,7): # 500m
-            Nsamp[j] = 2
+        n_samples = {1:4, 2:4} # 250m
+        for j in range(3, 7): # 500m
+            n_samples[j] = 2
         for j in range(8,36): # 1km
-            Nsamp[j] = 1 
+            n_samples[j] = 1 
     
         for s in range(203): # scan
             for k in range(1354): # frame
-                t_latch0k[s,k] = t_0[s] + t_frame * (k - F_30)
+                t_latch_0k[s, k] = t_0[s] + t_frame * (k - f_30)
 
         for j in range(36):
-            t_offsetj[j] = t_frame*(Fj[j]-Foffsetj[j])
+            t_offset_j[j] = t_frame*(f_j[j]-f_offset_j[j])
 
         # "The time offsets t_offset of the samples i of higher resolution bands are: t_o_ij = t_o_j+T_f*((i-1)/Nsamp[j])
-
         if self.nom_res == '500m':
             resample_factor_along  = 20
             resample_factor_across = 2
@@ -335,14 +335,12 @@ class Mod03(Modis):
             resample_factor_along = 10
             resample_factor_across = None
             t_latch_ijk = numpy.zeros([203,1354],dtype=ev_type)
-            t_latch_ijk[:] = t_latch0k[:] + 0.0 # need to add t_ovvsetj[j] but what j to use?
+            t_latch_ijk[:] = t_latch_0k[:] + 0.0 # need to add t_ovvsetj[j] but what j to use?
 
-        t_ = t_latch0k.repeat(resample_factor_along,axis=0)
+        t_ = t_latch_0k.repeat(resample_factor_along,axis=0)
         if resample_factor_across is not None:
-            t_ = t_latch0k.repeat(resample_factor_across,axis=1)
-        
-        self.data['t_'] = t_
-        
+            t_ = t_latch_0k.repeat(resample_factor_across,axis=1)        
+        self.data['t_'] = t_  # not a good variable name!
         return
 
 class Mod05(Modis):
@@ -413,7 +411,7 @@ def decode_state(state_series):
     return df
 
 
-def decode_qa(state_series):
+def decode_qa(qa_series):
     """
         31      adjacency correction performed      1: yes; 0: no
         30      atmospheric correction performed    1: yes; 0: no
@@ -440,11 +438,12 @@ def decode_qa(state_series):
             3: other reasons some or all bands may be fill value
         Note that a value of (11) overrides a value of (01).";
     """
-    state = state_series.apply(lambda x: '{:032b}'.format(x)[::-1])
-    df = starepandas.STAREDataFrame(index=state.index)
-    df['modland_qa'] = state.str.slice(start=0, stop=2).apply(lambda x: x[::-1]).astype('u1')
-
-    return df
+    qa = qa_series[qa_series.isna() == False]
+    qa = qa.apply(lambda x: '{:032b}'.format(x)[::-1])
+    qa = qa.str.slice(start=0, stop=2)
+    qa = qa.apply(lambda x: x[::-1]).astype('u1')
+    qa = qa.rename('modland')
+    return qa
 
 
 def read_mod09(file_path, roi_sids):
@@ -544,10 +543,14 @@ def transform(geom, from_epsg, to_epsg):
     return shapely.ops.transform(project, geom)
 
 
-def make_ellipse(center_x, center_y, width, height, angle):
+def make_ellipse(point, crs, width, height, angle):
+    transformed = transform(point, 4326, crs)
+    center_x = transformed.x
+    center_y = transformed.y
     ellipse = matplotlib.patches.Ellipse((center_x, center_y), width, height, angle)
     vertices = ellipse.get_verts()  # get the vertices from the ellipse object
     ellipse = shapely.geometry.LinearRing(vertices)
+    ellipse = transform(ellipse, crs, 4326)
     return ellipse
 
 
@@ -557,7 +560,7 @@ def make_ellipse_sids(df, crs=3857, n_partitions=None, num_workers=None, level=1
 
     """
     if num_workers is not None and n_partitions is None:
-        n_partitions = num_workers*10
+        n_partitions = num_workers * 10
     elif num_workers is None and n_partitions is None:
         n_partitions = 1
         num_workers = 1
@@ -581,19 +584,15 @@ def make_ellipse_sids(df, crs=3857, n_partitions=None, num_workers=None, level=1
             else:
                 raise
 
-            transformed = transform(point, 4326, crs)
-            center_x = transformed.x
-            center_y = transformed.y
-
             azimuth = row['SensorAzimuth']
             zenith = row['SensorZenith']
 
             width = zenith2width(zenith) * modis_resolution
             height = zenith2height(zenith) * modis_resolution
 
-            angle = 90-azimuth
-            ellipse = make_ellipse(center_x, center_y, width, height, angle)
-            ellipse = transform(ellipse, crs, 4326)
+            angle = 90 - azimuth
+            ellipse = make_ellipse(point, crs, width, height, angle)
+
             ellipse_sids = starepandas.sids_from_ring(ring=ellipse, level=level)
             ellipses_sids.append(ellipse_sids)
         ellipses_sids = numpy.array(ellipses_sids, dtype=object)
@@ -606,4 +605,3 @@ def make_ellipse_sids(df, crs=3857, n_partitions=None, num_workers=None, level=1
         ellipses_sids = list(ellipses_sids)
 
     return ellipses_sids
-

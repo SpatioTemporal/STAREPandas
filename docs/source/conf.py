@@ -76,7 +76,9 @@ html_theme_options = {
     "collapse_navigation": True,
     "show_toc_level": 1,
     "navbar_align": "content",
+    "github_url": "https://github.com/SpatioTemporal/STAREPandas",
 }
+
 
 autosummary_generate = True
 
@@ -85,9 +87,30 @@ autosummary_generate = True
 # so a file named "default.css" will overwrite the builtin "default.css".
 html_static_path = ['_static']
 
-html_css_files = [
-    'style.css',
-]
+html_css_files = ['style.css']
+#html_css_files = ['https://cdn.jupyter.org/notebook/5.1.0/style/style.min.css']
 
+nbsphinx_execute = "auto"
+nbsphinx_allow_errors = True
+nbsphinx_kernel_name = "python3"
+exclude_patterns = ['_build']
+
+
+
+nbsphinx_prolog = r"""
+{% set docname = env.doc2path(env.docname, base=None) %}
+
+.. only:: html
+
+    .. role:: raw-html(raw)
+        :format: html
+
+    .. note::
+
+        | This page was generated from `{{ docname }}`__.
+        
+
+        __ https://github.com/SpatioTemporal/STAREPandas/docs/source/{{ docname }}
+"""
 
 

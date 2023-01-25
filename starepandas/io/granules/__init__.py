@@ -2,7 +2,7 @@ import glob
 import re
 import starepandas
 from .modis import Mod09GA, Mod05, Mod09, Mod03
-from .viirsl2 import VNP02DNB, VNP03DNB, VNP03MOD, CLDMSKL2VIIRS
+from .viirsl2 import VNP02DNB, VNP03DNB, VNP03MOD, VNP03IMG, CLDMSKL2VIIRS, VNP09
 from .ssmis import SSMIS
 from .atms import ATMS
 
@@ -90,6 +90,8 @@ granule_factory_library = {
     'VNP02DNB|VJ102DNB': VNP02DNB,
     'VNP03DNB|VJ103DNB': VNP03DNB,
     'VNP03MOD|VJ103MOD': VNP03MOD,
+    'VNP03IMG|VJ103IMG': VNP03IMG,
+    'VNP09': VNP09,
     'CLDMSKL2VIIRS': CLDMSKL2VIIRS,
     'SSMIS': SSMIS,
     'ATMS': ATMS
@@ -168,7 +170,6 @@ def granule_factory(file_path, sidecar_path=None, nom_res=None):
 
     for regex, make_granule in granule_factory_library.items():
         if re.search(regex, file_path, re.IGNORECASE):
-            print('regex, make_granule: ',regex,make_granule,file_path,sidecar_path)
             return make_granule(file_path, sidecar_path)
     raise UnsupportedFileError(file_path)
     return None
@@ -210,7 +211,7 @@ def read_granule(file_path,
     read_timestamp:
         toggle whether to read the timestamp
     keep_na_sids:
-        toggle whether or not to keep rows containing NA values for sids
+        toggle whether to keep rows containing NA values for sids
 
     Returns
     --------

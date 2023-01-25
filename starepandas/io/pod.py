@@ -1,4 +1,3 @@
-
 import glob
 import numpy
 import os
@@ -9,31 +8,14 @@ import re
 import starepandas
 
 
-## def read_pods_spatial:
-##     return
-## 
-## def read_pods_granule:
-##     return
-## 
-## def read_pods_tpod:
-##     return
-## 
-
-def read_pods(pod_root
-                  , sids=None
-                  , tids=None
-                  , pattern=None
-                  , add_podname=False
-                  , path_format=None
-                  , path_delimiter=None
-                  , temporal_pattern=None
-                  , temporal_pattern_tid_index=None
-                  , verbose = False
-                  ):
+def read_pods(pod_root, sids=None, tids=None, pattern=None, add_podname=False, path_format=None, path_delimiter=None,
+              temporal_pattern=None, temporal_pattern_tid_index=None, verbose=False):
     """ Reads a STAREDataframe from a directory of STAREPods
 
     Parameters
     -----------
+    verbose
+    path_delimiter
     pod_root: str
         Root directory containing the pods
     sids: array-like
@@ -89,7 +71,7 @@ And later on...
 
 <pod-root>/<sid>/<tpod>-<tcover>-<dataset-name-patter>
 
-E.g. 
+E.g.
 
 /pods/0x0a00000000000004/0x1f4a000000000000_16-0x1f4aa87342001e79-MOD09.A2002299.0710.006.2015151173939.pkl
 
@@ -109,7 +91,7 @@ implemented and runs into the issue that the t-pod name isn't currently a valid 
 if case == 'spatial':
     tids = None
     pattern='/MOD09.*'
-    
+
     temporal_pattern           = None
     temporal_pattern_tid_index = None
 
@@ -128,7 +110,7 @@ if case == 'tpod':
 
     tpod_resolution            = 16
     temporal_pattern           = '{pod_path}(0x.{{16}})_%s-(0x.{{16}})-.*'%tpod_resolution
-    temporal_pattern_tid_index = 1 
+    temporal_pattern_tid_index = 1
 
 ### tids should be of the form...
 
@@ -144,8 +126,6 @@ if case == 'tpod':
 
     """
 
-#    print('tids: ',tids)
-    
     sids                       = None if sids is None else sids
     tids                       = None if tids is None else tids
     pattern                    = "*" if pattern is None else pattern
@@ -158,8 +138,8 @@ if case == 'tpod':
         path_format = '{pod_root}{delim1}{sid}' if path_format is None else path_format
 #        tids = [None]
     else:
+        # cf. write_pods()
         # path_format = '{pod_root}{delim1}{sid}{delim2}{tid}' if path_format is None else path_format
-        # cf. write_pods
         path_format = '{pod_root}{delim1}{sid}' if path_format is None else path_format
         tids_cmp = numpy.array(tids).astype(numpy.int64)
         
@@ -173,9 +153,8 @@ if case == 'tpod':
     
     dfs = []
     for sid in sids:
-#-        print()
-#-        print('###########################################################################')
-### If we have temporal pods, then the following makes sense.
+        # print('###########################################################################')
+        # If we have temporal pods, then the following makes sense.
 ###        for tid in tids:
         if True:
             if tids is None:
@@ -236,14 +215,12 @@ if case == 'tpod':
 #-                        print('104: ',pods_to_keep)
                         continue
 #-                    print('105: ',pods_to_keep)
-#-                    print()
                 pods = pods_to_keep
 
 ### Note: we could parse out a tid from the path and compare with the tids.
 ### Somehow only read a file once... If we're doing symlinks... cf. write_pods
 ###            pods = cull_duplicates(pods)
 ###
-#-            print()
 #-            print('300 pods: ',pods)
             for pod in pods:
                 # df = pandas.read_pickle(pod)
@@ -251,7 +228,6 @@ if case == 'tpod':
                 #     df['pod'] = pod
                 # dfs.append(df)
 
-#-                print()
                 not_done = True
                 with open(pod,'rb') as input:
                     if verbose:
@@ -264,15 +240,10 @@ if case == 'tpod':
                             dfs.append(df)
                         except EOFError as e:
                             not_done = False
-
-#-    print('.')
     if dfs != []:
         df = pandas.concat(dfs)
         df.reset_index(inplace=True, drop=True)
         df = starepandas.STAREDataFrame(df)
     else:
         df = None
-
-#-    print('..')
-        
     return df
