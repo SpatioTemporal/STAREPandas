@@ -1025,7 +1025,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 #                pass
 #
 #            # One might cheat and use the fact that ts_start and ts_end are for the granule, so index to [0]        
-#            t_mnmx  = min(self.ts_start),max(self.ts_end)
+#            t_mnmx  = self.ts_start.min(),self.ts_start.max() # Fixed 2022-1231
 #            dt_mnmx = [t.to_pydatetime() for t in t_mnmx]
 #            ds_tid  = pystare.tiv_from_datetime2(dt_mnmx)
 #
@@ -1076,7 +1076,6 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
             # One might cheat and use the fact that ts_start and ts_end are for the granule, so index to [0]
             start = time.time()
-            # t_mnmx  = min(self.ts_start),max(self.ts_end)
             t_mnmx  = (self['ts_start'].min(),self['ts_end'].max())
             logging.info('Get group %s min/max took %d seconds.'%(group,time.time()-start))
 
@@ -1128,7 +1127,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
                 Path(dname).mkdir()
                 pass
 
-            t_mnmx  = min(self.ts_start),max(self.ts_end)
+            t_mnmx  = self.ts_start.min(),self.ts_end.max()
             dt_mnmx = [t.to_pydatetime() for t in t_mnmx]
             ds_tid  = pystare.tiv_from_datetime2(dt_mnmx)
 
