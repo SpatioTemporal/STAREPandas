@@ -1,12 +1,23 @@
+import bz2
 import glob
 import numpy
 import os
 import pandas
 import pickle
+import puremagic
 import pystare
 import re
 import starepandas
 
+def generic_open(filename):
+    try:
+        ext = puremagic.from_file(filename)
+    except puremagic.PureError:
+        return open
+    if ext == '.bz2':
+        return bz2.open
+    else:
+        raise Exception("Filetype %s not implemented for %s"%(ext,filename))
 
 def read_pods(pod_root, sids=None, tids=None, pattern=None, add_podname=False, path_format=None, path_delimiter=None,
               temporal_pattern=None, temporal_pattern_tid_index=None, verbose=False):
@@ -229,7 +240,8 @@ if case == 'tpod':
                 # dfs.append(df)
 
                 not_done = True
-                with open(pod,'rb') as input:
+
+                with generic_open(pod)(pod,'rb') as input:
                     if verbose:
                         print('reading ',pod)
                     while not_done:
@@ -240,6 +252,9 @@ if case == 'tpod':
                             dfs.append(df)
                         except EOFError as e:
                             not_done = False
+
+
+    
     if dfs != []:
         df = pandas.concat(dfs)
         df.reset_index(inplace=True, drop=True)
@@ -247,3 +262,6 @@ if case == 'tpod':
     else:
         df = None
     return df
+
+
+
