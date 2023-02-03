@@ -16,6 +16,8 @@ def generic_open(filename):
         return open
     if ext == '.bz2':
         return bz2.open
+    elif ext == '.pickle':
+        return open
     else:
         raise Exception("Filetype %s not implemented for %s"%(ext,filename))
 
