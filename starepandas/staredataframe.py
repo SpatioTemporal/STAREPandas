@@ -218,13 +218,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         # Autoadjust resolution
         start_col = self[column]
         if not pandas.api.types.is_datetime64_any_dtype(start_col.dtype):
-            raise TypeError('dtype of column must be numpy.datetime64'):
-
-        # Pandas stores all as datetime64[ns]
-        if end_column:
-
-            if end_column
-
+            raise TypeError('dtype of column must be numpy.datetime64')
 
         tids = starepandas.tivs_from_timeseries(self[column],
                                                 scale='utc',
