@@ -52,5 +52,5 @@ jobs:
         pytest --nbmake --nbmake-kernel=testkernel examples/*.ipynb
     - name: Setup tmate session
       uses: mxschmitt/action-tmate@v3
+      #if: ${{ github.event_name == 'pull_request' && inputs.debug_enabled }}
       if: ${{ failure() }}
-
