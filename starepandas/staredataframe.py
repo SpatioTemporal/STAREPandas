@@ -1,3 +1,4 @@
+import bz2
 import geopandas.plotting
 import pystare
 import pandas
@@ -6,6 +7,7 @@ import starepandas
 import netCDF4
 import starepandas.tools.trixel_conversions
 import starepandas.tools.temporal_conversions
+import starepandas.io.pod.generic_open
 import multiprocessing
 import pickle
 
@@ -29,19 +31,26 @@ def compress_sids_group(group):
     return tuple([group[0], sids])
 
 
-def write_pod_pickle(g, fname, append=False):
+def write_pod_pickle(g, fname, append=False, compress=None):
     """Write or append to a pickle."""
     logging.info('Writing to pickle: %s' % fname)
     if append:
-        with open(fname, 'a+b') as f:
+        with starepandas.io.pod.generic_open(fname)(fname, 'a+b') as f:
             pickle.dump(g, f)
     else:
         # Overwrite
         start = time.time()
-        with open(fname, 'w+b') as f:
-            pickle.dump(g, f)
-            logging.info('Writing chunk %s took %d seconds.' % (fname, time.time() - start))
-
+        if compress == None:
+            with open(fname, 'w+b') as f:
+                pickle.dump(g, f)
+                logging.info('Writing chunk %s took %d seconds.' % (fname, time.time() - start))
+        elif compress == 'bz2':
+            with bz2.open(fname, 'w+b') as f:
+                pickle.dump(g, f)
+                logging.info('Writing bz2 chunk %s took %d seconds.' % (fname, time.time() - start))
+        else:
+            raise ValueError('write_pod_pickle argument compress="%s" not understood.'%compress)
+    return
 
 def write_pod_hdf(g, fname, append=False):
     """Write or append to an HDF file."""
@@ -50,7 +59,7 @@ def write_pod_hdf(g, fname, append=False):
         pass
     else:
         pass
-
+    return
 
 class STAREDataFrame(geopandas.GeoDataFrame):
     _metadata = ['_sid_column_name', '_trixel_column_name', '_geometry_column_name', '_crs']
@@ -1035,7 +1044,9 @@ class STAREDataFrame(geopandas.GeoDataFrame):
                 sids.append(pystare.int2hex(row))
         return sids
 
-    def write_pods_spatial(self, pod_root, level, chunk_name, hex=True, path_format=None, append=False):
+    def write_pods_spatial(self, pod_root, level, chunk_name, hex=True, path_format=None, append=False,
+                           compress=None
+                           ):
         pod_path_format = '{pod_root}/{pod}'
         path_format = '{pod_path_format}/{chunk_name}' if path_format is None else path_format
         pods_written = []
@@ -1062,12 +1073,14 @@ class STAREDataFrame(geopandas.GeoDataFrame):
                 Path(dname).mkdir()
 
             fname = path_format.format(pod_path_format=dname, chunk_name=chunk_name)
-            write_pod_pickle(g, fname, append)
+            write_pod_pickle(g, fname, append, compress)
             pods_written.append(fname)
 
         return pods_written
 
-    def write_pods_granule(self, pod_root, level, chunk_name, hex=True, path_format=None, append=False):
+    def write_pods_granule(self, pod_root, level, chunk_name, hex=True, path_format=None, append=False,
+                           compress=None
+                           ):
         start0 = time.time()
         pod_path_format = '{pod_root}/{pod}'
         path_format = '{pod_path_format}/{tchunk_name}-{chunk_name}' if path_format is None else path_format
@@ -1114,14 +1127,15 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             # tpod        = pystare.hex16(ds_tpod[0])
             tchunk_name = pystare.hex16(ds_tid)
             fname = path_format.format(pod_path_format=dname, chunk_name=chunk_name, tchunk_name=tchunk_name)
-            write_pod_pickle(g, fname, append)
+            write_pod_pickle(g, fname, append, compress)
             pods_written.append(fname)
 
         logging.info('write_pods_granule chunk %s took %d seconds total.' % (chunk_name, time.time() - start0))
         return pods_written
 
     def write_pods_tpod(self, pod_root, level, chunk_name, hex=True, path_format=None, append=False,
-                        temporal_chunking_resolution=16):
+                        temporal_chunking_resolution=16, compress=None
+                        ):
         """
         Parameters
         ----------
@@ -1178,7 +1192,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
                                        tpod_name=tpod_name,
                                        tchunk_name=tchunk_name,
                                        chunk_name=chunk_name)
-            write_pod_pickle(g, fname, append)
+            write_pod_pickle(g, fname, append, compress)
             pods_written.append(fname)
 
         return pods_written
@@ -1199,7 +1213,8 @@ class STAREDataFrame(geopandas.GeoDataFrame):
     ###                                    )
     ###             os.symlink(fname,dst_name) # creates dst_name symlinking to fname (the src)
 
-    def write_pods(self, pod_root, level, chunk_name, hex=True, path_format=None, append=False, temporal_chunking=None):
+    def write_pods(self, pod_root, level, chunk_name, hex=True, path_format=None, append=False,
+                   temporal_chunking=None, compress=None):
         """ Writes dataframe into a STAREPods hierarchy.
 
         Appends the dataframe to the pod (pickle), if it exists.
@@ -1231,13 +1246,13 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
         if temporal_chunking is None:
             return self.write_pods_spatial(pod_root=pod_root, level=level, chunk_name=chunk_name, hex=hex,
-                                           path_format=path_format, append=append)
+                                           path_format=path_format, append=append, compress=compress)
         elif temporal_chunking['partitioning'] == 'granule':
             return self.write_pods_granule(pod_root=pod_root, level=level, chunk_name=chunk_name, hex=hex,
-                                           path_format=path_format, append=append)
+                                           path_format=path_format, append=append, compress=compress)
         elif temporal_chunking['partitioning'] == 'pod':
             return self.write_pods_tpod(pod_root=pod_root, level=level, chunk_name=chunk_name, hex=hex,
-                                        path_format=path_format, append=append,
+                                        path_format=path_format, append=append, compress=compress),
                                         temporal_chunking_resolution=temporal_chunking['resolution'])
         else:
             raise (Exception('Pod configuration not supported. temporal_chunking = %s' % (temporal_chunking)))
