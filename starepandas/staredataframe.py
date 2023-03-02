@@ -7,7 +7,7 @@ import starepandas
 import netCDF4
 import starepandas.tools.trixel_conversions
 import starepandas.tools.temporal_conversions
-import starepandas.io.pod.generic_open
+import starepandas.io.pod
 import multiprocessing
 import pickle
 
@@ -35,17 +35,18 @@ def write_pod_pickle(g, fname, append=False, compress=None):
     """Write or append to a pickle."""
     logging.info('Writing to pickle: %s' % fname)
     if append:
+        raise NotImplementedError('appending not implemented')
         with starepandas.io.pod.generic_open(fname)(fname, 'a+b') as f:
             pickle.dump(g, f)
     else:
         # Overwrite
         start = time.time()
         if compress == None:
-            with open(fname, 'w+b') as f:
+            with open(fname, 'wb') as f:
                 pickle.dump(g, f)
                 logging.info('Writing chunk %s took %d seconds.' % (fname, time.time() - start))
         elif compress == 'bz2':
-            with bz2.open(fname, 'w+b') as f:
+            with bz2.open(fname, 'wb') as f:
                 pickle.dump(g, f)
                 logging.info('Writing bz2 chunk %s took %d seconds.' % (fname, time.time() - start))
         else:
@@ -1252,7 +1253,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
                                            path_format=path_format, append=append, compress=compress)
         elif temporal_chunking['partitioning'] == 'pod':
             return self.write_pods_tpod(pod_root=pod_root, level=level, chunk_name=chunk_name, hex=hex,
-                                        path_format=path_format, append=append, compress=compress),
+                                        path_format=path_format, append=append, compress=compress,
                                         temporal_chunking_resolution=temporal_chunking['resolution'])
         else:
             raise (Exception('Pod configuration not supported. temporal_chunking = %s' % (temporal_chunking)))
