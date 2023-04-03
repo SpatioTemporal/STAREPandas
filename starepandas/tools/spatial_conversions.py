@@ -101,7 +101,7 @@ def sids_from_geoseries(series, level, convex=False, force_ccw=True, n_partition
         sids.name = 'sids'
         return sids
     else:
-        ddf = dask.dataframe.from_pandas(series, npartitions=n_partitions, )
+        ddf = dask.dataframe.from_pandas(series, npartitions=n_partitions)
         meta = {'name': 'int64'}
         res = ddf.map_partitions(sids_from_geoseries, level=level, convex=convex,
                                  force_ccw=force_ccw, n_partitions=1, num_workers=1, meta=meta)

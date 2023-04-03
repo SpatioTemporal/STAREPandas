@@ -13,7 +13,7 @@ class VIIRSL2(Granule):
         self.nom_res = nom_res
         self.netcdf = starepandas.io.s3.nc4_dataset_wrapper(self.file_path, 'r', format='NETCDF4')
 
-    def read_timestamps(self):
+    def read_timestamps(self):    
         self.ts_start = self.netcdf.time_coverage_start
         self.ts_end = self.netcdf.time_coverage_end
 

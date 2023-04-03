@@ -222,8 +222,11 @@ class Mod09(Modis):
 
 
 class Mod03(Modis):
-    def __init__(self, file_path, sidecar_path=None, nom_res=None):
+    def __init__(self, file_path, sidecar_path=None, nom_res=None, read_ifov_times=False):
         super(Mod03, self).__init__(file_path, sidecar_path)
+
+        self.read_ifov_times = read_ifov_times
+        
         if nom_res is None:
             self.nom_res = '1km'
         else:
@@ -231,6 +234,8 @@ class Mod03(Modis):
 
     def read_data(self):
         self.read_data1km()
+        if self.read_ifov_times:
+            self.read_scan_times()
 
     def read_data1km(self):
         dataset_names = ['SensorAzimuth', 'SensorZenith', 'SolarAzimuth', 'SolarZenith']
@@ -241,6 +246,102 @@ class Mod03(Modis):
                 resample_factor = None
             self.read_dataset(dataset_name=dataset_name, resample_factor=resample_factor)
 
+    def read_scan_times(self):
+        """C.f. https://modis.gsfc.nasa.gov/data/atbd/atbd_mod28_v3.pdf page 3-23."""
+
+        raise NotImplementedError
+        
+        dataset_name = 'EV start time'
+        ds_ev_start_time = self.hdf.select(dataset_name) # I.e. t_0 start of band 30
+        ev_type = numpy.double
+        t_0 = ds_ev_start_time.get() #
+        print('t_0 shape, type: ',t_0.shape,type(t_0),t_0.dtype,type(t_0[0]))
+        t_frame   = 333.333e-6 # seconds
+        t_latch_0k = numpy.zeros([203,1354],dtype=ev_type)
+        t_offset_j  = numpy.zeros([36],dtype=ev_type)
+        f_30 = -14 # leading band location
+
+        # cf. ATBD Table 3.3 pg 3-18
+        f_j = {
+            'Ideal Band': 0,
+            0: 0,
+            1: 0.25,
+            2: 2,
+            3: 0.5,
+            4: 3.5,
+            5: 1,
+            6: -0.5,
+            7: -3,
+            8: -2,
+            9: -5,
+            10: -8,
+            11: 7,
+            12: 10,
+            '13H': 5.5,
+            '13L': 5.5,
+            '14H': -2.5,
+            '14L': -2.5,
+            13: 5.5,
+            14: -2.5,
+            15: -5,
+            16: -8,
+            17: -10,
+            18: 9,
+            19: 11,
+            20: 4,
+            21: 6,
+            22: 9,
+            23: 11,
+            24: -8,
+            25: -10,
+            26: -5,
+            27: -5,
+            28: -8,
+            29: -11,
+            30: -14,
+            31: 12,
+            32: 15,
+            33: -1,
+            34: 2,
+            35: 5,
+            36: 8
+            }
+
+        f_offset_j = {1:0.75, 2:0.75} # 250m
+        for j in range(3, 7): # 500m
+            f_offset_j[j] = 0.5
+        for j in range(8, 36): # 1km            
+            f_offset_j[j] = 0   
+
+        n_samples = {1:4, 2:4} # 250m
+        for j in range(3, 7): # 500m
+            n_samples[j] = 2
+        for j in range(8,36): # 1km
+            n_samples[j] = 1 
+    
+        for s in range(203): # scan
+            for k in range(1354): # frame
+                t_latch_0k[s, k] = t_0[s] + t_frame * (k - f_30)
+
+        for j in range(36):
+            t_offset_j[j] = t_frame*(f_j[j]-f_offset_j[j])
+
+        # "The time offsets t_offset of the samples i of higher resolution bands are: t_o_ij = t_o_j+T_f*((i-1)/Nsamp[j])
+        if self.nom_res == '500m':
+            resample_factor_along  = 20
+            resample_factor_across = 2
+            t_latch_ijk = numpy.zeros([203,1354*2],dtype=ev_type)
+        else:
+            resample_factor_along = 10
+            resample_factor_across = None
+            t_latch_ijk = numpy.zeros([203,1354],dtype=ev_type)
+            t_latch_ijk[:] = t_latch_0k[:] + 0.0 # need to add t_ovvsetj[j] but what j to use?
+
+        t_ = t_latch_0k.repeat(resample_factor_along,axis=0)
+        if resample_factor_across is not None:
+            t_ = t_latch_0k.repeat(resample_factor_across,axis=1)        
+        self.data['t_'] = t_  # not a good variable name!
+        return
 
 class Mod05(Modis):
 
