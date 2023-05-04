@@ -24,7 +24,7 @@ def test_intersects():
     sids = starepandas.sids_from_gdf(iceland, level=8, force_ccw=True)
     #sids = sids.astype('int64')
     fname = starepandas.datasets.get_path('MOD05_L2.A2019336.0000.061.2019336211522.hdf')
-    modis = starepandas.read_granule(fname, latlon=False, sidecar=True)
+    modis = starepandas.read_granule(fname, latlon=False, sidecar=True, nom_res='5km')
     intersects = modis.stare_intersects(other=sids.iloc[0], n_partitions=2)
     assert 1384 == sum(intersects)
 
