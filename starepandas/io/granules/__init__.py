@@ -5,7 +5,7 @@ from .modis import Mod09GA, Mod05, Mod09, Mod03
 from .viirsl2 import VNP02DNB, VNP03DNB, VNP03MOD, VNP03IMG, CLDMSKL2VIIRS, VNP09
 from .ssmis import SSMIS
 from .atms import ATMS
-
+from .imergl3 import L3IMERG, DYAMONDv2
 
 class UnsupportedFileError(Exception):
     def __init__(self, file_path):
@@ -94,7 +94,9 @@ granule_factory_library = {
     'VNP09': VNP09,
     'CLDMSKL2VIIRS': CLDMSKL2VIIRS,
     'SSMIS': SSMIS,
-    'ATMS': ATMS
+    'ATMS': ATMS,
+    'L3IMERG': L3IMERG,
+    'DYAMONDv2': DYAMONDv2
 }
 
 
