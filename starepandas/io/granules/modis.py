@@ -59,7 +59,7 @@ def parse_hdfeos_metadata(string):
 class Modis(Granule):
 
     def __init__(self, file_path, sidecar_path=None, nom_res=None):
-        super(Modis, self).__init__(file_path, sidecar_path)
+        super(Modis, self).__init__(file_path, sidecar_path, nom_res=nom_res)
         self.hdf = starepandas.io.s3.sd_wrapper(file_path)
 
     def read_latlon(self, track_first=False):
@@ -186,12 +186,8 @@ class Modis(Granule):
 
 class Mod09(Modis):
 
-    def __init__(self, file_path, sidecar_path=None, nom_res=None):
-        super(Mod09, self).__init__(file_path, sidecar_path)
-        if nom_res is None:
-            self.set_nom_res('1km')
-        else:
-            self.set_nom_res(nom_res)
+    def __init__(self, file_path, sidecar_path=None, nom_res='1km'):
+        super(Mod09, self).__init__(file_path, sidecar_path, nom_res=nom_res)        
 
     def read_data(self):
         if self.nom_res == '1km':
@@ -222,15 +218,9 @@ class Mod09(Modis):
 
 
 class Mod03(Modis):
-    def __init__(self, file_path, sidecar_path=None, nom_res=None, read_ifov_times=False):
-        super(Mod03, self).__init__(file_path, sidecar_path)
-
+    def __init__(self, file_path, sidecar_path=None, nom_res='1km', read_ifov_times=False):
+        super(Mod03, self).__init__(file_path, sidecar_path, nom_res=nom_res)
         self.read_ifov_times = read_ifov_times
-        
-        if nom_res is None:
-            self.set_nom_res('1km')
-        else:
-            self.set_nom_res(nom_res)
 
     def read_data(self):
         self.read_data1km()
@@ -345,9 +335,8 @@ class Mod03(Modis):
 
 class Mod05(Modis):
 
-    def __init__(self, file_path, sidecar_path=None):
-        super(Mod05, self).__init__(file_path, sidecar_path)
-        self.set_nom_res('5km')
+    def __init__(self, file_path, sidecar_path=None, nom_res='5km'):
+        super(Mod05, self).__init__(file_path=file_path, sidecar_path=sidecar_path, nom_res=nom_res)
 
     def read_data(self):
         dataset_names = ['Scan_Start_Time', 'Solar_Zenith', 'Solar_Azimuth',
@@ -362,10 +351,8 @@ class Mod05(Modis):
 
 
 class Mod09GA(Modis):
-    def __init__(self, file_path, sidecar_path=None):
-        super(Mod09GA, self).__init__(file_path, sidecar_path)
-        self.set_nom_res('500m')
-
+    def __init__(self, file_path, sidecar_path=None, nom_res='500m'):
+        super(Mod09GA, self).__init__(file_path, sidecar_path=sidecar_path, nom_res=nom_res)
     def read_latlon(self):
         pass
 

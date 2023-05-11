@@ -26,7 +26,6 @@ def test_read_vnp02dnb():
 def test_read_vnp03dnb():
     fname = 'tests/data/granules/viirs/VNP03DNB.A2022308.1930.002.2022309041547.nc'
     granule = starepandas.io.granules.VNP03DNB(fname)
-    granule.set_nom_res('750m')
     scp = granule.guess_sidecar_path()
     assert scp == 'tests/data/granules/viirs/VNP03DNB.A2022308.1930.002.2022309041547_stare.nc'
 
@@ -75,7 +74,7 @@ def test_read_mod05():
 
 
 def test_read_granules():
-    starepandas.read_granule('tests/data/granules/MOD05_L2.A2019336.0000.061.2019336211522.hdf',nom_res='5km')
+    starepandas.read_granule('tests/data/granules/MOD05_L2.A2019336.0000.061.2019336211522.hdf', nom_res='5km')
     starepandas.read_granule('tests/data/granules/viirs/VNP02DNB.A2022308.1930.002.2022309051542.nc',nom_res='750m')
 
 
