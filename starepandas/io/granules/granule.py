@@ -17,8 +17,13 @@ class Granule:
         self.stare_cover = None
         self.ts_start = None
         self.ts_end = None
-        self.nom_res = nom_res
+        self.set_nom_res(nom_res)
         self.companion_prefix = None
+
+    def set_nom_res(self,nom_res):
+        self.nom_res = nom_res
+        self.nom_res_str = "" if self.nom_res is None else self.nom_res
+        return
 
     def guess_sidecar_path(self):
         name = '.'.join(self.file_path.split('.')[0:-1]) + '_stare.nc'
@@ -53,10 +58,10 @@ class Granule:
             scp = self.guess_sidecar_path()
         ds = starepandas.io.s3.nc4_dataset_wrapper(scp)
         try:
-            self.sids = ds['STARE_index_{}'.format(self.nom_res)][:, :].astype(numpy.int64)
+            self.sids = ds['STARE_index_{}'.format(self.nom_res_str)][:, :].astype(numpy.int64)
         except IndexError:
             # If we don't have a nomres?
-            self.sids = ds['STARE_index{}'.format(self.nom_res)][:, :].astype(numpy.int64)
+            self.sids = ds['STARE_index{}'.format(self.nom_res_str)][:, :].astype(numpy.int64)
 
     def read_sidecar_cover(self, sidecar_path=None):
         if sidecar_path:
@@ -77,11 +82,11 @@ class Granule:
             scp = self.guess_sidecar_path()
         ds = starepandas.io.s3.nc4_dataset_wrapper(scp)
         try:
-            self.lat = ds['Latitude_{}'.format(self.nom_res)][:, :]
-            self.lon = ds['Longitude_{}'.format(self.nom_res)][:, :]
+            self.lat = ds['Latitude_{}'.format(self.nom_res_str)][:, :]
+            self.lon = ds['Longitude_{}'.format(self.nom_res_str)][:, :]
         except IndexError:
-            self.lat = ds['Latitude{}'.format(self.nom_res)][:, :]
-            self.lon = ds['Longitude{}'.format(self.nom_res)][:, :]
+            self.lat = ds['Latitude{}'.format(self.nom_res_str)][:, :]
+            self.lon = ds['Longitude{}'.format(self.nom_res_str)][:, :]
 
     def to_df(self, xy=False):
         """ Converts the granule object to a dataframe

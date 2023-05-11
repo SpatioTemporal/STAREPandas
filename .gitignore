@@ -14,3 +14,4 @@ docs/source/docs/reference/api/*
 *dask-worker-space*
 /docs/source/_build/
 /.tox/
+flycheck_*
