@@ -100,8 +100,9 @@ granule_factory_library = {
 }
 
 
-# Do we need nom_res=None?
-def granule_factory(file_path, sidecar_path=None): # , nom_res=None):
+
+def granule_factory(file_path, sidecar_path=None, nom_res=None):
+
     """
     Returns a granule loader from the dictionary starepandas.io.granules.granule_factory_library.
     The keys in granule_factory_library are regex patterns against which file_path is matched.
@@ -170,11 +171,13 @@ def granule_factory(file_path, sidecar_path=None): # , nom_res=None):
 
     """
 
-    for regex, make_granule in granule_factory_library.items():
+    for regex, granule in granule_factory_library.items():
         if re.search(regex, file_path, re.IGNORECASE):
-            return make_granule(file_path, sidecar_path)
+            if nom_res:
+                return granule(file_path, sidecar_path, nom_res=nom_res)
+            else:
+                return granule(file_path, sidecar_path)
     raise UnsupportedFileError(file_path)
-    return None
 
 
 def read_granule(file_path,
@@ -225,8 +228,8 @@ def read_granule(file_path,
     >>> fname = starepandas.datasets.get_path('MOD05_L2.A2019336.0000.061.2019336211522.hdf')
     >>> modis = starepandas.read_granule(fname, latlon=True, sidecar=True, nom_res='5km')
     """
-    granule = granule_factory(file_path, sidecar_path) # , nom_res)
-    granule.set_nom_res(nom_res)
+
+    granule = granule_factory(file_path, sidecar_path, nom_res)
 
     if add_sids:
         latlon = True

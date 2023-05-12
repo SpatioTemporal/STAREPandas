@@ -351,8 +351,7 @@ def sids_from_polygon(polygon, level, convex=False, force_ccw=False):
     if len(polygon.interiors) > 0:
         sids_int = []
         for interior in polygon.interiors:
-            if interior.is_ccw:
-                interior.coords = list(interior.coords)[::-1]
+            # Interior polygons should be clockwise, thereofore we don't force ccw
             sids_int.append(sids_from_ring(interior, level, convex, force_ccw=False))
         sids_int = numpy.concatenate(sids_int)
         sids = pystare.intersection(sids_int, sids_ext)

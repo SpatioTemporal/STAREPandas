@@ -9,8 +9,7 @@ import pystare
 class VIIRSL2(Granule):
 
     def __init__(self, file_path, sidecar_path=None, nom_res='750m'):
-        super().__init__(file_path, sidecar_path)
-        self.nom_res = nom_res
+        super().__init__(file_path, sidecar_path, nom_res=nom_res)
         self.netcdf = starepandas.io.s3.nc4_dataset_wrapper(self.file_path, 'r', format='NETCDF4')
 
     def read_timestamps(self):    
@@ -24,8 +23,8 @@ class VIIRSL2(Granule):
 
 class VNP03DNB(VIIRSL2):
 
-    def __init__(self, file_path, sidecar_path=None):
-        super().__init__(file_path, sidecar_path)
+    def __init__(self, file_path, sidecar_path=None, nom_res='750m'):
+        super().__init__(file_path, sidecar_path, nom_res=nom_res)
 
     def read_data(self):
         """
@@ -76,8 +75,8 @@ class VNP03IMG(VNP03MOD):
 
 class VNP02DNB(VIIRSL2):
 
-    def __init__(self, file_path, sidecar_path=None):
-        super(VNP02DNB, self).__init__(file_path, sidecar_path)
+    def __init__(self, file_path, sidecar_path=None, nom_res='750m'):
+        super(VNP02DNB, self).__init__(file_path, sidecar_path=sidecar_path, nom_res=nom_res)
         self.companion_prefix = 'VNP03DNB'
 
     def read_data(self):
@@ -121,13 +120,8 @@ class CLDMSKL2VIIRS(VIIRSL2):
 
 class VNP09(Modis):
 
-    def __init__(self, file_path, sidecar_path=None, nom_res=None):
-        super().__init__(file_path, sidecar_path)
-
-        if nom_res is None:
-            self.nom_res = '750m'
-        else:
-            self.nom_res = nom_res
+    def __init__(self, file_path, sidecar_path=None, nom_res='750m'):
+        super().__init__(file_path, sidecar_path, nom_res=nom_res)
 
     def read_data(self):
         if self.nom_res == '750m':
