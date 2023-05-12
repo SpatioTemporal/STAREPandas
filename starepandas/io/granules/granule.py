@@ -7,9 +7,7 @@ import pandas
 
 class Granule:
 
-    def __init__(self, file_path, sidecar_path=None, 
-                 
-                 =None):
+    def __init__(self, file_path, sidecar_path=None, nom_res=None):
         self.file_path = file_path
         self.sidecar_path = sidecar_path
         self.data = {}
