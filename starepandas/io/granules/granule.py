@@ -17,7 +17,10 @@ class Granule:
         self.stare_cover = None
         self.ts_start = None
         self.ts_end = None
-        self.nom_res = nom_res
+        if nom_res:
+            self.nom_res = nom_res
+        else:
+            self.nom_res = ''
         self.companion_prefix = None
 
     def guess_sidecar_path(self):

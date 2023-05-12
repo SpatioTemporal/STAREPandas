@@ -19,7 +19,8 @@ def get_path(dataset):
 
     Examples
     --------
-    >>> starepandas.datasets.get_path("MOD05_L2.A2019336.0000.061.2019336211522.hdf")  # doctest: +SKIP
+    >>> import starepandas
+    >>> path = starepandas.datasets.get_path("MOD05_L2.A2019336.0000.061.2019336211522.hdf")
     """
 
     if dataset in _available_dir:

@@ -344,6 +344,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             number of (dask) workers to use to generate trixels
         wrap_lon: bool
             toggle if trixels should be wraped around antimeridian.
+
         num_workers: int
             number of workers to use
 

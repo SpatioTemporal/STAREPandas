@@ -236,11 +236,6 @@ if case == 'tpod':
 ###
 #-            print('300 pods: ',pods)
             for pod in pods:
-                # df = pandas.read_pickle(pod)
-                # if add_podname:
-                #     df['pod'] = pod
-                # dfs.append(df)
-
                 not_done = True
 
                 with generic_open(pod)(pod,'rb') as input:
@@ -248,15 +243,14 @@ if case == 'tpod':
                         print('reading ',pod)
                     while not_done:
                         try:
-                            df = pickle.load(input)
+                            #df = pickle.load(input) # Not backwards compatible
+                            df = pandas.read_pickle(input)
                             if add_podname:
                                 df['pod'] = pod
                             dfs.append(df)
                         except EOFError as e:
                             not_done = False
 
-
-    
     if dfs != []:
         df = pandas.concat(dfs)
         df.reset_index(inplace=True, drop=True)

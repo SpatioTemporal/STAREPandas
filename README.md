@@ -102,7 +102,6 @@ cd docs/
 make html 
 ```
     
-
     
 ## Features and usage
 The examples/ folder contains notebooks that highlight the usage.
