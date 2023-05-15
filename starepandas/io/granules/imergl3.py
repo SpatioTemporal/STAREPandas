@@ -1,15 +1,14 @@
 #! /usr/bin/env python -tt
 # -*- coding: utf-8; mode: python -*-
-r"""
+"""General expansion of the Granule super-class specific to reading data from (or related to) NASA's Integrated Multi-satellitE Retrievals for GPM (IMERG, L3)
 
 imergL3
 ~~~~~~~
 
-General expansion of the Granule super-class specific to reading data from (or related to) NASA's Integrated Multi-satellitE Retrievals for GPM (IMERG, L3)
-    Which is part of NASA's Global Precipitation Measurement Mission (GPM).
+IMERG is part of NASA's Global Precipitation Measurement Mission (GPM).
 """
 # Standard Imports
-import os
+# import os
 from typing import Optional, Union
 from datetime import datetime, timezone, timedelta
 from string import Formatter
@@ -31,8 +30,8 @@ import pystare
 __all__ = ['L3IMERG', 'DYAMONDv2']
 
 ##
-# Markup Language Specification (see Google Python Style Guide https://google.github.io/styleguide/pyguide.html)
-__docformat__ = "Google en"
+# Markup Language Specification (see Numpydoc Python Style Guide https://numpydoc.readthedocs.io/en/latest/format.html)
+__docformat__ = "Numpydoc"
 # ------------------------------------------------------------------------------
 
 # Define Global Constants and State Variables
@@ -43,38 +42,60 @@ __docformat__ = "Google en"
 # PUBLIC Class: L3IMERG
 # ---------------------
 class L3IMERG(Granule):
-    """Derived-class of the Granule super-class specific to reading data from NASA's Integrated Multi-satellitE Retrievals for GPM (IMERG, L3).
+    """Derived-class of the Granule super-class specific to reading data from NASA's IMERG L3 products.
+
+    Parameters
+    ----------
+    Granule : STAREPandas.io.granules.granule.Granule
+        General Granule super-class for interacting with data files.
     """
 
     ###########################################################################
     # PRIVATE Instance-Constructor: __init__()
     # ----------------------------------------
     def __init__(self, file_path: str, sidecar_path: Optional[Union[str, None]]=None, nom_res: Optional[Union[str, None]]=None):
-        """_summary_
+        """Instance-Constructor for L3IMERG class (granule loader).
 
-        Args:
-            file_path (str): Path to data you intend to read.
-            sidecar_path (Optional[Union[str, None]], optional): Path to STARE sidecar file for this data. Defaults to None.
-            nom_res (Optional[Union[str, None]], optional): String holding the STARE spatial resolution to use for encoding. Defaults to None.
+        Parameters
+        ----------
+        file_path : str
+            Path to granule file you intend to read.
+        sidecar_path : Optional[Union[str, None]]
+            Path to STARE sidecar file associated with this granule. Defaults to None.
+        nom_res : Optional[Union[str, None]]
+            Specifies the resolution to read for multi-resolution products (passed to set_nom_res()). Defaults to None.
+
+        Based on Granule.__init__() and Granule.read_sidecar() this instance (self) defines the following attributes (in addition to the Parameters listed above):
+
+        Attributes
+        ----------
+        file_path : str
+        sidecar_path : Union[str, None]
+        nom_res : Union[str, None]
+        companion_prefix : None
+            Used by self.guess_companion_path() to guess a granule's (file_path) companion-file path. Defaults to None.
+        data : dict
+            Dictionary holding the granule data used to populate a STAREPandas dataframe. Defaults to {}.
+        lat : Union[npt.ArrayLike, None]
+            Array holding latitude values for the data (populated by self.read_sidecar_latlon() or user provided). Defaults to None.
+        lon : Union[npt.ArrayLike, None]
+            Array holding longitude values for the data (populated by self.read_sidecar_latlon() or user provided). Defaults to None.
+        sids : Union[npt.ArrayLike, None]
+            Array holding STARE indices (SIDs) for the data (populated by self.add_sids(), self.read_sidecar_index() or user provided). Defaults to None.
+        stare_cover : Union[npt.ArrayLike, None]
+            Array holding STARE cover SIDs for the data (populated by self.read_sidecar_cover() or user provided). Defaults to None.
+        ts_start : Union[datetime, None]
+            Datetime object holding the start time for the data (populated by user provided). Defaults to None.
+        ts_end : Union[datetime, None]
+            Datetime object holding the end time for the data (populated by user provided). Defaults to None.
         """
-
-        # Use Granule.__init__() for this instance (self)
-        # Sets
-        #   self.file_path = file_path
-        #   self.sidecar_path = sidecar_path
-        #   self.data = {}
-        #   self.lat = None
-        #   self.lon = None
-        #   self.sids = None
-        #   self.stare_cover = None
-        #   self.ts_start = None
-        #   self.ts_end = None
-        #   self.nom_res = None
-        #   self.companion_prefix = None
+        ##
+        # Use Granule.__init__() to construct this instance (self).
         super().__init__(file_path, sidecar_path, nom_res)
         # print(f"L3IMERG(): {self.file_path}    = ")
         # print(f"L3IMERG(): {self.sidecar_path} = ")
         # print(f"L3IMERG(): {self.nom_res = }")
+
         ##
         # Opens file_path using netCDF4
         self.netcdf = starepandas.io.s3.nc4_dataset_wrapper(self.file_path, 'r', format='NETCDF4')
@@ -86,61 +107,114 @@ class L3IMERG(Granule):
     def read_timestamps(self):
         """Read the time stamp(s) from the netCDF4 file and returns them as a pandas.DatetimeIndex.
 
-        IMERG/XCAL
-            For IMERG a single day consists of 48 half-open intervals centered on the hour or half-hour:
-                ['00:00', '00:30', ... '23:00', '23:30']
+        For IMERG a single day consists of 48 half-open intervals centered on the hour or half-hour [1]_: `['00:00', '00:30', ... '23:00', '23:30']`.
 
-            The half-open intervals are such that the Lower Bound (LB), Center (CR) and Upper Bound (UB)
-            of the interval are written as '(LB CR UB]' or 'LB < CR <= UB'.
+        The half-open intervals are such that the Lower Bound (LB), Center (CR) and Upper Bound (UB) of the interval are written as `(LB CR UB]` or `LB < CR <= UB`.
 
-                For example, (00:15 00:30 00:45]
-                                               (00:45 01:00 01:15]
+        For example,
 
-            In practice, a 1 millisecond forward offset is used to ensure that the LB is
-            half-open or ((CR - 15m) + 1ms, CR, CR + 15m].
+        .. code-block:: text
 
-                For example, (00:15.001 00:30 00:45]
-                                                   (00:45.001 01:00 01:15]
+            (00:15 00:30 00:45]
+                              (00:45 01:00 01:15]
 
-        Reference: Integrated Multi-satellitE Retrievals for GPM (IMERG) Technical Documentation
-                   https://docserver.gesdisc.eosdis.nasa.gov/public/project/GPM/IMERG_doc.06.pdf
+
+        In practice, a 1 millisecond forward offset is used to ensure that the LB is half-open or `((CR - 15m) + 1ms, CR, CR + 15m]`.
+
+        For example,
+
+        .. code-block:: text
+
+            (00:15.001 00:30 00:45]
+                                  (00:45.001 01:00 01:15]
+
+
+        Attributes
+        ----------
+        ts_start : Union[datetime, None]
+            Datetime object holding the start time for the data. Defaults to None.
+        ts_end : Union[datetime, None]
+            Datetime object holding the end time for the data. Defaults to None.
+
+        References
+        ----------
+        .. [1] Integrated Multi-satellitE Retrievals for GPM (IMERG) Technical Documentation: https://docserver.gesdisc.eosdis.nasa.gov/public/project/GPM/IMERG_doc.06.pdf
         """
+        # To be defined in derived classes.
         pass
 
     ###########################################################################
     # PUBLIC Instance-Method: read_latlon()
     # ------------------------------------~
     def read_latlon(self):
-        """_summary_
+        """Read and return the datagrid longitude and latitude from the netCDF4 file.
+
+        Attributes
+        ----------
+        lat : Union[npt.ArrayLike, None]
+            Array holding latitude values for the data. Defaults to None.
+        lon : Union[npt.ArrayLike, None]
+            Array holding longitude values for the data. Defaults to None.
         """
+        # To be defined in derived classes.
         pass
+
 
 ###############################################################################
 # PUBLIC Class: DYAMONDv2
 # -----------------------
 class DYAMONDv2(L3IMERG):
-    """Special case for simulated IMREG precipitation files.
+    """Special case of L3IMERG for simulated IMERG precipitation files.
 
-    Args:
-        L3IMERG (_type_): General IMERG derived-Class based on the Granule super-class.
+    Notes
+    -----
+    * Base class for IMERG granule (STAREPandas.io.granules.imerg.L3IMERG), which is derived from Granule super-class.
+    * Spatial Resolution   : IMERG 0.1 x 0.1 grid.
+    * Time Resolution      : Instantaneous sample every 30 minutes, rather than 30 minute average typical of IMERG data.
+    * Relationship to IMERG: Free-run simulation, which diverges from reality after a few days.
+    * Provided by          : Jiun-Dar Chern, ESSIC/UMD & MESOSCALE ATMOSPHERIC PROCESSES LAB, NASA/GSFC Code 612, Greenbelt, MD 20771, E-mail: jiun-dar.chern-1@nasa.gov
+    * File name example    : 'DYAMONDv2_PE3600x1800-DE.prectot.20200116_0000z.nc4'
 
-    Notes:
-        Spatial Resolution   : IMERG 0.1x0.1 grid.
-        Time Resolution      : Instantaneous 30 min sample, rather than 30 min average.
-        Relationship to IMERG: Free-run simulation so diverge from reality after a few days.
-
-        Provided by:
-            Jiun-Dar Chern
-                ESSIC/UMD & MESOSCALE ATMOSPHERIC PROCESSES LAB
-                NASA/GSFC Code 612
-                Greenbelt, MD 20771
-                Phone: (301) 614-6175
-                Fax:   (301) 614-5492
-                E-mail: jiun-dar.chern-1@nasa.gov
-
-        File name example:
-            DYAMONDv2_PE3600x1800-DE.prectot.20200116_0000z.nc4
+    Attributes
+    ----------
+    file_path : str
+        Path to granule file you intend to read.
+    sidecar_path : Union[str, None]
+        Path to STARE sidecar file associated with this granule. Defaults to None.
+    nom_res : Union[str, None]
+        Specifies the resolution to read for multi-resolution products (passed to set_nom_res()). Defaults to None.
+    companion_prefix : None
+        Used by self.guess_companion_path() to guess the path to a granule's (file_path) companion file. Defaults to None.
+    data : dict
+        Dictionary holding the data read from the granule file. Used to populate a STAREPandas dataframe. Defaults to {}.
+    lat : ndarray(dtype=float64, ndim=2)
+        Array holding latitude values for the data (populated by self.read_sidecar_latlon() or user provided). Defaults to None.
+    lon : ndarray(dtype=float64, ndim=2)
+        Array holding longitude values for the data (populated by self.read_sidecar_latlon() or user provided). Defaults to None.
+    sids : Union[npt.ArrayLike, None]
+        Array holding STARE indices (SIDs) for the data (populated by self.add_sids(), self.read_sidecar_index() or user provided). Defaults to None.
+    stare_cover : Union[npt.ArrayLike, None]
+        Array holding STARE cover SIDs for the data (populated by self.read_sidecar_cover() or user provided). Defaults to None.
+    ts_start : Union[datetime, None]
+        Datetime object holding the start time for the data (populated by user provided). Defaults to None.
+    ts_end : Union[datetime, None]
+        Datetime object holding the end time for the data (populated by user provided). Defaults to None.
+    imerg_tstep : int
+        IMERG time step (units milliseconds).
+    imerg_halfstep : pandas.Timedelta
+        IMERG half-step as a pandas.Timedelta (units nanoseconds).
+    imerg_time_res : int64
+        STARE time resolution for IMERG data.
+    iso8601_HRF_0 : str
+        ISO8601 human readable format '%Y-%m-%d'
+    iso8601_HRF_1 : str
+        ISO8601 human readable format '%Y-%m-%d %H:%M:%S'
+    iso8601_HRF_3 : str
+        ISO8601 human readable format '%Y-%m-%d %H:%M:%S.%f'
+    iso8601_HRF_4 : str
+        ISO8601 human readable format '%Y-%m-%d %H:%M:%S.%f%z'
     """
+
 
     ###########################################################################
     # PRIVATE Instance-Constructor: __init__()
@@ -148,83 +222,17 @@ class DYAMONDv2(L3IMERG):
     def __init__(self, file_path: str, sidecar_path: Optional[Union[str, None]]=None, nom_res: Optional[Union[str, None]]=None):
         """Instance-Constructor for class DYAMONDv2.
 
-        Args:
-            file_path (str): Path to data you intend to read.
-            sidecar_path (Optional[Union[str, None]], optional): Path to STARE sidecar file for this data. Defaults to None.
-            nom_res (Optional[Union[str, None]], optional): String holding the STARE spatial resolution to use for encoding. Defaults to None.
-
-        Defines:
-            self.imerg_tstep                 (int): IMERG time step (units milliseconds).
-            self.imerg_halfstep (pandas.Timedelta): IMERG half-step as a pandas.Timedelta (units nanoseconds).
-            self.imerg_time_res      (numpy.int64): STARE time resolution for IMERG data.
-
-        STARE temporal resolutions: Resolutions go from 0 being coarsest to 48 being the finest.
-            +-------------+----------------------------+
-            | Resolutions | Unit                       |
-            +=============+============================+
-            | 48-39       | Millisecond                |
-            +-------------+----------------------------+
-            | 38-33       | Second                     |
-            +-------------+----------------------------+
-            | 32-27       | Minute                     |
-            +-------------+----------------------------+
-            | 26-22       | Hour                       |
-            +-------------+----------------------------+
-            | 21-19       | Day-of-week                |
-            +-------------+----------------------------+
-            | 18-17       | Week-of-month              |
-            +-------------+----------------------------+
-            | 16-13       | Month-of-year              |
-            +-------------+----------------------------+
-            | 12-00       | Year                       |
-            +-------------+----------------------------+
-
-        STARE uses ISO 8601 timestamps
-        ------------------------------
-        An international standard for the exchange and communication of date and time-related data.
-            * Applies to dates (Gregorian calendar)
-            * Times (24-hour timekeeping system)
-                * Optional UTC offset/timezone
-
-        strftime Formating: https://docs.python.org/3/library/datetime.html#strftime-strptime-behavior
-            * %Y    The year as a whole number including the century (range 0001 to 9999).
-            * %m    The month as a whole number (range 01 to 12).
-            * %d    The day of the month as a whole number (range 01 to 31).
-            * %H    The hour as a whole number using a 24-hour clock (range 00 to 23).
-            * %M    The minute as a whole number (range 00 to 59).
-            * %S    The second as a whole number (range 00 to 60).
-            * %f    The microsecond as a whole number, zero-padded to 6 digits (000000, 000001, ... 999999).
-                        - Milliseconds would be the first 3 digits (000, 001, ... 999)
-
-        Time zone aware formatting:
-            * For a non-time-zone aware or 'native' object, the %z and %Z format codes are replaced by empty strings.
-            * %z    The UTC offset (the signed hour, minute [second, millisecond] offset from UTC in the form +/-HHMM[SS[.ffffff]] (+0000, -0400, +1030, +063415, -030712.345216)
-                        - 'HH' is a 2-digit string giving the number of UTC offset hours.
-                        - 'MM' is a 2-digit string giving the number of UTC offset minutes.
-                        - 'SS' is a 2-digit string giving the number of UTC offset seconds.
-                        - 'ffffff' is a 6-digit string giving the number of UTC offset microseconds.
-            * %Z    The timezone abbreviation (UTC, GMT).
-
-        Human-Readable Format (8601_HRF):
-            8601_HRF_0  '%Y-%m-%d'                  2010-12-16                          8601 basic format, date only.
-            8601_HRF_1  '%Y-%m-%d %H:%M:%S'         2010-12-16 17:22:15                 ISO 8601 with date and time (w.out time-zone or sub-seconds).
-            8601_HRF_2  '%Y-%m-%dT%H:%M:%S'         2010-12-16T17:22:15                 Same as 8601_HRF_1 with the optional date-time separator (default 'T').
-            8601_HRF_3  '%Y-%m-%d %H:%M:%S.%f'      2010-12-16 17:22:15.000000          Same as 8601_HRF_1 with microsecond or millisecond encoding.
-                                                    2010-12-16 17:22:15.000
-            8601_HRF_4  '%Y-%m-%d %H:%M:%S.%f%z'    2010-12-16 17:22:15.000000+00:00    Same as 8601_HRF_3, with UTC encoding (here no offset).
-
-        Compact Integer Format (CIF)
-            8601_CIF_0  '%Y%m%d'                    20101216                            8601_HRF_0 without spaces or separators.
-            8601_CIF_1  '%Y%m%d%H%M%S'              20101216172215                      8601_HRF_1 without spaces or separators.
-            8601_CIF_2  '%Y%m%dT%H%M%S'             20101216T172215                     8601_HRF_2 without spaces.
-            8601_CIF_3  '%Y%m%d%H%M%S.%f'           20101216172215.000000               8601_HRF_3 without spaces or separators.
-                                                    20101216172215.000
-            8601_CIF_4  '%Y%m%dT%H%M%S.%f'          20101216T172215.000000              8601_CIF_3 with date-time separator.
-
+        Parameters
+        ----------
+        file_path : str)
+            Path to data you intend to read.
+        sidecar_path : Optional[Union[str, None]]
+            Path to STARE sidecar file for this data. Defaults to None.
+        nom_res : Optional[Union[str, None]]
+            String holding the STARE spatial resolution to use for encoding. Defaults to None.
         """
         verbose = [False, True][1]
-        if verbose:
-            header = "DYAMONDv2.__init__():"
+        header = "DYAMONDv2.__init__():"
         ##
         # Use L3IMERG.__init__(), which calls Granule.__init__() for this instance (self)
         super().__init__(file_path, sidecar_path=sidecar_path, nom_res=nom_res)
@@ -262,7 +270,21 @@ class DYAMONDv2(L3IMERG):
     ###########################################################################
     # PUBLIC Instance-Method: strfdelta()
     # -----------------------------------
-    def strfdelta(self, tdelta, fmt):
+    def strfdelta(self, tdelta: timedelta, fmt: str) -> str:
+        """Convert a timedelta object tdelta into a string according to the format string fmt.
+
+        Parameters
+        ----------
+        tdelta : datetime.timedelta
+            The timedelta object to convert.
+        fmt : str
+            String defining the format of the output string.
+
+        Returns
+        -------
+        str
+            The formatted string.
+        """
         f = Formatter()
         d = {}
         l = {'D': 86400, 'H': 3600, 'M': 60, 'S': 1}
@@ -279,50 +301,30 @@ class DYAMONDv2(L3IMERG):
     def read_timestamps(self):
         """Read the temporal data from the netCDF4 file and returns them as a pandas.DatetimeIndex.
 
-        Defines:
-            self.cr_ts_str                  (str): Strings holding the center time stamp (e.g., '2020-01-16 00:00:00').
-            self.interval_tid_cover (numpy.int64): STARE TID (cover) for the time interval.
+        DYAMONDv2 follows the IMERG pattern a single day consists of 48 daily samples centered on the hour or half-hour: `['00:00', '00:30', ... '23:00', '23:30']`.
 
-        STARE spatial index value (SID)
-        STARE temporal index value (TID or TIV)
+        Unlike IMERG, DYAMONDv2 data **represent instantaneous values not an interval**.
 
-        DYAMONDv2:
-            Follows the IMERG pattern a single day consists of 48 daily samples centered on the hour or half-hour:
-                ['00:00', '00:30', ... '23:00', '23:30']
+        In practice, a narrow interval (1 minute) is created by adding a small offset around the center datetime (CR) or `[(CR - 1m), CR, CR + 1m]`.
 
-            Unlike IMERG, DYAMONDv2 data represent instantaneous values not an interval.
+        For example,
 
-            In practice, a narrow interval (1 minute) is created by adding a small offset around the center datetime (CR).
-                [(CR - 1m), CR, CR + 1m].
+        .. code-block:: text
 
-            For example,
-                [23:59 00:00 00:01]
-                                    [00:29 00:30 00:31]
-                                                        [00:59 01:00 01:01]
+            [23:59 00:00 00:01]
+                                [00:29 00:30 00:31]
+                                                    [00:59 01:00 01:01]
 
 
-        This is likely because there is a finite, irregular resolution with which intervals are covered with STARE tids.
-        The forward and reverse resolutions each point to a bit in the representation.
-        When a tid is constructed from a triple (t0,t1,t2), t1 is used to set the temporal location bits.
-
-        Then the reverse resolution is set so that a decrement associated with that resolution's bit position is less than t0 (for the case where a cover is desired).
-
-        Similarly, the forward resolution is set so that an increment at the associated bit position is greater than t1.
-
-        Therefore, the actual lower and upper bounds that one can calculate from the above tid (a single 64-bit integer) are generally not t0 and t2.
-
-        Generally, we've set the tid to cover the time interval of the granule, which leads to "overestimates" in joins or search queries.
-
-        One can check this by "round-tripping" from a temporal triple to a tid/tiv and back again.
-
-        This also means that when doing searches, the results using only the tid will be approximate, and there will need to be another step or pass for a more accurate comparison.
-
-        Part of this is due to putting three temporal instants into a single 64-bit integer. (If I'm gauging your issue correctly.)
-
+        Parameters
+        ----------
+        cr_ts_str : str
+            String holding the center time stamp (e.g., '2020-01-16 00:00:00').
+        self.ts_end, interval_tid_cover : int64
+            STARE TID (cover) for the time interval.
         """
         verbose = [False, True][0]
-        if verbose:
-            header = "DYAMONDv2.read_timestamps():"
+        header = "DYAMONDv2.read_timestamps():"
 
         ##
         # Pull time units, which is the time interval CR value as a string.
@@ -415,15 +417,15 @@ class DYAMONDv2(L3IMERG):
     def read_latlon(self):
         """Read lat/lon from netCDF file.
 
-        Defines:
-            self.lon (numpy.ndarray): Longitude values as a numpy.meshgrid('xy') with the shape (nlat, nlon).
-            self.lat (numpy.ndarray): Latitude values as a numpy.meshgrid('xy') with the shape (nlat, nlon).
-
-        _extended_summary_
+        Parameters
+        ----------
+        lon : ndarray(dtype=float64, ndim=2)
+            Longitude values as a numpy.meshgrid('xy') with the shape (nlat, nlon).
+        lat : ndarray(dtype=float64, ndim=2)
+            Latitude values as a numpy.meshgrid('xy') with the shape (nlat, nlon).
         """
         verbose = [False, True][0]
-        if verbose:
-            header = "DYAMONDv2.read_latlon():"
+        header = "DYAMONDv2.read_latlon():"
 
         # self.lat = self.netcdf['lat'][:].astype(numpy.double)
         # self.lon = self.netcdf['lon'][:].astype(numpy.double)
