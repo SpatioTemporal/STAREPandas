@@ -2,8 +2,6 @@ import geopandas
 import pandas
 import shapely.wkb
 import shapely.geos
-#import geoalchemy2
-#import sqlalchemy
 import psycopg2.extensions
 import numpy
 
@@ -74,6 +72,7 @@ def write(gdf, engine, table_name):
     try:
         import geoalchemy2
         import sqlalchemy
+        import psycopg2
     except ImportError:
         raise ImportError("'to_postgis()' requires geoalchemy2 package.")
 

@@ -817,7 +817,12 @@ class STAREDataFrame(geopandas.GeoDataFrame):
     def stare_dissolve(self, by=None, num_workers=1, geom=False, aggfunc="first", **kwargs):
         """
         Dissolves a dataframe subject to a field. I.e. grouping by a field/column.
-        Seminal method to GeoDataFrame.dissolve()
+        Seminal method to [GeoDataFrame.dissolve()](https://geopandas.org/en/stable/docs/user_guide/aggregation_with_dissolve.html)
+
+        stare_dissolve() can be thought of as doing three things:
+        - it dissolves all the SIDs within a given group together into a single set o SIDs (this means a) removing duplicate SIDs b) replacing 4 child SIDs with the parent SID), and
+        - it aggregates all the rows of data in a group using groupby.aggregate, and
+        - it combines those two results.
 
         Parameters
         -------------
