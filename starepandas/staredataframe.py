@@ -1380,6 +1380,27 @@ class STAREDataFrame(geopandas.GeoDataFrame):
                 cover_netcdf.long_name = 'SpatioTemporal Adaptive Resolution Encoding (STARE) cover'
                 cover_netcdf[:] = sids_cover
 
+        def to_postgis(self, name, con, schema=None, if_exists="fail", index=False, index_label=None, chunksize=None, dtype=None):
+            """
+            This overwrites the geopandas.GeoDataFrame.to_postgis() method.
+            Parameters
+            ----------
+            name
+            con
+            schema
+            if_exists
+            index
+            index_label
+            chunksize
+            dtype
+
+            Returns
+            -------
+            None
+
+            """
+            starepandas.io.postgis.write(gdf=self, engine=con, table_name=name)
+
 
 def _dataframe_set_sids(self, col, inplace=False):
     # We create a function here so that we can take conventional DataFrames and convert them to sdfs

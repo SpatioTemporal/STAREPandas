@@ -2,8 +2,8 @@ import geopandas
 import pandas
 import shapely.wkb
 import shapely.geos
-import geoalchemy2
-import sqlalchemy
+#import geoalchemy2
+#import sqlalchemy
 import psycopg2.extensions
 import numpy
 
@@ -52,14 +52,37 @@ def addapt_numpy_int64(numpy_int64):
     return psycopg2.extensions.AsIs(numpy_int64)
 
 
-typemap ={'int16': sqlalchemy.types.Integer,
-          'int64':  sqlalchemy.types.BigInteger,
-          'object': sqlalchemy.types.ARRAY(sqlalchemy.types.BigInteger),
-          'float64': sqlalchemy.types.Float}
 
 
-def write(gdf, engine):
-    gdf = gdf.copy()
+
+def write(gdf, engine, table_name):
+    """
+    We extend the default geopandas capabilities to allow writing dataframes with multiple geometry columns.
+    We identify the datatype of each column. If they are geometry datatypes, we manually do a wkb dump and then write
+    the dataframe as a conventional table to postgresql.
+
+    Parameters
+    ----------
+    gdf
+    engine
+    table_name
+
+    Returns
+    -------
+
+    """
+    try:
+        import geoalchemy2
+        import sqlalchemy
+    except ImportError:
+        raise ImportError("'to_postgis()' requires geoalchemy2 package.")
+
+    typemap = {'int16': sqlalchemy.types.Integer,
+               'int64': sqlalchemy.types.BigInteger,
+               'object': sqlalchemy.types.ARRAY(sqlalchemy.types.BigInteger),
+               'float64': sqlalchemy.types.Float}
+
+    gdf = gdf.copy() # Probably unnecessary?
     gdf = geopandas.GeoDataFrame(gdf)
     
     g_dtypes = {}
@@ -67,8 +90,7 @@ def write(gdf, engine):
         if dtype == 'geometry':
             dtype = get_geom_type(gdf, column)
             dtype = geoalchemy2.Geometry(dtype)
-        elif dtype.name in typemap.keys():        
-            
+        elif dtype.name in typemap.keys():
             dtype = typemap[dtype.name]
         g_dtypes[column] = dtype
         
@@ -82,5 +104,5 @@ def write(gdf, engine):
     psycopg2.extensions.register_adapter(numpy.int64, addapt_numpy_int64)
         
     
-    gdf.to_sql(name='cells', con=engine, if_exists='replace', dtype=g_dtypes, index=False)
+    gdf.to_sql(name=table_name, con=engine, if_exists='replace', dtype=g_dtypes, index=False)
      
