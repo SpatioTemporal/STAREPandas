@@ -170,7 +170,7 @@ class DYAMONDv2(L3IMERG):
     -----
     * Base class for IMERG granule (STAREPandas.io.granules.imerg.L3IMERG), which is derived from Granule super-class.
     * Spatial Resolution   : IMERG 0.1 x 0.1 grid.
-    * Time Resolution      : Instantaneous sample every 30 minutes, rather than 30 minute average typical of IMERG data.
+    * Time Resolution      : 30 minute average typical of IMERG data.
     * Relationship to IMERG: Free-run simulation, which diverges from reality after a few days.
     * Provided by          : Jiun-Dar Chern, ESSIC/UMD & MESOSCALE ATMOSPHERIC PROCESSES LAB, NASA/GSFC Code 612, Greenbelt, MD 20771, E-mail: jiun-dar.chern-1@nasa.gov
     * File name example    : 'DYAMONDv2_PE3600x1800-DE.prectot.20200116_0000z.nc4'
@@ -203,6 +203,8 @@ class DYAMONDv2(L3IMERG):
         IMERG time step (units milliseconds).
     imerg_halfstep : pandas.Timedelta
         IMERG half-step as a pandas.Timedelta (units nanoseconds).
+    imerg_toffset : int64
+        IMERG small 1 ms offset (units nanoseconds)
     imerg_time_res : int64
         STARE time resolution for IMERG data.
     iso8601_HRF_0 : str
@@ -231,7 +233,7 @@ class DYAMONDv2(L3IMERG):
         nom_res : Optional[Union[str, None]]
             String holding the STARE spatial resolution to use for encoding. Defaults to None.
         """
-        verbose = [False, True][1]
+        verbose = [False, True][0]
         header = "DYAMONDv2.__init__():"
         ##
         # Use L3IMERG.__init__(), which calls Granule.__init__() for this instance (self)
@@ -250,13 +252,17 @@ class DYAMONDv2(L3IMERG):
 
         ##
         # IMERG time interval info
-        # self.imerg_tstep = 1800000    # 30 minutes in milliseconds
-        self.imerg_tstep = 120000     # 2 minutes in milliseconds
-        halfstep = 60000000000        # 1 minutes in nanoseconds
+        self.imerg_tstep = 1800000    # 30 minutes in milliseconds
+        # self.imerg_tstep = 120000    # 2 minutes in milliseconds
+        # halfstep = 60000000000       # 1 minutes in nanoseconds
+        halfstep = 900000000000       # 15 minutes in nanoseconds
+        #self.imerg_toffset = 1e+6     # 1 millisecond in nanoseconds
+        self.imerg_toffset = pandas.Timedelta(1e+6, unit='ns')
         self.imerg_halfstep = pandas.Timedelta(halfstep, unit='ns')
         if verbose:
             print(f"{header:<30s} imerg_tstep    = {self.imerg_tstep} ms")
             print(f"{header:<30s} imerg_halfstep = {self.imerg_halfstep} ns")
+            print(f"{header:<30s} imerg_toffset  = {self.imerg_toffset} ns")
 
         ##
         # Determine the STARE time resolution
@@ -303,19 +309,6 @@ class DYAMONDv2(L3IMERG):
 
         DYAMONDv2 follows the IMERG pattern a single day consists of 48 daily samples centered on the hour or half-hour: `['00:00', '00:30', ... '23:00', '23:30']`.
 
-        Unlike IMERG, DYAMONDv2 data **represent instantaneous values not an interval**.
-
-        In practice, a narrow interval (1 minute) is created by adding a small offset around the center datetime (CR) or `[(CR - 1m), CR, CR + 1m]`.
-
-        For example,
-
-        .. code-block:: text
-
-            [23:59 00:00 00:01]
-                                [00:29 00:30 00:31]
-                                                    [00:59 01:00 01:01]
-
-
         Parameters
         ----------
         cr_ts_str : str
@@ -355,7 +348,8 @@ class DYAMONDv2(L3IMERG):
 
         ##
         # Find the closed Lower Bound (LB)
-        lb_ts = cr_ts - self.imerg_halfstep
+        # lb_ts = cr_ts - self.imerg_halfstep
+        lb_ts = cr_ts - self.imerg_halfstep + self.imerg_toffset
         lb_dt = pandas.to_datetime(lb_ts, utc=False, unit='ns')
         if verbose:
             print(f"{header:<30s} lb_ts               = {lb_ts}, {type(lb_ts)}")
