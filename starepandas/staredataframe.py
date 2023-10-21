@@ -156,9 +156,12 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         convex: bool
             Toggle if STARE indices for the convex hull rather than the G-Ring should be looked up
         force_ccw: bool
-            Toggle if a counterclockwise orientation of the geometries should be enforced
+            Toggle if a counterclockwise orientation of the geometries should be enforced. Unfortunately, OGC and ESRI
+            have oposing definitions. ([stackexchange](https://gis.stackexchange.com/questions/119150/order-of-polygon-vertices-in-general-gis-clockwise-or-counterclockwise.)).
+            [ESRI](http://esri.github.io/geometry-api-java/doc/Polygon.html) defines exterior rings as clockwise, OGC as counterclockwise.
+            We use the OGC definition, making it necessary to generally force CCW for polygons loaded from shapefules.
         n_partitions: int
-            Number of workers used to lookup STARE indices in parallel
+            Number of partititions used to lookup STARE indices in parallel
 
         Returns
         ---------
@@ -635,7 +638,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         gring = starepandas.tools.trixel_conversions.corners2gring(corners)
         return gring
 
-    def split_antimeridian(self, inplace=False, drop=False):
+    def split_antimeridian(self, inplace=False, drop=False, trixel_column_name=None):
         """Splits trixels at the antimeridian
 
         This works on trixels that cross the meridian and whose longitudes have *not* been wrapped around the
@@ -662,16 +665,11 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         else:
             df = self.copy()
 
-        trixels = geopandas.GeoSeries(df[df._trixel_column_name])
+        if not trixel_column_name:
+            trixel_column_name = df._trixel_column_name
 
-        split = []
-        for row in trixels:
-            if row.geom_type == 'Polygon':
-                # We need to catch single Polygons
-                row = [row]
-            row = starepandas.tools.trixel_conversions.split_antimeridian(row, drop=drop)
-            split.append(row)
-        split = geopandas.GeoSeries(split, index=df.index)
+        trixels = geopandas.GeoSeries(df[trixel_column_name])
+        split = starepandas.tools.trixel_conversions.split_antimeridian_series(trixels, drop=drop)
 
         df[df._trixel_column_name] = split
 

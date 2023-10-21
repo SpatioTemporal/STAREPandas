@@ -631,3 +631,14 @@ def split_antimeridian(trixels, drop=False):
 
     split = inside.union(outside)
     return split
+
+def split_antimeridian_series(trixels, drop=False):
+    split = []
+    for row in trixels:
+        if row.geom_type == 'Polygon':
+            # We need to catch single Polygons
+            row = [row]
+        row = split_antimeridian(row, drop=drop)
+        split.append(row)
+    split = geopandas.GeoSeries(split, index=trixels.index)
+    return split
