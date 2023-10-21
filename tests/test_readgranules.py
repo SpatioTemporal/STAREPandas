@@ -40,14 +40,13 @@ def test_read_vnp03dnb():
     df = granule.to_df()
     assert 105078784 == df.size
 
-def test_read_granule_vnp03dnb_nom_res():
-    fname   = 'tests/data/granules/viirs/VNP03DNB.A2022308.1930.002.2022309041547.nc'
-    scp     = 'tests/data/granules/viirs/VNP03DNB.A2022308.1930.002.2022309041547_stare.nc'
 
+def test_read_granule_vnp03dnb_nom_res():
+    fname = 'tests/data/granules/viirs/VNP03DNB.A2022308.1930.002.2022309041547.nc'
+    scp = 'tests/data/granules/viirs/VNP03DNB.A2022308.1930.002.2022309041547_stare.nc'
     df = starepandas.read_granule(fname, sidecar=True, sidecar_path=scp, latlon=True, nom_res='750m')
 
     assert 78809088 == df.size
-
 
 
 def test_read_mod05():

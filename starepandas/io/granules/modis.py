@@ -538,7 +538,7 @@ def make_ellipse(point, crs, width, height, angle):
     transformed = transform(point, 4326, crs)
     center_x = transformed.x
     center_y = transformed.y
-    ellipse = matplotlib.patches.Ellipse((center_x, center_y), width, height, angle)
+    ellipse = matplotlib.patches.Ellipse(xy=(center_x, center_y), width=width, height=height, angle=angle)
     vertices = ellipse.get_verts()  # get the vertices from the ellipse object
     ellipse = shapely.geometry.LinearRing(vertices)
     ellipse = transform(ellipse, crs, 4326)
