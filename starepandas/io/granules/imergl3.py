@@ -318,9 +318,6 @@ class DYAMONDv2(L3IMERG):
         # Fetch lat/lon arrays
         lat = self.netcdf['lat'][:].astype(numpy.double)
         lon = self.netcdf['lon'][:].astype(numpy.double)
-        if verbose:
-            print(f"{header:<30s} lat ({len(lat)}) = [{lat[0]:+8.3f} ... {lat[-1]:+8.3f}]")
-            print(f"{header:<30s} lat ({len(lon)}) = [{lon[0]:+8.3f} ... {lon[-1]:+8.3f}]")
 
         # Make a (lat=1800, lon=3600) mesh grid to match the sidecar SIDs array
         lon, lat = numpy.meshgrid(lon, lat, copy=True, indexing='xy')
