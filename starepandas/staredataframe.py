@@ -759,7 +759,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
                                                    num_workers=num_workers)
         return pandas.Series(intersects, index=self.index)
 
-    def stare_disjoint(self, other, method='binsearch', n_workers=1):
+    def stare_disjoint(self, other, method='binsearch', n_partitions=1, num_workers=None):
         """  Returns a ``Series`` of ``dtype('bool')`` with value ``True`` for
         each geometry that is disjoint from `other`.
         This is the inverse operation of STAREDataFrame.stare_intersects()
@@ -770,15 +770,17 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             The STARE index collection representing the spatial object to test if is intersected.
         method: str
             Method for STARE intersects test 'skiplist', 'binsearch' or 'nn'. Default: 'binsearch'.
-        n_workers: int
-            number of workers to be used for intersects tests
+        n_partitions: int
+            number of dask dataframe partitions to use
+        num_workers: int:
+            number of dask workers to use
 
         See also
         --------
         STAREDataFrame.stare_intersects : intersects test
 
         """
-        return ~self.stare_intersects(other, method, n_workers)
+        return ~self.stare_intersects(other, method, n_partitions, num_workers)
 
     def stare_intersection(self, other):
         """Returns a ``STARESeries`` of the (STARE) spatial intersection of self with `other`.

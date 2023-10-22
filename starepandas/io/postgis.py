@@ -50,9 +50,6 @@ def addapt_numpy_int64(numpy_int64):
     return psycopg2.extensions.AsIs(numpy_int64)
 
 
-
-
-
 def write(gdf, engine, table_name):
     """
     We extend the default geopandas capabilities to allow writing dataframes with multiple geometry columns.
@@ -101,7 +98,6 @@ def write(gdf, engine, table_name):
     
     psycopg2.extensions.register_adapter(numpy.float64, addapt_numpy_float64)
     psycopg2.extensions.register_adapter(numpy.int64, addapt_numpy_int64)
-        
-    
+
     gdf.to_sql(name=table_name, con=engine, if_exists='replace', dtype=g_dtypes, index=False)
-     
+
