@@ -901,7 +901,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         else:
             return solid_angel * r ** 2
 
-    def to_stare_level(self, level, inplace=False, clear_to_level=False):
+    def to_sids_level(self, level, inplace=False, clear_to_level=False):
         """
         Changes level of STARE index values to level; optionally clears location bits up to level.
         Caution: This method is not intended for use on features represented by sets of sids.
@@ -923,7 +923,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         --------
         >>> sids = [2299437706637111721, 2299435211084507593, 2299566194809236969]
         >>> sdf = starepandas.STAREDataFrame(sids=sids)
-        >>> sdf.to_stare_level(level=6, clear_to_level=False)
+        >>> sdf.to_sids_level(level=6, clear_to_level=False)
                           sids
         0  2299437706637111718
         1  2299435211084507590
@@ -935,11 +935,17 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         else:
             df = self.copy()
 
-        sids = df[df._sid_column_name].astype(numpy.dtype('int64'))
-        sids = pystare.spatial_coerce_resolution(sids, level)
-        if clear_to_level:
-            # pystare_terminator_mask uses << operator, which requires us to cast to numpy array first
-            sids = pystare.spatial_clear_to_resolution(numpy.array(sids))
+        sids = df[df._sid_column_name]
+        if pandas.api.types.is_integer_dtype(sids):
+            # We have column of single SIDs and can send whole column to pystare
+            sids = sids.astype(numpy.dtype('int64'))
+            sids = pystare.spatial_coerce_resolution(sids, level)
+
+            if clear_to_level:
+                # pystare_terminator_mask uses << operator, which requires us to cast to numpy array first
+                sids = pystare.spatial_clear_to_resolution(numpy.array(sids))
+        else:
+            pass
 
         df[df._sid_column_name] = sids
         if not inplace:
@@ -976,7 +982,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         if not inplace:
             return df
 
-    def to_stare_singlelevel(self, level=None, inplace=False):
+    def to_sids_singlelevel(self, level=None, inplace=False):
         """
         Changes the STARE index values to single level representation (in contrary to multiresolution).
 
@@ -999,7 +1005,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         >>> germany = starepandas.STAREDataFrame(germany, add_sids=True, level=6, add_trixels=False)
         >>> len(germany.sids.iloc[0])
         43
-        >>> germany_singleres = germany.to_stare_singlelevel()
+        >>> germany_singleres = germany.to_sids_singlelevel()
         >>> len(germany_singleres.sids.iloc[0])
         46
         """
@@ -1056,7 +1062,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         path_format = '{pod_path_format}/{chunk_name}' if path_format is None else path_format
         pods_written = []
 
-        grouped = self.groupby(self.to_stare_level(level=level, clear_to_level=True)[self._sid_column_name])
+        grouped = self.groupby(self.to_sids_level(level=level, clear_to_level=True)[self._sid_column_name])
         for group in grouped.groups:
             # print('group: ',group,type(group),grouped.get_group(group).size)
             if group < 0:
@@ -1093,7 +1099,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         pods_written = []
 
         start = time.time()
-        grouped = self.groupby(self.to_stare_level(level=level, clear_to_level=True)[self._sid_column_name])
+        grouped = self.groupby(self.to_sids_level(level=level, clear_to_level=True)[self._sid_column_name])
         logging.info('Grouping chunk %s took %d seconds.' % (chunk_name, time.time() - start))
 
         for group in grouped.groups:
@@ -1168,7 +1174,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         path_format = '{pod_path_format}/{tpod_name}-{tchunk_name}-{chunk_name}' if path_format is None else path_format
         pods_written = []
 
-        grouped = self.groupby(self.to_stare_level(level=level, clear_to_level=True)[self._sid_column_name])
+        grouped = self.groupby(self.to_sids_level(level=level, clear_to_level=True)[self._sid_column_name])
         for group in grouped.groups:
             # print('group: ',group,type(group),grouped.get_group(group).size)
             if group < 0:  # cannot be right. group is a dictionary

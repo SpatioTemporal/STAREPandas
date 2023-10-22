@@ -467,11 +467,11 @@ def read_mod09(file_path, roi_sids):
         raise Exception
 
     # Adding the lower level SIDS
-    mod09['sids14'] = mod09.to_stare_level(14, clear_to_level=True).sids
-    mod09['sids15'] = mod09.to_stare_level(15, clear_to_level=True).sids
-    mod09['sids16'] = mod09.to_stare_level(16, clear_to_level=True).sids
-    mod09['sids17'] = mod09.to_stare_level(17, clear_to_level=True).sids
-    mod09['sids18'] = mod09.to_stare_level(18, clear_to_level=True).sids
+    mod09['sids14'] = mod09.to_sids_level(14, clear_to_level=True).sids
+    mod09['sids15'] = mod09.to_sids_level(15, clear_to_level=True).sids
+    mod09['sids16'] = mod09.to_sids_level(16, clear_to_level=True).sids
+    mod09['sids17'] = mod09.to_sids_level(17, clear_to_level=True).sids
+    mod09['sids18'] = mod09.to_sids_level(18, clear_to_level=True).sids
 
     r = 6371007.181
     mod09['area'] = pystare.to_area(mod09['sids']) * r ** 2 / 1000 / 1000
