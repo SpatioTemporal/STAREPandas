@@ -543,7 +543,7 @@ def trixels_from_stareseries(sids_series, n_partitions=1, num_workers=None, wrap
             trixels_series.append(trixels)
     else:
         ddf = dask.dataframe.from_pandas(sids_series, npartitions=npartitions)
-        meta = {'trixels': 'object'}
+        meta = {'name': 'geometry'}
         res = ddf.map_partitions(lambda df:
                                  vectorized.from_shapely(
                                      trixels_from_stareseries(df, n_partitions=1, wrap_lon=wrap_lon)).flatten(),
@@ -620,7 +620,7 @@ def split_antimeridian(trixels, drop=False):
                 y = numpy.array(trixel.exterior.xy[1])
                 exploded[idx] = shapely.geometry.Polygon(zip(x, y))
 
-    inside = exploded.intersection(bbox)
+    inside = exploded.intersection(bbox) # Seems to cause a warning as of 2023-07-13 https://github.com/shapely/shapely/issues/1345. No obvious harm?
     inside[inside.geom_type != 'Polygon'] = shapely.wkt.loads('POLYGON EMPTY')
     inside = geopandas.tools.collect(inside, multi=True)
 
@@ -630,4 +630,15 @@ def split_antimeridian(trixels, drop=False):
     outside = geopandas.tools.collect(outside)
 
     split = inside.union(outside)
+    return split
+
+def split_antimeridian_series(trixels, drop=False):
+    split = []
+    for row in trixels:
+        if row.geom_type == 'Polygon':
+            # We need to catch single Polygons
+            row = [row]
+        row = split_antimeridian(row, drop=drop)
+        split.append(row)
+    split = geopandas.GeoSeries(split, index=trixels.index)
     return split

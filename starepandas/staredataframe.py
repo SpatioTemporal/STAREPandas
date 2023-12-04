@@ -156,9 +156,12 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         convex: bool
             Toggle if STARE indices for the convex hull rather than the G-Ring should be looked up
         force_ccw: bool
-            Toggle if a counterclockwise orientation of the geometries should be enforced
+            Toggle if a counterclockwise orientation of the geometries should be enforced. Unfortunately, OGC and ESRI
+            have oposing definitions. ([stackexchange](https://gis.stackexchange.com/questions/119150/order-of-polygon-vertices-in-general-gis-clockwise-or-counterclockwise.)).
+            [ESRI](http://esri.github.io/geometry-api-java/doc/Polygon.html) defines exterior rings as clockwise, OGC as counterclockwise.
+            We use the OGC definition, making it necessary to generally force CCW for polygons loaded from shapefules.
         n_partitions: int
-            Number of workers used to lookup STARE indices in parallel
+            Number of partititions used to lookup STARE indices in parallel
 
         Returns
         ---------
@@ -635,7 +638,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         gring = starepandas.tools.trixel_conversions.corners2gring(corners)
         return gring
 
-    def split_antimeridian(self, inplace=False, drop=False):
+    def split_antimeridian(self, inplace=False, drop=False, trixel_column_name=None):
         """Splits trixels at the antimeridian
 
         This works on trixels that cross the meridian and whose longitudes have *not* been wrapped around the
@@ -662,16 +665,11 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         else:
             df = self.copy()
 
-        trixels = geopandas.GeoSeries(df[df._trixel_column_name])
+        if not trixel_column_name:
+            trixel_column_name = df._trixel_column_name
 
-        split = []
-        for row in trixels:
-            if row.geom_type == 'Polygon':
-                # We need to catch single Polygons
-                row = [row]
-            row = starepandas.tools.trixel_conversions.split_antimeridian(row, drop=drop)
-            split.append(row)
-        split = geopandas.GeoSeries(split, index=df.index)
+        trixels = geopandas.GeoSeries(df[trixel_column_name])
+        split = starepandas.tools.trixel_conversions.split_antimeridian_series(trixels, drop=drop)
 
         df[df._trixel_column_name] = split
 
@@ -761,7 +759,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
                                                    num_workers=num_workers)
         return pandas.Series(intersects, index=self.index)
 
-    def stare_disjoint(self, other, method='binsearch', n_workers=1):
+    def stare_disjoint(self, other, method='binsearch', n_partitions=1, num_workers=None):
         """  Returns a ``Series`` of ``dtype('bool')`` with value ``True`` for
         each geometry that is disjoint from `other`.
         This is the inverse operation of STAREDataFrame.stare_intersects()
@@ -772,15 +770,17 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             The STARE index collection representing the spatial object to test if is intersected.
         method: str
             Method for STARE intersects test 'skiplist', 'binsearch' or 'nn'. Default: 'binsearch'.
-        n_workers: int
-            number of workers to be used for intersects tests
+        n_partitions: int
+            number of dask dataframe partitions to use
+        num_workers: int:
+            number of dask workers to use
 
         See also
         --------
         STAREDataFrame.stare_intersects : intersects test
 
         """
-        return ~self.stare_intersects(other, method, n_workers)
+        return ~self.stare_intersects(other, method, n_partitions, num_workers)
 
     def stare_intersection(self, other):
         """Returns a ``STARESeries`` of the (STARE) spatial intersection of self with `other`.
@@ -817,7 +817,12 @@ class STAREDataFrame(geopandas.GeoDataFrame):
     def stare_dissolve(self, by=None, num_workers=1, geom=False, aggfunc="first", **kwargs):
         """
         Dissolves a dataframe subject to a field. I.e. grouping by a field/column.
-        Seminal method to GeoDataFrame.dissolve()
+        Seminal method to [GeoDataFrame.dissolve()](https://geopandas.org/en/stable/docs/user_guide/aggregation_with_dissolve.html)
+
+        stare_dissolve() can be thought of as doing three things:
+        - it dissolves all the SIDs within a given group together into a single set o SIDs (this means a) removing duplicate SIDs b) replacing 4 child SIDs with the parent SID), and
+        - it aggregates all the rows of data in a group using groupby.aggregate, and
+        - it combines those two results.
 
         Parameters
         -------------
@@ -898,7 +903,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         else:
             return solid_angel * r ** 2
 
-    def to_stare_level(self, level, inplace=False, clear_to_level=False):
+    def to_sids_level(self, level, inplace=False, clear_to_level=False):
         """
         Changes level of STARE index values to level; optionally clears location bits up to level.
         Caution: This method is not intended for use on features represented by sets of sids.
@@ -920,7 +925,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         --------
         >>> sids = [2299437706637111721, 2299435211084507593, 2299566194809236969]
         >>> sdf = starepandas.STAREDataFrame(sids=sids)
-        >>> sdf.to_stare_level(level=6, clear_to_level=False)
+        >>> sdf.to_sids_level(level=6, clear_to_level=False)
                           sids
         0  2299437706637111718
         1  2299435211084507590
@@ -932,11 +937,17 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         else:
             df = self.copy()
 
-        sids = df[df._sid_column_name].astype(numpy.dtype('int64'))
-        sids = pystare.spatial_coerce_resolution(sids, level)
-        if clear_to_level:
-            # pystare_terminator_mask uses << operator, which requires us to cast to numpy array first
-            sids = pystare.spatial_clear_to_resolution(numpy.array(sids))
+        sids = df[df._sid_column_name]
+        if pandas.api.types.is_integer_dtype(sids):
+            # We have column of single SIDs and can send whole column to pystare
+            sids = sids.astype(numpy.dtype('int64'))
+            sids = pystare.spatial_coerce_resolution(sids, level)
+
+            if clear_to_level:
+                # pystare_terminator_mask uses << operator, which requires us to cast to numpy array first
+                sids = pystare.spatial_clear_to_resolution(numpy.array(sids))
+        else:
+            pass
 
         df[df._sid_column_name] = sids
         if not inplace:
@@ -973,7 +984,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         if not inplace:
             return df
 
-    def to_stare_singlelevel(self, level=None, inplace=False):
+    def to_sids_singlelevel(self, level=None, inplace=False):
         """
         Changes the STARE index values to single level representation (in contrary to multiresolution).
 
@@ -996,7 +1007,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         >>> germany = starepandas.STAREDataFrame(germany, add_sids=True, level=6, add_trixels=False)
         >>> len(germany.sids.iloc[0])
         43
-        >>> germany_singleres = germany.to_stare_singlelevel()
+        >>> germany_singleres = germany.to_sids_singlelevel()
         >>> len(germany_singleres.sids.iloc[0])
         46
         """
@@ -1053,7 +1064,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         path_format = '{pod_path_format}/{chunk_name}' if path_format is None else path_format
         pods_written = []
 
-        grouped = self.groupby(self.to_stare_level(level=level, clear_to_level=True)[self._sid_column_name])
+        grouped = self.groupby(self.to_sids_level(level=level, clear_to_level=True)[self._sid_column_name])
         for group in grouped.groups:
             # print('group: ',group,type(group),grouped.get_group(group).size)
             if group < 0:
@@ -1090,7 +1101,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         pods_written = []
 
         start = time.time()
-        grouped = self.groupby(self.to_stare_level(level=level, clear_to_level=True)[self._sid_column_name])
+        grouped = self.groupby(self.to_sids_level(level=level, clear_to_level=True)[self._sid_column_name])
         logging.info('Grouping chunk %s took %d seconds.' % (chunk_name, time.time() - start))
 
         for group in grouped.groups:
@@ -1165,7 +1176,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         path_format = '{pod_path_format}/{tpod_name}-{tchunk_name}-{chunk_name}' if path_format is None else path_format
         pods_written = []
 
-        grouped = self.groupby(self.to_stare_level(level=level, clear_to_level=True)[self._sid_column_name])
+        grouped = self.groupby(self.to_sids_level(level=level, clear_to_level=True)[self._sid_column_name])
         for group in grouped.groups:
             # print('group: ',group,type(group),grouped.get_group(group).size)
             if group < 0:  # cannot be right. group is a dictionary
@@ -1379,6 +1390,27 @@ class STAREDataFrame(geopandas.GeoDataFrame):
                                                          zlib=zlib)
                 cover_netcdf.long_name = 'SpatioTemporal Adaptive Resolution Encoding (STARE) cover'
                 cover_netcdf[:] = sids_cover
+
+        def to_postgis(self, name, con, schema=None, if_exists="fail", index=False, index_label=None, chunksize=None, dtype=None):
+            """
+            This overwrites the geopandas.GeoDataFrame.to_postgis() method.
+            Parameters
+            ----------
+            name
+            con
+            schema
+            if_exists
+            index
+            index_label
+            chunksize
+            dtype
+
+            Returns
+            -------
+            None
+
+            """
+            starepandas.io.postgis.write(gdf=self, engine=con, table_name=name)
 
 
 def _dataframe_set_sids(self, col, inplace=False):
