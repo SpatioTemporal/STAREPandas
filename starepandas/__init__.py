@@ -9,7 +9,7 @@ from starepandas.io.geotiff import read_geotiff
 import starepandas.datasets  
 
 import starepandas.io.s3
-
+import starepandas.io.postgis
 import starepandas.io.granules
 
 from .staredataframe import STAREDataFrame

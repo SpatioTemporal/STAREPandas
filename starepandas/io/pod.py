@@ -27,8 +27,7 @@ def read_pods(pod_root, sids=None, tids=None, pattern=None, add_podname=False, p
 
     Parameters
     -----------
-    verbose
-    path_delimiter
+    path_delimiter: str
     pod_root: str
         Root directory containing the pods
     sids: array-like
@@ -47,23 +46,10 @@ def read_pods(pod_root, sids=None, tids=None, pattern=None, add_podname=False, p
     temporal_pattern_tid_index: int
         The field of the regexp temporal_pattern from which to extract a tid for matching.
         default: 0
-
-    Returns
-    --------
-    df: starepandas.STAREDataFrame
-        A dataframe containing the data of the read pods
-
-    Examples:
-    ----------
-    >>> import starepandas
-    >>> sdf = starepandas.read_pods(pod_root='tests/data/pods/',
-    ...                             sids=['0x0a00000000000004'],
-    ...                             pattern='SSMIS.XCAL2016',
-    ...                             add_podname=True)
-    >>>
+    verbose: bool
 
 
-### The format of the path to the chunk is as follows.
+    The format of the path to the chunk is as follows.
 
         pod_path = path_format.format(pod_root=pod_root,delim1=path_delimiter,sid=sid)
 
@@ -71,7 +57,7 @@ def read_pods(pod_root, sids=None, tids=None, pattern=None, add_podname=False, p
         search = '.*{pattern}.*'.format(pattern=pattern)
         pods = list(filter(re.compile(search).match, pickles))
 
-And later on...
+    And later on...
                 regexp = temporal_pattern.format(pod_path=pod_path)
                 p = re.compile(regexp)
                 pods_tids = []
@@ -80,63 +66,77 @@ And later on...
                     if m is not None:
                         tid_ = int(m.groups()[temporal_pattern_tid_index],16)
 
-### A potentially simple way to temporal podding/chunking is as follows...
+    A potentially simple way to temporal podding/chunking is as follows...
 
-<pod-root>/<sid>/<tpod>-<tcover>-<dataset-name-patter>
+        <pod-root>/<sid>/<tpod>-<tcover>-<dataset-name-patter>
 
-E.g.
+    E.g.
 
-/pods/0x0a00000000000004/0x1f4a000000000000_16-0x1f4aa87342001e79-MOD09.A2002299.0710.006.2015151173939.pkl
+        /pods/0x0a00000000000004/0x1f4a000000000000_16-0x1f4aa87342001e79-MOD09.A2002299.0710.006.2015151173939.pkl
 
-With a search pattern of
+    With a search pattern of
 
-temporal_pattern           = '{pod_path}(.*)-(.*)-.*'
-temporal_pattern_tid_index = 1
+        temporal_pattern           = '{pod_path}(.*)-(.*)-.*'
+        temporal_pattern_tid_index = 1
 
-As currently written, temporal_pattern_tid_index = 1 will check on temporal overlap with the cover,
-while temporal_pattern_tid_index = 0 will check temporal overlap with the t-pod--but that isn't
-implemented and runs into the issue that the t-pod name isn't currently a valid tid.
+    As currently written, temporal_pattern_tid_index = 1 will check on temporal overlap with the cover,
+    while temporal_pattern_tid_index = 0 will check temporal overlap with the t-pod--but that isn't
+    implemented and runs into the issue that the t-pod name isn't currently a valid tid.
 
-### A few examples...
+     A few examples...
 
-# This is the original case.
+    This is the original case.
 
-if case == 'spatial':
-    tids = None
-    pattern='/MOD09.*'
+    if case == 'spatial':
+        tids = None
+        pattern='/MOD09.*'
 
-    temporal_pattern           = None
-    temporal_pattern_tid_index = None
+        temporal_pattern           = None
+        temporal_pattern_tid_index = None
 
-# The following are emerging functionalities.
+    The following are emerging functionalities.
 
-if case == 'granule':
-    tids = tids_
-    pattern='.*-MOD09.*'
+    if case == 'granule':
+        tids = tids_
+        pattern='.*-MOD09.*'
 
-    temporal_pattern           = '{pod_path}(0x.{{16}})-(?!0x).*'
-    temporal_pattern_tid_index = 0
+        temporal_pattern           = '{pod_path}(0x.{{16}})-(?!0x).*'
+        temporal_pattern_tid_index = 0
 
-if case == 'tpod':
-    tids = tids_
-    pattern='.*-MOD09.*'
+    if case == 'tpod':
+        tids = tids_
+        pattern='.*-MOD09.*'
 
-    tpod_resolution            = 16
-    temporal_pattern           = '{pod_path}(0x.{{16}})_%s-(0x.{{16}})-.*'%tpod_resolution
-    temporal_pattern_tid_index = 1
+        tpod_resolution            = 16
+        temporal_pattern           = '{pod_path}(0x.{{16}})_%s-(0x.{{16}})-.*'%tpod_resolution
+        temporal_pattern_tid_index = 1
 
-### tids should be of the form...
+    tids should be of the form...
 
-    tids=[ tid1, tid2, ... ]
+        tids=[ tid1, tid2, ... ]
 
-### Ignore the following for the moment.
+    Ignore the following for the moment.
 
-    tids=['0x1f98000000000000_16'] -- This is a tpod, (tid-start-zeroed,tpod-resolution).
+        tids=['0x1f98000000000000_16'] -- This is a tpod, (tid-start-zeroed,tpod-resolution).
 
-### We could do a more general cmp_temporal with tids...
+    We could do a more general cmp_temporal with tids...
 
-    pattern='*-SSMIS.XCAL2016'
+        pattern='*-SSMIS.XCAL2016'
 
+
+    Returns
+    --------
+    df: starepandas.STAREDataFrame
+        A dataframe containing the data of the read pods
+
+    Examples
+    ----------
+    >>> import starepandas
+    >>> sdf = starepandas.read_pods(pod_root='tests/data/pods/',
+    ...                             sids=['0x0a00000000000004'],
+    ...                             pattern='SSMIS.XCAL2016',
+    ...                             add_podname=True)
+    >>>
     """
 
     sids                       = None if sids is None else sids
@@ -145,7 +145,6 @@ if case == 'tpod':
     path_delimiter             = '/' if path_delimiter is None else path_delimiter
     temporal_pattern           = '{pod_path}(.*)-.*' if temporal_pattern is None else temporal_pattern
     temporal_pattern_tid_index = 0 if temporal_pattern_tid_index is None else temporal_pattern_tid_index
-
 
     if tids is None:
         path_format = '{pod_root}{delim1}{sid}' if path_format is None else path_format
