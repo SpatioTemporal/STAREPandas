@@ -5,7 +5,7 @@ from .modis import Mod09GA, Mod05, Mod09, Mod03
 from .viirsl2 import VNP02DNB, VNP03DNB, VNP03MOD, VNP03IMG, CLDMSKL2VIIRS, VNP09
 from .ssmis import SSMIS
 from .atms import ATMS
-
+from .imergl3 import L3IMERG, DYAMONDv2
 
 class UnsupportedFileError(Exception):
     def __init__(self, file_path):
@@ -94,11 +94,15 @@ granule_factory_library = {
     'VNP09': VNP09,
     'CLDMSKL2VIIRS': CLDMSKL2VIIRS,
     'SSMIS': SSMIS,
-    'ATMS': ATMS
+    'ATMS': ATMS,
+    'L3IMERG': L3IMERG,
+    'DYAMONDv2': DYAMONDv2
 }
 
 
+
 def granule_factory(file_path, sidecar_path=None, nom_res=None):
+
     """
     Returns a granule loader from the dictionary starepandas.io.granules.granule_factory_library.
     The keys in granule_factory_library are regex patterns against which file_path is matched.
@@ -222,7 +226,7 @@ def read_granule(file_path,
     Examples
     ----------
     >>> fname = starepandas.datasets.get_path('MOD05_L2.A2019336.0000.061.2019336211522.hdf')
-    >>> modis = starepandas.read_granule(fname, latlon=True, sidecar=True)
+    >>> modis = starepandas.read_granule(fname, latlon=True, sidecar=True, nom_res='5km')
     """
 
     granule = granule_factory(file_path, sidecar_path, nom_res)

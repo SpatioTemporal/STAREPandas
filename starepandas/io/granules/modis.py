@@ -189,6 +189,7 @@ class Mod09(Modis):
     def __init__(self, file_path, sidecar_path=None, nom_res='1km'):
         super(Mod09, self).__init__(file_path, sidecar_path, nom_res=nom_res)        
 
+
     def read_data(self):
         if self.nom_res == '1km':
             self.read_data_1km()
@@ -335,6 +336,7 @@ class Mod03(Modis):
 
 class Mod05(Modis):
 
+
     def __init__(self, file_path, sidecar_path=None, nom_res='5km'):
         super(Mod05, self).__init__(file_path=file_path, sidecar_path=sidecar_path, nom_res=nom_res)
 
@@ -351,8 +353,10 @@ class Mod05(Modis):
 
 
 class Mod09GA(Modis):
+
     def __init__(self, file_path, sidecar_path=None, nom_res='500m'):
         super(Mod09GA, self).__init__(file_path, sidecar_path=sidecar_path, nom_res=nom_res)
+
     def read_latlon(self):
         pass
 
