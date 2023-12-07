@@ -299,7 +299,8 @@ def sids_from_ring(ring, level, convex=False, force_ccw=False):
     >>> starepandas.sids_from_ring(polygon.exterior, force_ccw=True, level=6)
     array([4430697608402436102, 4430838345890791430, 4430979083379146758])
     """
-    if force_ccw and not ring.is_ccw:
+    #if force_ccw and not ring.is_ccw:
+    if force_ccw and not ring_is_ccw(ring):
         ring = shapely.geometry.LinearRing(ring.coords[::-1])
     latlon = ring.coords.xy
     lon = latlon[0]
@@ -595,3 +596,74 @@ def speedy_subset(df, right_sids):
     intersecting = candidate_sids[cleared_sids.isin(intersects)]
 
     return df.iloc[intersecting.index]
+
+
+def latlon_to_xyz(latitude, longitude, altitude=0, earth_radius=1):
+    # Convert degrees to radians
+    lat_rad = numpy.radians(latitude)
+    lon_rad = numpy.radians(longitude)
+
+    # Convert spherical coordinates to Cartesian coordinates
+    x = (earth_radius + altitude) * numpy.cos(lat_rad) * numpy.cos(lon_rad)
+    y = (earth_radius + altitude) * numpy.cos(lat_rad) * numpy.sin(lon_rad)
+    z = (earth_radius + altitude) * numpy.sin(lat_rad)
+
+    return x, y, z
+
+def xyz_to_latlon(x, y, z):
+    # Assuming XYZ coordinates are in a Cartesian coordinate system
+    radius = numpy.sqrt(x**2 + y**2 + z**2)
+
+    # Calculate longitude
+    lon = numpy.arctan2(y, x)
+
+    # Calculate latitude
+    lat = numpy.arcsin(z / radius)
+
+    # Convert radians to degrees
+    lon = numpy.degrees(lon)
+    lat = numpy.degrees(lat)
+
+    return lat, lon
+
+def ring_is_ccw(ring):
+    lons = ring.xy[0]
+    lats = ring.xy[1]
+    xs, ys, zs = latlon_to_xyz(lats, lons)
+    vertices = numpy.array(list(zip(xs, ys, zs)))
+    return is_ccw(vertices)
+
+
+def project_spherical_polygon(vertices):
+    # Calculate centroid of the spherical polygon
+    if not numpy.all(vertices[0] == vertices[-1]):
+        vertices = numpy.vstack((vertices, vertices[0]))
+    centroid = numpy.mean(vertices, axis=0)
+
+    # Compute the normal vector (centroid vector)
+    normal_vector = centroid / numpy.linalg.norm(centroid)
+
+    # Project vertices onto the plane perpendicular to the centroid vector
+    projected_vertices = vertices - numpy.outer(vertices.dot(normal_vector), normal_vector)
+
+    x_axis = normal_vector - numpy.array([1, 0, 0]) * normal_vector.dot([1, 0, 0])
+    x_axis /= numpy.linalg.norm(x_axis)
+    y_axis = numpy.cross(normal_vector, x_axis)
+    y_axis = y_axis / numpy.linalg.norm(y_axis)
+
+    transformed_coordinates = numpy.dot(projected_vertices, numpy.array([x_axis, y_axis]).T)
+
+    return transformed_coordinates
+
+
+def signed_area(vertices):
+    return 0.5 * numpy.sum(numpy.cross(numpy.roll(vertices, 1, axis=0), vertices))
+
+
+def is_ccw(vertices):
+    projected = project_spherical_polygon(vertices)
+    area = signed_area(projected)
+    if area > 0.0:
+        return True
+    else:
+        return False
