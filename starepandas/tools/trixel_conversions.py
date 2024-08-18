@@ -1,12 +1,12 @@
 import math
 
 import dask.dataframe
-import geopandas._vectorized as vectorized
 import numpy
 import pystare
 import shapely
 import geopandas
 from shapely.geometry import Point
+from geopandas.array import from_shapely
 
 
 def to_vertices(sids, wrap_lon=True):
@@ -545,7 +545,7 @@ def trixels_from_stareseries(sids_series, n_partitions=1, num_workers=None, wrap
         ddf = dask.dataframe.from_pandas(sids_series, npartitions=npartitions)
         meta = {'name': 'geometry'}
         res = ddf.map_partitions(lambda df:
-                                 vectorized.from_shapely(
+                                 from_shapely(
                                      trixels_from_stareseries(df, n_partitions=1, wrap_lon=wrap_lon)).flatten(),
                                  meta=meta)
         trixels_series = res.compute(scheduler='processes', num_workers=num_workers)
@@ -579,7 +579,7 @@ def split_antimeridian_series(trixels_series, n_partitions=1, num_workers=None, 
         ddf = dask.dataframe.from_pandas(trixels_series, npartitions=n_partitions)
         meta = {'trixels': 'object'}
         res = ddf.map_partitions(lambda df:
-                                 vectorized.from_shapely(
+                                 from_shapely(
                                      split_antimeridian_series(df, n_partitions=1, drop=drop)).flatten(),
                                  meta=meta)
         trixels_series = res.compute(scheduler='processes', num_workers=num_workers)
