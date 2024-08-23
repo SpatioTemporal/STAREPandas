@@ -2,6 +2,7 @@ import pandas
 import geopandas
 import starepandas
 import numpy
+from geodatasets import get_path
 
 
 def test_points():
@@ -24,6 +25,6 @@ def test_points():
 
 
 def test_polygon():
-    world = geopandas.read_file(geopandas.datasets.get_path('naturalearth_lowres'))
+    world = geopandas.read_file(get_path('naturalearth_lowres'))
     africa = world[world.continent == 'Africa']
     stare = starepandas.sids_from_gdf(africa, level=5, force_ccw=True)

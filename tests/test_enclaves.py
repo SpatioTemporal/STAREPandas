@@ -1,9 +1,9 @@
 import starepandas
 import geopandas
-
+from geodatasets import get_path
 
 def test_enclave():
-    world = geopandas.read_file(geopandas.datasets.get_path('naturalearth_lowres'))
+    world = geopandas.read_file(get_path('naturalearth_lowres'))
     rsa = world[world.name == 'South Africa']
     rsa = starepandas.STAREDataFrame(rsa, add_sids=True, level=5, add_trixels=False)
     assert len(rsa.sids.iloc[0]) == 35

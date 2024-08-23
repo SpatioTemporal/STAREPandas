@@ -1,8 +1,9 @@
 import geopandas
 import starepandas
 import numpy
+from geodatasets import get_path
 
-world = geopandas.read_file(geopandas.datasets.get_path('naturalearth_lowres'))
+world = geopandas.read_file(get_path('naturalearth_lowres'))
 west = world[world['continent'].isin(['Europe', 'North America'])]
 west = starepandas.STAREDataFrame(west, add_sids=True, level=4, add_trixels=False)
 
