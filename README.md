@@ -176,6 +176,23 @@ stare_amazon = samerica.stare_intersection(amazon.make_sids.iloc[0])
     
 ![Example 3](figures/amazon.png)
 
+# Troubleshooting
+## `UserWarning: pyproj unable to set database path _pyproj_global_context_initialize()` Or `Invalid projection: EPSG:4326: (Internal Proj Error: proj_create: no database context specified)`
+
+This is typically caused by a problem with the PROJ library and Geopandas. So, one potential solution for this is to do the followings:
+
+- Install proj-data with conda: `conda install -c conda-forge proj-data`
+- Install geopandas and pyproj with pip:
+    - may need to uninstall geopandas from conda: `conda remove geopandas`
+    - `pip install scipy`
+    - `pip install pyproj geopandas`
+    - May need to install shapely with conda: `conda install -c conda-forge shapely`
+    - May need to intall matlib: `conda install -c conda-forge matplotlib`
+    - Check the PROJ data directory: 
+    - `import python`
+    - `print(pyproj.datadir.get_data_dir())`
+    - `export PROJ_LIB=/path/to/proj/data`
+
 # Acknowledgments
 2018-2021 STARE development supported by NASA/ACCESS-17 grant 80NSSC18M0118.
 
