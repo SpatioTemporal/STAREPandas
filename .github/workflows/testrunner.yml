@@ -34,6 +34,7 @@ jobs:
         pip install nbmake pytest-xdist        
         pip install configparser 
         python3 -c "import configparser; c = configparser.ConfigParser(); c.read('setup.cfg'); print(c['options']['install_requires'])" | xargs pip install
+        pip install geodatasets
     - name: Lint with flake8
       run: |
         # stop the build if there are Python syntax errors or undefined names
