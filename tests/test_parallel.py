@@ -1,8 +1,8 @@
 import starepandas
 import geopandas
+from geodatasets import get_path
 
-
-countries = geopandas.read_file(geopandas.datasets.get_path('naturalearth_lowres'))
+countries = geopandas.read_file(get_path('naturalearth_lowres'))
 
 
 def test_sid_lookup():

@@ -1,8 +1,9 @@
 import starepandas
 import geopandas
 import shapely
+from geodatasets import get_path
 
-world = geopandas.read_file(geopandas.datasets.get_path('naturalearth_lowres'))
+world = geopandas.read_file(get_path('naturalearth_lowres'))
 
 
 def test_trixels():
