@@ -1,6 +1,5 @@
 import starepandas
 import geopandas
-from geodatasets import get_path
 
 cities = ['Buenos Aires', 'Brasilia', 'Santiago',  'Bogota', 'Caracas', 'Sao Paulo', 'Bridgetown']
 latitudes = [-34.58, -15.78, -33.45, 4.60, 10.48, -23.55, 13.1]
@@ -10,7 +9,7 @@ cities = starepandas.STAREDataFrame(data)
 stare = starepandas.sids_from_xy(cities.Longitude, cities.Latitude, level=26)
 cities.set_sids(stare, inplace=True)
 
-countries = geopandas.read_file(get_path('naturalearth_lowres'))
+countries = geopandas.read_file('naturalearth_lowres.shp')
 samerica = countries[countries.continent == 'South America']
 stare = starepandas.sids_from_gdf(samerica, level=6, force_ccw=True)
 samerica = starepandas.STAREDataFrame(samerica, sids=stare)

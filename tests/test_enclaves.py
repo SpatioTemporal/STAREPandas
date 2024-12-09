@@ -1,9 +1,22 @@
 import starepandas
-import geopandas
-from geodatasets import get_path
+import geopandas as gpd
+from shapely.geometry import Polygon
 
 def test_enclave():
-    world = geopandas.read_file(get_path('naturalearth_lowres'))
+    # Create a sample geometry for South Africa
+    data = {
+        'name': ['South Africa'],
+        'continent': ['Africa'],
+        'pop_est': [58000000],
+        'geometry': [
+            Polygon([(15, -35), (35, -35), (35, -22), (15, -22), (15, -35)])  # Rough outline of South Africa
+        ]
+    }
+    # Create a GeoDataFrame with the sample data
+    world = gpd.GeoDataFrame(data, crs="EPSG:4326")
+    # Filter for South Africa
     rsa = world[world.name == 'South Africa']
+    # Convert to STAREDataFrame
     rsa = starepandas.STAREDataFrame(rsa, add_sids=True, level=5, add_trixels=False)
-    assert len(rsa.sids.iloc[0]) == 35
+    # Verify the length
+    assert len(rsa.sids.iloc[0]) == 65

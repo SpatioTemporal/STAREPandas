@@ -1,8 +1,6 @@
-import pandas
-import geopandas
+import geopandas as gpd
 import starepandas
 import numpy
-from geodatasets import get_path
 
 
 def test_points():
@@ -25,6 +23,14 @@ def test_points():
 
 
 def test_polygon():
-    world = geopandas.read_file(get_path('naturalearth_lowres'))
-    africa = world[world.continent == 'Africa']
-    stare = starepandas.sids_from_gdf(africa, level=5, force_ccw=True)
+    # Create a simple polygon representing Africa
+    africa_geometry = Polygon([
+        (-17.625, 37.21), (51.27, 37.21), (51.27, -34.82), (-17.625, -34.82), (-17.625, 37.21)
+    ])
+
+    # Create a GeoDataFrame for Africa
+    data = {'continent': ['Africa'], 'name': ['Africa'], 'pop_est': [1340598147]}
+    africa_gdf = gpd.GeoDataFrame(data, geometry=[africa_geometry], crs="EPSG:4326")
+
+    # Generate STARE SIDs
+    stare = starepandas.sids_from_gdf(africa_gdf, level=5, force_ccw=True)
