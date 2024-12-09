@@ -1,7 +1,7 @@
 import geopandas
 import starepandas
 
-countries = geopandas.read_file('naturalearth_lowres.shp')
+countries = geopandas.read_file(geopandas.datasets.get_path("naturalearth_lowres"))
 countries = starepandas.STAREDataFrame(countries)
 
 

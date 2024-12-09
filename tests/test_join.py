@@ -9,7 +9,7 @@ cities = starepandas.STAREDataFrame(data)
 stare = starepandas.sids_from_xy(cities.Longitude, cities.Latitude, level=26)
 cities.set_sids(stare, inplace=True)
 
-countries = geopandas.read_file('naturalearth_lowres.shp')
+countries = geopandas.read_file(geopandas.datasets.get_path("naturalearth_lowres"))
 samerica = countries[countries.continent == 'South America']
 stare = starepandas.sids_from_gdf(samerica, level=6, force_ccw=True)
 samerica = starepandas.STAREDataFrame(samerica, sids=stare)
