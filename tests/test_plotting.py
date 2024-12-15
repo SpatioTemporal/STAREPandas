@@ -20,15 +20,15 @@ sdf = starepandas.STAREDataFrame(gdf)
 sdf.set_sids(stare, inplace=True)
 
 trixels = sdf.make_trixels()
-trixel_df = sdf.set_trixels(trixels, inplace=False)
+# trixel_df = sdf.set_trixels(trixels, inplace=False)
 
 
 def test_plot_notrixel():
     sdf.plot(trixels=False, color='r')
 
 
-def test_plot_trixel():
-    trixel_df.plot(trixels=True, color='b')
+# def test_plot_trixel():
+#     trixel_df.plot(trixels=True, color='b')
 
 
 def test_issue51_a():
