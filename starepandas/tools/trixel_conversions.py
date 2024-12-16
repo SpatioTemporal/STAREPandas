@@ -6,8 +6,8 @@ import pystare
 import shapely
 import geopandas
 from shapely.geometry import Point
-# from geopandas.array import from_shapely
-from shapely.vectorized import from_shapely
+from geopandas.array import from_shapely
+# from shapely.vectorized import from_shapely
 
 
 def to_vertices(sids, wrap_lon=True):
