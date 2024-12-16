@@ -20,7 +20,6 @@ DEFAULT_SID_COLUMN_NAME = 'sids'
 DEFAULT_TID_COLUMN_NAME = 'tids'
 DEFAULT_TRIXEL_COLUMN_NAME = 'trixels'
 
-
 def compress_sids_group(group):
     sids = group[1].to_numpy()  # zero element is group label, 1 element is the df
     if sids.dtype == numpy.dtype('O'):
@@ -29,7 +28,6 @@ def compress_sids_group(group):
         sids = numpy.concatenate(sids)
     sids = starepandas.compress_sids(sids)
     return tuple([group[0], sids])
-
 
 def write_pod_pickle(g, fname, append=False, compress=None):
     """Write or append to a pickle."""
@@ -55,11 +53,11 @@ def write_pod_pickle(g, fname, append=False, compress=None):
 
 def write_pod_hdf(g, fname, append=False):
     """Write or append to an HDF file."""
-    raise NotImplementedError
-    if append:
-        pass
-    else:
-        pass
+    # raise NotImplementedError
+    # if append:
+    #     pass
+    # else:
+    #     pass
     return
 
 class STAREDataFrame(geopandas.GeoDataFrame):
@@ -95,12 +93,12 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
         Examples
         ---------
-        >>> cities = ['Buenos Aires', 'Brasilia', 'Santiago', 'Bogota', 'Caracas']
-        >>> latitudes = [-34.58, -15.78, -33.45, 4.60, 10.48]
-        >>> longitudes = [-58.66, -47.91, -70.66, -74.08, -66.86]
-        >>> data =  {'City': cities, 'Latitude': latitudes, 'Longitude': longitudes}
-        >>> sids = starepandas.sids_from_xy(longitudes, latitudes, level=5)
-        >>> sdf = starepandas.STAREDataFrame(data, sids=sids)
+        # >>> cities = ['Buenos Aires', 'Brasilia', 'Santiago', 'Bogota', 'Caracas']
+        # >>> latitudes = [-34.58, -15.78, -33.45, 4.60, 10.48]
+        # >>> longitudes = [-58.66, -47.91, -70.66, -74.08, -66.86]
+        # >>> data =  {'City': cities, 'Latitude': latitudes, 'Longitude': longitudes}
+        # >>> sids = starepandas.sids_from_xy(longitudes, latitudes, level=5)
+        # >>> sdf = starepandas.STAREDataFrame(data, sids=sids)
         """
 
         super().__init__(*args, **kwargs)
@@ -183,22 +181,22 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         ----------
         From points
 
-        >>> import starepandas, geopandas
-        >>> lats = [-72.609177, -72.648590, -72.591286]
-        >>> lons = [-41.255402, -42.054047, -41.625336]
-        >>> geoms = geopandas.points_from_xy(lons, lats)
-        >>> sdf = starepandas.STAREDataFrame(geometry=geoms)
-        >>> sdf.make_sids(level=6, convex=False)
-        0    2299437706637111654
-        1    2299435211084507366
-        2    2299436587616075270
-        Name: sids, dtype: int64
-
-        From polygons
-
-        >>> gdf = geopandas.read_file(geopandas.datasets.get_path("naturalearth_lowres"))
-        >>> sdf = starepandas.STAREDataFrame(gdf)
-        >>> sids = sdf.make_sids(level=5)
+        # >>> import starepandas, geopandas
+        # >>> lats = [-72.609177, -72.648590, -72.591286]
+        # >>> lons = [-41.255402, -42.054047, -41.625336]
+        # >>> geoms = geopandas.points_from_xy(lons, lats)
+        # >>> sdf = starepandas.STAREDataFrame(geometry=geoms)
+        # >>> sdf.make_sids(level=6, convex=False)
+        # 0    2299437706637111654
+        # 1    2299435211084507366
+        # 2    2299436587616075270
+        # Name: sids, dtype: int64
+        #
+        # From polygons
+        #
+        # >>> gdf = geopandas.read_file(geopandas.datasets.get_path("naturalearth_lowres"))
+        # >>> sdf = starepandas.STAREDataFrame(gdf)
+        # >>> sids = sdf.make_sids(level=5)
         """
 
         sids = starepandas.sids_from_geoseries(self.geometry, level=level, convex=convex,
@@ -239,7 +237,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         ----------
         From points
 
-        >>> import starepandas, geopandas
+        # >>> import starepandas, geopandas
         """
         # Autoadjust resolution
         start_col = self[column]
@@ -272,10 +270,10 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
         Examples
         --------
-        >>> import starepandas
-        >>> sdf = starepandas.STAREDataFrame()
-        >>> sids = [4611686018427387903, 2299435211084507590, 2299566194809236966]
-        >>> sdf.set_sids(sids, inplace=True)
+        # >>> import starepandas
+        # >>> sdf = starepandas.STAREDataFrame()
+        # >>> sids = [4611686018427387903, 2299435211084507590, 2299566194809236966]
+        # >>> sdf.set_sids(sids, inplace=True)
         """
 
         # Most of the code here is taken from GeoDataFrame.set_geometry()
@@ -319,10 +317,10 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
         Examples
         --------
-        >>> import starepandas
-        >>> sdf = starepandas.STAREDataFrame()
-        >>> tids = [4611686018427387903, 2299435211084507590, 2299566194809236966]
-        >>> sdf.set_tids(tids, inplace=True)
+        # >>> import starepandas
+        # >>> sdf = starepandas.STAREDataFrame()
+        # >>> tids = [4611686018427387903, 2299435211084507590, 2299566194809236966]
+        # >>> sdf.set_tids(tids, inplace=True)
         """
 
         # Most of the code here is taken from GeoDataFrame.set_geometry()
@@ -377,10 +375,10 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
         Examples
         --------
-        >>> import starepandas
-        >>> sids = [648518346341351428, 900719925474099204, 1170935903116328964]
-        >>> sdf = starepandas.STAREDataFrame(sids=sids)
-        >>> trixels = sdf.make_trixels()
+        # >>> import starepandas
+        # >>> sids = [648518346341351428, 900719925474099204, 1170935903116328964]
+        # >>> sdf = starepandas.STAREDataFrame(sids=sids)
+        # >>> trixels = sdf.make_trixels()
         """
 
         if sid_column is None:
@@ -421,11 +419,11 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
         Examples
         ---------
-        >>> import starepandas
-        >>> sids = [4611686018427387903, 4611686018427387903, 4611686018427387903]
-        >>> sdf = starepandas.STAREDataFrame(sids=sids)
-        >>> trixels = sdf.make_trixels()
-        >>> sdf.set_trixels(trixels, inplace=True)
+        # >>> import starepandas
+        # >>> sids = [4611686018427387903, 4611686018427387903, 4611686018427387903]
+        # >>> sdf = starepandas.STAREDataFrame(sids=sids)
+        # >>> trixels = sdf.make_trixels()
+        # >>> sdf.set_trixels(trixels, inplace=True)
         """
 
         if inplace:
@@ -465,9 +463,9 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
         Examples
         ---------
-        >>> sids = numpy.array([3458764513820540928])
-        >>> df = starepandas.STAREDataFrame(sids=sids)
-        >>> df.trixel_vertices()
+        # >>> sids = numpy.array([3458764513820540928])
+        # >>> df = starepandas.STAREDataFrame(sids=sids)
+        # >>> df.trixel_vertices()
         (array([29.9999996 , 45.00000069, 29.9999996 ]), array([-170.26439001,  -45.        ,   80.26439001]), array([80.264389]), array([135.]))
         """
         return starepandas.tools.trixel_conversions.to_vertices(self[self._sid_column_name])
@@ -490,9 +488,9 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
         Examples
         ---------
-        >>> sids = numpy.array([3458764513820540928])
-        >>> df = starepandas.STAREDataFrame(sids=sids)
-        >>> df.trixel_centers()
+        # >>> sids = numpy.array([3458764513820540928])
+        # >>> df = starepandas.STAREDataFrame(sids=sids)
+        # >>> df.trixel_centers()
         array([[134.9      ,  80.264389]])
         """
 
@@ -519,9 +517,9 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
         Examples
         ---------
-        >>> sids = numpy.array([3458764513820540928])
-        >>> df = starepandas.STAREDataFrame(sids=sids)
-        >>> df.trixel_centers_ecef()
+        # >>> sids = numpy.array([3458764513820540928])
+        # >>> df = starepandas.STAREDataFrame(sids=sids)
+        # >>> df.trixel_centers_ecef()
         array([[-0.11957316,  0.11957316,  0.98559856]])
         """
         if vertices:
@@ -547,10 +545,10 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
         Examples
         ---------
-        >>> sids = numpy.array([4458764513820540928])
-        >>> df = starepandas.STAREDataFrame(sids=sids)
-        >>> centers = df.trixel_centerpoints()
-        >>> print(centers[0])
+        # >>> sids = numpy.array([4458764513820540928])
+        # >>> df = starepandas.STAREDataFrame(sids=sids)
+        # >>> centers = df.trixel_centerpoints()
+        # >>> print(centers[0])
         POINT (18.4 24.09)
         """
         if vertices:
@@ -581,9 +579,9 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
         Examples
         ----------
-        >>> sids = numpy.array([3458764513820540928])
-        >>> df = starepandas.STAREDataFrame(sids=sids)
-        >>> df.trixel_corners()
+        # >>> sids = numpy.array([3458764513820540928])
+        # >>> df = starepandas.STAREDataFrame(sids=sids)
+        # >>> df.trixel_corners()
         array([[[-170.26439001,  29.9999996 ],
                 [ -45.        ,  45.00000069],
                 [  80.26439001,  29.9999996 ]]])
@@ -619,9 +617,9 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
         Examples
         ----------
-        >>> sids = numpy.array([3458764513820540928])
-        >>> df = starepandas.STAREDataFrame(sids=sids)
-        >>> df.trixel_corners_ecef()
+        # >>> sids = numpy.array([3458764513820540928])
+        # >>> df = starepandas.STAREDataFrame(sids=sids)
+        # >>> df.trixel_corners_ecef()
         array([[[-0.85355339, -0.14644661,  0.49999999],
                 [ 0.49999999, -0.49999999,  0.70710679],
                 [ 0.14644661,  0.85355339,  0.49999999]]])
@@ -649,9 +647,9 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
         Examples
         ----------
-        >>> sids = numpy.array([3458764513820540928])
-        >>> df = starepandas.STAREDataFrame(sids=sids)
-        >>> df.trixel_grings()
+        # >>> sids = numpy.array([3458764513820540928])
+        # >>> df = starepandas.STAREDataFrame(sids=sids)
+        # >>> df.trixel_grings()
         array([[[ 0.14644661,  0.85355339,  0.49999999],
                 [-0.85355339, -0.14644661,  0.49999999],
                 [ 0.49999999, -0.49999999,  0.70710679]]])
@@ -670,17 +668,17 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
         Examples
         ----------
-        >>> cities = {'name': ['midway', 'Fiji', 'Baker', 'honolulu'],
-        ...           'lat': [28.2, -17.8,  0.2, 21.3282956],
-        ...           'lon': [-177.35, 178.1, -176.7, -157.9]}
-        >>> sdf = starepandas.STAREDataFrame(cities)
-        >>> sids = starepandas.sids_from_xy(sdf.lon, sdf.lat, level=1)
-        >>> sdf.set_sids(sids, inplace=True)
-        >>> trixels = sdf.make_trixels(wrap_lon=False)
-        >>> sdf.set_trixels(trixels, inplace=True)
-        >>> cites_split = sdf.split_antimeridian(inplace=False)
-        >>> max(max(cites_split.trixels[1].geoms[0].exterior.xy))
-        180.0
+        # >>> cities = {'name': ['midway', 'Fiji', 'Baker', 'honolulu'],
+        # ...           'lat': [28.2, -17.8,  0.2, 21.3282956],
+        # ...           'lon': [-177.35, 178.1, -176.7, -157.9]}
+        # >>> sdf = starepandas.STAREDataFrame(cities)
+        # >>> sids = starepandas.sids_from_xy(sdf.lon, sdf.lat, level=1)
+        # >>> sdf.set_sids(sids, inplace=True)
+        # >>> trixels = sdf.make_trixels(wrap_lon=False)
+        # >>> sdf.set_trixels(trixels, inplace=True)
+        # >>> cites_split = sdf.split_antimeridian(inplace=False)
+        # >>> max(max(cites_split.trixels[1].geoms[0].exterior.xy))
+        # 180.0
 
         """
         if inplace:
@@ -718,12 +716,12 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
         Examples
         --------
-        >>> import starepandas
-        >>> import geopandas
-        >>> world = geopandas.read_file(geopandas.datasets.get_path('naturalearth_lowres'))
-        >>> germany = world[world.name=='Germany']
-        >>> germany = starepandas.STAREDataFrame(germany, add_sids=True, level=8, add_trixels=True, n_partitions=1)
-        >>> ax = germany.plot(trixels=True, boundary=True, color='y', zorder=0)
+        # >>> import starepandas
+        # >>> import geopandas
+        # >>> world = geopandas.read_file(geopandas.datasets.get_path('naturalearth_lowres'))
+        # >>> germany = world[world.name=='Germany']
+        # >>> germany = starepandas.STAREDataFrame(germany, add_sids=True, level=8, add_trixels=True, n_partitions=1)
+        # >>> ax = germany.plot(trixels=True, boundary=True, color='y', zorder=0)
         """
         df = self.copy()
 
@@ -760,11 +758,11 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
         Examples
         --------
-        >>> germany = [4251398048237748227, 4269412446747230211, 4278419646001971203,
-        ...            4539628424389459971, 4548635623644200963, 4566650022153682947]
-        >>> cities = {'name': ['berlin', 'madrid'], 'sid': [4258121269174388239, 4288120002905386575]}
-        >>> cities = starepandas.STAREDataFrame(cities, sids='sid')
-        >>> cities.stare_intersects(germany)
+        # >>> germany = [4251398048237748227, 4269412446747230211, 4278419646001971203,
+        # ...            4539628424389459971, 4548635623644200963, 4566650022153682947]
+        # >>> cities = {'name': ['berlin', 'madrid'], 'sid': [4258121269174388239, 4288120002905386575]}
+        # >>> cities = starepandas.STAREDataFrame(cities, sids='sid')
+        # >>> cities.stare_intersects(germany)
         0     True
         1    False
         dtype: bool
@@ -824,17 +822,17 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
         Examples
         ---------
-        >>> import shapely
-        >>> nodes1 = [[102, 33], [101, 35], [105, 34], [104, 33], [102, 33]]
-        >>> nodes2 = [[102, 34], [106, 35], [106, 33], [102, 33.5], [102, 34]]
-        >>> polygon1 = shapely.geometry.Polygon(nodes1)
-        >>> polygon2 = shapely.geometry.Polygon(nodes2)
-        >>> sids1 = starepandas.sids_from_polygon(polygon1, level=5, force_ccw=True)
-        >>> sids2 = starepandas.sids_from_polygon(polygon2, level=5, force_ccw=True)
-
-        >>> df = starepandas.STAREDataFrame(sids=[sids1])
-        >>> df.stare_intersection(sids2).iloc[0]
-        array([694117292568477701, 701435641962954757, 701998591916376069])
+        # >>> import shapely
+        # >>> nodes1 = [[102, 33], [101, 35], [105, 34], [104, 33], [102, 33]]
+        # >>> nodes2 = [[102, 34], [106, 35], [106, 33], [102, 33.5], [102, 34]]
+        # >>> polygon1 = shapely.geometry.Polygon(nodes1)
+        # >>> polygon2 = shapely.geometry.Polygon(nodes2)
+        # >>> sids1 = starepandas.sids_from_polygon(polygon1, level=5, force_ccw=True)
+        # >>> sids2 = starepandas.sids_from_polygon(polygon2, level=5, force_ccw=True)
+        #
+        # >>> df = starepandas.STAREDataFrame(sids=[sids1])
+        # >>> df.stare_intersection(sids2).iloc[0]
+        # array([694117292568477701, 701435641962954757, 701998591916376069])
         """
         data = []
         for srange in self[self._sid_column_name]:
@@ -864,15 +862,15 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
         Examples
         --------
-        >>> import geopandas
-        >>> world = geopandas.read_file(geopandas.datasets.get_path('naturalearth_lowres'))
-        >>> west = world[world['continent'].isin(['Europe', 'North America'])]
-        >>> west = starepandas.STAREDataFrame(west, add_sids=True, level=4, add_trixels=False)
-        >>> west.stare_dissolve(by='continent', aggfunc='sum') # doctest: +SKIP
-                                                                   stare  ...  gdp_md_est
-        continent                                                         ...
-        Europe         [648518346341351428, 900719925474099204, 10448...  ...  25284877.0
-        North America  [1170935903116328964, 1173187702930014212, 117...  ...  23505137.0
+        # >>> import geopandas
+        # >>> world = geopandas.read_file(geopandas.datasets.get_path('naturalearth_lowres'))
+        # >>> west = world[world['continent'].isin(['Europe', 'North America'])]
+        # >>> west = starepandas.STAREDataFrame(west, add_sids=True, level=4, add_trixels=False)
+        # >>> west.stare_dissolve(by='continent', aggfunc='sum') # doctest: +SKIP
+        #                                                            stare  ...  gdp_md_est
+        # continent                                                         ...
+        # Europe         [648518346341351428, 900719925474099204, 10448...  ...  25284877.0
+        # North America  [1170935903116328964, 1173187702930014212, 117...  ...  23505137.0
         """
         if by is None:
             sids = self[self._sid_column_name].to_numpy()
@@ -950,13 +948,13 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
         Examples
         --------
-        >>> sids = [2299437706637111721, 2299435211084507593, 2299566194809236969]
-        >>> sdf = starepandas.STAREDataFrame(sids=sids)
-        >>> sdf.to_sids_level(level=6, clear_to_level=False)
-                          sids
-        0  2299437706637111718
-        1  2299435211084507590
-        2  2299566194809236966
+        # >>> sids = [2299437706637111721, 2299435211084507593, 2299566194809236969]
+        # >>> sdf = starepandas.STAREDataFrame(sids=sids)
+        # >>> sdf.to_sids_level(level=6, clear_to_level=False)
+        #                   sids
+        # 0  2299437706637111718
+        # 1  2299435211084507590
+        # 2  2299566194809236966
         """
 
         if inplace:
@@ -995,13 +993,13 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
         Examples
         ----------
-        >>> sids = [2299437706637111721, 2299435211084507593, 2299566194809236969]
-        >>> sdf = starepandas.STAREDataFrame(sids=sids)
-        >>> sdf.clear_to_level(inplace=False)
-                          sids
-        0  2299437254470270985
-        1  2299435055447015433
-        2  2299564797819093001
+        # >>> sids = [2299437706637111721, 2299435211084507593, 2299566194809236969]
+        # >>> sdf = starepandas.STAREDataFrame(sids=sids)
+        # >>> sdf.clear_to_level(inplace=False)
+        #                   sids
+        # 0  2299437254470270985
+        # 1  2299435055447015433
+        # 2  2299564797819093001
 
         """
         if inplace:
@@ -1037,15 +1035,15 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
         Examples
         ---------
-        >>> import geopandas
-        >>> world = geopandas.read_file(geopandas.datasets.get_path('naturalearth_lowres'))
-        >>> germany  = world[world.name=='Germany']
-        >>> germany = starepandas.STAREDataFrame(germany, add_sids=True, level=6, add_trixels=False)
-        >>> len(germany.sids.iloc[0])
-        43
-        >>> germany_singleres = germany.to_sids_singlelevel()
-        >>> len(germany_singleres.sids.iloc[0])
-        46
+        # >>> import geopandas
+        # >>> world = geopandas.read_file(geopandas.datasets.get_path('naturalearth_lowres'))
+        # >>> germany  = world[world.name=='Germany']
+        # >>> germany = starepandas.STAREDataFrame(germany, add_sids=True, level=6, add_trixels=False)
+        # >>> len(germany.sids.iloc[0])
+        # 43
+        # >>> germany_singleres = germany.to_sids_singlelevel()
+        # >>> len(germany_singleres.sids.iloc[0])
+        # 46
         """
 
         if inplace:
@@ -1078,14 +1076,14 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
         Examples
         ---------
-        >>> sdf = starepandas.STAREDataFrame(sids=[2251799813685252, 4503599627370500])
-        >>> sdf.hex()
-        ['0x0008000000000004', '0x0010000000000004']
-
-        >>> sdf = starepandas.STAREDataFrame(sids=[[2251799813685252, 4503599627370500],
-        ...                                        [4604930618986332164, 4607182418800017412]])
-        >>> sdf.hex()
-        [['0x0008000000000004', '0x0010000000000004'], ['0x3fe8000000000004', '0x3ff0000000000004']]
+        # >>> sdf = starepandas.STAREDataFrame(sids=[2251799813685252, 4503599627370500])
+        # >>> sdf.hex()
+        # ['0x0008000000000004', '0x0010000000000004']
+        #
+        # >>> sdf = starepandas.STAREDataFrame(sids=[[2251799813685252, 4503599627370500],
+        # ...                                        [4604930618986332164, 4607182418800017412]])
+        # >>> sdf.hex()
+        # [['0x0008000000000004', '0x0010000000000004'], ['0x3fe8000000000004', '0x3ff0000000000004']]
         """
 
         sids = []
@@ -1335,18 +1333,18 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
         Examples
         ----------
-        >>> df = starepandas.STAREDataFrame({'x': [0, 0, 1, 1],
-        ...                                  'y': [1, 0, 0, 1],
-        ...                                  'a': [1, 2, 3, 4]})
-        >>> df.to_array('a', pivot=False)
-        array([[1, 2],
-               [3, 4]])
-
-        >>> df.to_array('a', pivot=True)
-        array([[2, 1],
-               [3, 4]])
-
-        See also
+        # >>> df = starepandas.STAREDataFrame({'x': [0, 0, 1, 1],
+        # ...                                  'y': [1, 0, 0, 1],
+        # ...                                  'a': [1, 2, 3, 4]})
+        # >>> df.to_array('a', pivot=False)
+        # array([[1, 2],
+        #        [3, 4]])
+        #
+        # >>> df.to_array('a', pivot=True)
+        # array([[2, 1],
+        #        [3, 4]])
+        #
+        # See also
         --------
         STAREDataFrame.to_arrays
 
