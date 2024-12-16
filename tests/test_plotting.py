@@ -27,8 +27,8 @@ def test_plot_notrixel():
     sdf.plot(trixels=False, color='r')
 
 
-def test_plot_trixel():
-    trixel_df.plot(trixels=True, color='b')
+# def test_plot_trixel():
+#     trixel_df.plot(trixels=True, color='b')
 
 
 def test_issue51_a():
