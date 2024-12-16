@@ -14,8 +14,8 @@ def test_points():
             'Latitude': latitudes, 'Longitude': longitudes}
 
     df = pandas.DataFrame(data)
-    geom = geopandas.points_from_xy(df.Longitude, df.Latitude)
-    gdf = geopandas.GeoDataFrame(df, geometry=geom)
+    geom = gpd.points_from_xy(df.Longitude, df.Latitude)
+    gdf = gpd.GeoDataFrame(df, geometry=geom)
 
     stare1 = starepandas.sids_from_xy(df.Longitude, df.Latitude, level=5)
     stare2 = starepandas.sids_from_xy_df(gdf, n_partitions=1, level=5)
