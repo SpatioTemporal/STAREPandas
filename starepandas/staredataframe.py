@@ -104,9 +104,10 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
         super().__init__(*args, **kwargs)
 
-        self._sid_column_name = DEFAULT_SID_COLUMN_NAME
-        self._trixel_column_name = DEFAULT_TRIXEL_COLUMN_NAME
-        self._tid_column_name = DEFAULT_TID_COLUMN_NAME
+        self._metadata = ['_sid_column_name', '_trixel_column_name', '_geometry_column_name', '_crs']
+        self._sid_column_name = 'sids'
+        self._trixel_column_name = 'trixels'
+        self._tid_column_name = 'tids'
 
         if args and isinstance(args[0], (geopandas.GeoDataFrame, STAREDataFrame)):
             self._geometry_column_name = args[0]._geometry_column_name
