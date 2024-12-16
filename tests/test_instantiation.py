@@ -1,6 +1,8 @@
 import geopandas as gpd
 import starepandas
 import numpy
+import pandas
+from shapely.geometry import Polygon
 
 
 def test_points():
