@@ -283,6 +283,10 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             frame = self
         else:
             frame = self.copy()
+            frame._tid_column_name = self._tid_column_name
+            frame._sid_column_name = self._sid_column_name
+            frame._trixel_column_name = self._trixel_column_name
+            frame._geometry_column_name = self._geometry_column_name
 
         if isinstance(col, (list, numpy.ndarray, pandas.Series)):
             frame[frame._sid_column_name] = col
@@ -326,6 +330,10 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             frame = self
         else:
             frame = self.copy()
+            frame._tid_column_name = self._tid_column_name
+            frame._sid_column_name = self._sid_column_name
+            frame._trixel_column_name = self._trixel_column_name
+            frame._geometry_column_name = self._geometry_column_name
 
         if isinstance(col, (list, numpy.ndarray, pandas.Series)):
             frame[frame._tid_column_name] = col
@@ -679,6 +687,10 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             df = self
         else:
             df = self.copy()
+            df._tid_column_name = self._tid_column_name
+            df._sid_column_name = self._sid_column_name
+            df._trixel_column_name = self._trixel_column_name
+            df._geometry_column_name = self._geometry_column_name
 
         if not trixel_column_name:
             trixel_column_name = df._trixel_column_name
@@ -951,6 +963,10 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             df = self
         else:
             df = self.copy()
+            df._tid_column_name = self._tid_column_name
+            df._sid_column_name = self._sid_column_name
+            df._trixel_column_name = self._trixel_column_name
+            df._geometry_column_name = self._geometry_column_name
 
         sids = df[df._sid_column_name]
         if pandas.api.types.is_integer_dtype(sids):
@@ -992,6 +1008,11 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             df = self
         else:
             df = self.copy()
+            df._tid_column_name = self._tid_column_name
+            df._sid_column_name = self._sid_column_name
+            df._trixel_column_name = self._trixel_column_name
+            df._geometry_column_name = self._geometry_column_name
+
         sids = df[df._sid_column_name]
         sids = pystare.spatial_clear_to_resolution(numpy.array(sids))
 
@@ -1031,6 +1052,10 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             df = self
         else:
             df = self.copy()
+            df._tid_column_name = self._tid_column_name
+            df._sid_column_name = self._sid_column_name
+            df._trixel_column_name = self._trixel_column_name
+            df._geometry_column_name = self._geometry_column_name
 
         sids_col = df[df._sid_column_name]
 
