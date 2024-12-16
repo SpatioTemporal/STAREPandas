@@ -724,6 +724,10 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         # >>> ax = germany.plot(trixels=True, boundary=True, color='y', zorder=0)
         """
         df = self.copy()
+        df._tid_column_name = self._tid_column_name
+        df._sid_column_name = self._sid_column_name
+        df._trixel_column_name = self._trixel_column_name
+        df._geometry_column_name = self._geometry_column_name
 
         if trixels:
             if not self.has_trixels():
