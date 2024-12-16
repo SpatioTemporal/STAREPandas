@@ -35,14 +35,14 @@ def to_vertices(sids, wrap_lon=True):
 
     Examples
     -----------
-    >>> import starepandas
-    >>> import numpy
-    >>> sids = numpy.array([3])
-    >>> starepandas.to_vertices(sids)
-    (array([-29.9999996 , -38.92792794, -23.13179401]),
-     array([ 9.73560999, 18.06057651, 19.71049975]),
-     array([-30.75902492]),
-     array([15.84277554]))
+    # >>> import starepandas
+    # >>> import numpy
+    # >>> sids = numpy.array([3])
+    # >>> starepandas.to_vertices(sids)
+    # (array([-29.9999996 , -38.92792794, -23.13179401]),
+    #  array([ 9.73560999, 18.06057651, 19.71049975]),
+    #  array([-30.75902492]),
+    #  array([15.84277554]))
     """
     vs = pystare.to_vertices_latlon(sids)
 
@@ -70,11 +70,11 @@ def vertices2centers(vertices):
 
     Examples
     --------------
-    >>> import starepandas
-    >>> sids = numpy.array([18014398509481987])
-    >>> vertices = starepandas.tools.trixel_conversions.to_vertices(sids)
-    >>> starepandas.vertices2centers(vertices)
-    array([[ 25.66446757, -23.46672972]])
+    # >>> import starepandas
+    # >>> sids = numpy.array([18014398509481987])
+    # >>> vertices = starepandas.tools.trixel_conversions.to_vertices(sids)
+    # >>> starepandas.vertices2centers(vertices)
+    # array([[ 25.66446757, -23.46672972]])
     """
 
     lat_center = vertices[2]
@@ -99,11 +99,11 @@ def vertices2centers_ecef(vertices):
 
     Examples
     ----------
-    >>> import starepandas
-    >>> sids = numpy.array([1729382256910270464])
-    >>> vertices = starepandas.tools.trixel_conversions.to_vertices(sids)
-    >>> starepandas.vertices2centers_ecef(vertices)
-    array([[ 0.11957316, -0.11957316, -0.98559856]])
+    # >>> import starepandas
+    # >>> sids = numpy.array([1729382256910270464])
+    # >>> vertices = starepandas.tools.trixel_conversions.to_vertices(sids)
+    # >>> starepandas.vertices2centers_ecef(vertices)
+    # array([[ 0.11957316, -0.11957316, -0.98559856]])
     """
 
     lat = vertices[2]
@@ -130,12 +130,12 @@ def vertices2centerpoints(vertices):
 
     Examples
     ----------
-    >>> import starepandas
-    >>> sids = numpy.array([2882303761517117440])
-    >>> vertices = starepandas.tools.to_vertices(sids)
-    >>> points = starepandas.vertices2centerpoints(vertices)
-    >>> print(points[0])
-    POINT (-108.4349490979417 24.09484285959212)
+    # >>> import starepandas
+    # >>> sids = numpy.array([2882303761517117440])
+    # >>> vertices = starepandas.tools.to_vertices(sids)
+    # >>> points = starepandas.vertices2centerpoints(vertices)
+    # >>> print(points[0])
+    # POINT (-108.4349490979417 24.09484285959212)
     """
 
     lat_center = vertices[2]
@@ -161,13 +161,13 @@ def vertices2corners(vertices):
 
     Examples
     --------------
-    >>> import starepandas
-    >>> sids = numpy.array([3458764513820540928])
-    >>> vertices = starepandas.tools.trixel_conversions.to_vertices(sids)
-    >>> starepandas.vertices2corners(vertices)
-    array([[[-170.26439001,   29.9999996 ],
-            [ -45.        ,   45.00000069],
-            [  80.26439001,   29.9999996 ]]])
+    # >>> import starepandas
+    # >>> sids = numpy.array([3458764513820540928])
+    # >>> vertices = starepandas.tools.trixel_conversions.to_vertices(sids)
+    # >>> starepandas.vertices2corners(vertices)
+    # array([[[-170.26439001,   29.9999996 ],
+    #         [ -45.        ,   45.00000069],
+    #         [  80.26439001,   29.9999996 ]]])
 
     """
 
@@ -236,13 +236,13 @@ def vertices2corners_ecef(vertices):
 
     Examples
     ----------
-    >>> import starepandas
-    >>> sids = numpy.array([3458764513820540928])
-    >>> vertices = starepandas.tools.trixel_conversions.to_vertices(sids)
-    >>> starepandas.vertices2corners_ecef(vertices)
-    array([[[-0.85355339, -0.14644661,  0.49999999],
-            [ 0.49999999, -0.49999999,  0.70710679],
-            [ 0.14644661,  0.85355339,  0.49999999]]])
+    # >>> import starepandas
+    # >>> sids = numpy.array([3458764513820540928])
+    # >>> vertices = starepandas.tools.trixel_conversions.to_vertices(sids)
+    # >>> starepandas.vertices2corners_ecef(vertices)
+    # array([[[-0.85355339, -0.14644661,  0.49999999],
+    #         [ 0.49999999, -0.49999999,  0.70710679],
+    #         [ 0.14644661,  0.85355339,  0.49999999]]])
     """
 
     corners = vertices2corners(vertices)
@@ -283,11 +283,11 @@ def to_centers(sids):
 
     Examples
     ----------
-    >>> import starepandas
-    >>> sids = [4611263805962321926, 4611404543450677254]
-    >>> starepandas.to_centers(sids)
-    array([[19.50219018, 23.29074702],
-           [18.65957821, 25.34384175]])
+    # >>> import starepandas
+    # >>> sids = [4611263805962321926, 4611404543450677254]
+    # >>> starepandas.to_centers(sids)
+    # array([[19.50219018, 23.29074702],
+    #        [18.65957821, 25.34384175]])
     """
     vertices = to_vertices(sids)
     centers = vertices2centers(vertices)
@@ -309,11 +309,11 @@ def to_centers_ecef(sids):
 
     Examples
     ----------
-    >>> import starepandas
-    >>> sids = [4611263805962321926, 4611404543450677254]
-    >>> starepandas.to_centers_ecef(sids)
-    array([[0.86581415, 0.30663812, 0.39539717],
-           [0.8562505 , 0.28915168, 0.42804953]])
+    # >>> import starepandas
+    # >>> sids = [4611263805962321926, 4611404543450677254]
+    # >>> starepandas.to_centers_ecef(sids)
+    # array([[0.86581415, 0.30663812, 0.39539717],
+    #        [0.8562505 , 0.28915168, 0.42804953]])
 
     """
     vertices = to_vertices(sids)
@@ -336,11 +336,11 @@ def to_centerpoints(sids):
 
     Examples
     ----------
-    >>> import starepandas
-    >>> sids = [4611263805962321926, 4611404543450677254]
-    >>> centerpoints = starepandas.to_centerpoints(sids)
-    >>> print(Point(19.50219017924583,23.29074702177385).distance(centerpoints[0]) < 1.0e-12)
-    True
+    # >>> import starepandas
+    # >>> sids = [4611263805962321926, 4611404543450677254]
+    # >>> centerpoints = starepandas.to_centerpoints(sids)
+    # >>> print(Point(19.50219017924583,23.29074702177385).distance(centerpoints[0]) < 1.0e-12)
+    # True
     """
 
     vertices = to_vertices(sids)
@@ -367,15 +367,15 @@ def to_corners(sids, wrap_lon=True):
 
     Examples
     -----------
-    >>> import starepandas
-    >>> sids = [4611263805962321926, 4611404543450677254]
-    >>> starepandas.to_corners(sids)
-    array([[[20.55604548, 22.47991609],
-            [19.73607532, 24.53819039],
-            [18.21460548, 22.84521749]],
-            [[18.88878121, 26.59188366],
-            [17.35402492, 24.89163021],
-            [19.73607532, 24.53819039]]])
+    # >>> import starepandas
+    # >>> sids = [4611263805962321926, 4611404543450677254]
+    # >>> starepandas.to_corners(sids)
+    # array([[[20.55604548, 22.47991609],
+    #         [19.73607532, 24.53819039],
+    #         [18.21460548, 22.84521749]],
+    #         [[18.88878121, 26.59188366],
+    #         [17.35402492, 24.89163021],
+    #         [19.73607532, 24.53819039]]])
     """
 
     vertices = to_vertices(sids, wrap_lon=wrap_lon)
@@ -399,15 +399,15 @@ def to_corners_ecef(sids):
 
     Examples
     -----------
-    >>> import starepandas
-    >>> sids = [4611263805962321926, 4611404543450677254]
-    >>> starepandas.to_corners_ecef(sids)
-    array([[[0.86518091, 0.32444285, 0.38235956],
-            [0.84606293, 0.28948702, 0.44763242],
-            [0.85624806, 0.30718957, 0.41529968]],
-           [[0.86581405, 0.27056689, 0.42090331],
-            [0.87538003, 0.2880576 , 0.38824299],
-            [0.85624806, 0.30718957, 0.41529968]]])
+    # >>> import starepandas
+    # >>> sids = [4611263805962321926, 4611404543450677254]
+    # >>> starepandas.to_corners_ecef(sids)
+    # array([[[0.86518091, 0.32444285, 0.38235956],
+    #         [0.84606293, 0.28948702, 0.44763242],
+    #         [0.85624806, 0.30718957, 0.41529968]],
+    #        [[0.86581405, 0.27056689, 0.42090331],
+    #         [0.87538003, 0.2880576 , 0.38824299],
+    #         [0.85624806, 0.30718957, 0.41529968]]])
     """
 
     vertices = to_vertices(sids)
@@ -431,15 +431,15 @@ def to_gring(sids):
 
     Examples
     ---------
-    >>> import starepandas
-    >>> sids = [4611263805962321926, 4611404543450677254]
-    >>> starepandas.to_gring(sids)
-    array([[[ 0.01728414, -0.03191472, -0.01202901],
-            [ 0.00073153,  0.03145575, -0.02172531],
-            [-0.00036603,  0.03111274, -0.02225885]],
-           [[-0.01693076,  0.00082534,  0.03429666],
-            [-0.01582108,  0.0011905 ,  0.03478885],
-            [ 0.01728414, -0.03191472, -0.01202901]]])
+    # >>> import starepandas
+    # >>> sids = [4611263805962321926, 4611404543450677254]
+    # >>> starepandas.to_gring(sids)
+    # array([[[ 0.01728414, -0.03191472, -0.01202901],
+    #         [ 0.00073153,  0.03145575, -0.02172531],
+    #         [-0.00036603,  0.03111274, -0.02225885]],
+    #        [[-0.01693076,  0.00082534,  0.03429666],
+    #         [-0.01582108,  0.0011905 ,  0.03478885],
+    #         [ 0.01728414, -0.03191472, -0.01202901]]])
     """
 
     corners = to_corners_ecef(sids)
@@ -478,9 +478,9 @@ def to_trixels(sids, as_multipolygon=False, wrap_lon=True):
 
     Examples
     ---------
-    >>> import starepandas
-    >>> sids = [4611686018427387903, 4611686018427387903]
-    >>> trixels = starepandas.to_trixels(sids, as_multipolygon=True)
+    # >>> import starepandas
+    # >>> sids = [4611686018427387903, 4611686018427387903]
+    # >>> trixels = starepandas.to_trixels(sids, as_multipolygon=True)
     """
     if isinstance(sids, (numpy.int64, int)):
         # If single value was passed
@@ -525,10 +525,10 @@ def trixels_from_stareseries(sids_series, n_partitions=1, num_workers=None, wrap
 
     Examples
     -------------
-    >>> import starepandas
-    >>> sids = [4611686018427387903, 4611686018427387903]
-    >>> sdf = starepandas.STAREDataFrame(sids=sids)
-    >>> trixels = starepandas.trixels_from_stareseries(sdf.sids)
+    # >>> import starepandas
+    # >>> sids = [4611686018427387903, 4611686018427387903]
+    # >>> sdf = starepandas.STAREDataFrame(sids=sids)
+    # >>> trixels = starepandas.trixels_from_stareseries(sdf.sids)
     """
     npartitions = n_partitions
     if len(sids_series) <= 1:

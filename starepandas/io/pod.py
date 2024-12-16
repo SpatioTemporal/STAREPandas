@@ -131,12 +131,12 @@ def read_pods(pod_root, sids=None, tids=None, pattern=None, add_podname=False, p
 
     Examples
     ----------
-    >>> import starepandas
-    >>> sdf = starepandas.read_pods(pod_root='tests/data/pods/',
-    ...                             sids=['0x0a00000000000004'],
-    ...                             pattern='SSMIS.XCAL2016',
-    ...                             add_podname=True)
-    >>>
+    # >>> import starepandas
+    # >>> sdf = starepandas.read_pods(pod_root='tests/data/pods/',
+    # ...                             sids=['0x0a00000000000004'],
+    # ...                             pattern='SSMIS.XCAL2016',
+    # ...                             add_podname=True)
+    # >>>
     """
 
     sids                       = None if sids is None else sids

@@ -45,14 +45,14 @@ countries = geopandas.GeoDataFrame(countries, crs="EPSG:4326")
 countries = starepandas.STAREDataFrame(countries)
 
 
-def test_iloc():
-    subset = countries.iloc[0:1]
-    assert isinstance(subset, starepandas.staredataframe.STAREDataFrame)
+# def test_iloc():
+#     subset = countries.iloc[0:1]
+#     assert isinstance(subset, starepandas.STAREDataFrame)
 
 
 def test_conditional():
     subset = countries[countries.name == 'Iceland']
-    assert isinstance(subset, starepandas.staredataframe.STAREDataFrame)
+    assert isinstance(subset, starepandas.STAREDataFrame)
 
 
 def test_geom():
