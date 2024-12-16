@@ -424,6 +424,10 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             frame = self
         else:
             frame = self.copy()
+            frame._tid_column_name = self._tid_column_name
+            frame._sid_column_name = self._sid_column_name
+            frame._trixel_column_name = self._trixel_column_name
+            frame._geometry_column_name = self._geometry_column_name
 
         if isinstance(col, (pandas.Series, geopandas.GeoSeries, list, numpy.ndarray)):
             col = geopandas.geodataframe._ensure_geometry(col)
