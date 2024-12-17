@@ -13,6 +13,7 @@ import pickle
 
 import logging
 import time
+import copy
 
 from pathlib import Path
 
@@ -209,7 +210,11 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             self.dropna(subset=[self._sid_column_name], inplace=inplace)
             self[self._sid_column_name] = self[self._sid_column_name].astype(numpy.dtype('int64'))
         else:
-            frame = self.copy()
+            frame = copy.deepcopy(self)
+            frame._tid_column_name = self._tid_column_name
+            frame._sid_column_name = self._tid_column_name
+            frame._trixel_column_name = self._trixel_column_name
+            frame._geometry_column_name = self._geometry_column_name
             frame = frame.dropna(subset=[frame._sid_column_name], inplace=inplace)
             frame[frame._sid_column_name] = frame[frame._sid_column_name].astype(numpy.dtype('int64'))
             return frame
@@ -280,7 +285,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         if inplace:
             frame = self
         else:
-            frame = self.copy()
+            frame = copy.deepcopy(self)
             frame._tid_column_name = self._tid_column_name
             frame._sid_column_name = self._sid_column_name
             frame._trixel_column_name = self._trixel_column_name
@@ -327,7 +332,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         if inplace:
             frame = self
         else:
-            frame = self.copy()
+            frame = copy.deepcopy(self)
             frame._tid_column_name = self._tid_column_name
             frame._sid_column_name = self._sid_column_name
             frame._trixel_column_name = self._trixel_column_name
@@ -429,7 +434,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         if inplace:
             frame = self
         else:
-            frame = self.copy()
+            frame = copy.deepcopy(self)
             frame._tid_column_name = self._tid_column_name
             frame._sid_column_name = self._sid_column_name
             frame._trixel_column_name = self._trixel_column_name
@@ -684,7 +689,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         if inplace:
             df = self
         else:
-            df = self.copy()
+            df = copy.deepcopy(self)
             df._tid_column_name = self._tid_column_name
             df._sid_column_name = self._sid_column_name
             df._trixel_column_name = self._trixel_column_name
@@ -723,7 +728,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         # >>> germany = starepandas.STAREDataFrame(germany, add_sids=True, level=8, add_trixels=True, n_partitions=1)
         # >>> ax = germany.plot(trixels=True, boundary=True, color='y', zorder=0)
         """
-        df = self.copy()
+        df = copy.deepcopy(self)
         df._tid_column_name = self._tid_column_name
         df._sid_column_name = self._sid_column_name
         df._trixel_column_name = self._trixel_column_name
@@ -964,7 +969,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         if inplace:
             df = self
         else:
-            df = self.copy()
+            df = copy.deepcopy(self)
             df._tid_column_name = self._tid_column_name
             df._sid_column_name = self._sid_column_name
             df._trixel_column_name = self._trixel_column_name
@@ -1009,7 +1014,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         if inplace:
             df = self
         else:
-            df = self.copy()
+            df = copy.deepcopy(self)
             df._tid_column_name = self._tid_column_name
             df._sid_column_name = self._sid_column_name
             df._trixel_column_name = self._trixel_column_name
@@ -1053,7 +1058,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         if inplace:
             df = self
         else:
-            df = self.copy()
+            df = copy.deepcopy(self)
             df._tid_column_name = self._tid_column_name
             df._sid_column_name = self._sid_column_name
             df._trixel_column_name = self._trixel_column_name
