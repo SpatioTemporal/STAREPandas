@@ -15,3 +15,16 @@ docs/source/docs/reference/api/*
 /docs/source/_build/
 /.tox/
 flycheck_*
+*.txt
+africa.json
+tests/NorthAmerica.txt
+tests/SouthAfrica.txt
+Iceland.pkl
+geodatasets.data.json
+Starepandas/temp.py
+test.json
+.DS_Store
+.github/.DS_Store
+starepandas/.DS_Store
+tests/.DS_Store
+tests/data/.DS_Store
