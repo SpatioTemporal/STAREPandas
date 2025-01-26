@@ -20,6 +20,7 @@ from pathlib import Path
 DEFAULT_SID_COLUMN_NAME = 'sids'
 DEFAULT_TID_COLUMN_NAME = 'tids'
 DEFAULT_TRIXEL_COLUMN_NAME = 'trixels'
+DEFAULT_GEOMETRY_COLUMN_NAME = 'geometry'
 
 def compress_sids_group(group):
     sids = group[1].to_numpy()  # zero element is group label, 1 element is the df
@@ -62,12 +63,12 @@ def write_pod_hdf(g, fname, append=False):
     return
 
 class STAREDataFrame(geopandas.GeoDataFrame):
-    _metadata = ['_sid_column_name', '_trixel_column_name', '_geometry_column_name', '_crs']
+    _metadata = ['_sid_column_name', '_trixel_column_name', '_geometry_column_name', '_tid_column_name']
 
     _sid_column_name = DEFAULT_SID_COLUMN_NAME
     _trixel_column_name = DEFAULT_TRIXEL_COLUMN_NAME
     _tid_column_name = DEFAULT_TID_COLUMN_NAME
-    _geometry_column_name = 'geometry'
+    _geometry_column_name = DEFAULT_GEOMETRY_COLUMN_NAME
 
     def __init__(self, *args,
                  sids=None, add_sids=False, level=None,
@@ -104,16 +105,6 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
         super().__init__(*args, **kwargs)
 
-        # self._metadata = ['_sid_column_name', '_trixel_column_name', '_geometry_column_name', '_crs']
-        # self._sid_column_name = 'sids'
-        # self._trixel_column_name = 'trixels'
-        # self._tid_column_name = 'tids'
-        # Initialize metadata attributes
-        self._geometry_column_name = self._geometry_column_name
-        self._sid_column_name = self._sid_column_name
-        self._trixel_column_name = self._trixel_column_name
-        self._tid_column_name = self._tid_column_name
-
         if args and isinstance(args[0], (geopandas.GeoDataFrame, STAREDataFrame)):
             self._geometry_column_name = args[0]._geometry_column_name
             # self.set_crs(args[0].crs, inplace=True)
@@ -131,6 +122,23 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         elif add_trixels:
             trixels = self.make_trixels(n_partitions=n_partitions)
             self.set_trixels(trixels, inplace=True)
+
+    def __copy__(self):
+        new_instance = super().__copy__()  # Call the parent class copy method
+        # new_instance = self.copy()
+        new_instance.__class__ = STAREDataFrame  # Ensure the correct class type
+        return new_instance
+
+    def __deepcopy__(self, memo=None):
+        new_instance = super().__deepcopy__(memo)  # Call parent class deepcopy method
+        # new_instance = self.copy()
+        new_instance.__class__ = STAREDataFrame  # Ensure the correct class type
+
+        # Copy the metadata attributes
+        for key in self._metadata:
+            setattr(new_instance, key, copy.deepcopy(getattr(self, key), memo))
+
+        return new_instance
 
     def __getitem__(self, key):
 
@@ -210,11 +218,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             self.dropna(subset=[self._sid_column_name], inplace=inplace)
             self[self._sid_column_name] = self[self._sid_column_name].astype(numpy.dtype('int64'))
         else:
-            frame = copy.deepcopy(self)
-            frame._tid_column_name = self._tid_column_name
-            frame._sid_column_name = self._tid_column_name
-            frame._trixel_column_name = self._trixel_column_name
-            frame._geometry_column_name = self._geometry_column_name
+            frame = self.__deepcopy__()
             frame = frame.dropna(subset=[frame._sid_column_name], inplace=inplace)
             frame[frame._sid_column_name] = frame[frame._sid_column_name].astype(numpy.dtype('int64'))
             return frame
@@ -285,11 +289,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         if inplace:
             frame = self
         else:
-            frame = copy.deepcopy(self)
-            frame._tid_column_name = self._tid_column_name
-            frame._sid_column_name = self._sid_column_name
-            frame._trixel_column_name = self._trixel_column_name
-            frame._geometry_column_name = self._geometry_column_name
+            frame = self.__deepcopy__()
 
         if isinstance(col, (list, numpy.ndarray, pandas.Series)):
             frame[frame._sid_column_name] = col
@@ -332,11 +332,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         if inplace:
             frame = self
         else:
-            frame = copy.deepcopy(self)
-            frame._tid_column_name = self._tid_column_name
-            frame._sid_column_name = self._sid_column_name
-            frame._trixel_column_name = self._trixel_column_name
-            frame._geometry_column_name = self._geometry_column_name
+            frame = self.__deepcopy__()
 
         if isinstance(col, (list, numpy.ndarray, pandas.Series)):
             frame[frame._tid_column_name] = col
@@ -434,11 +430,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         if inplace:
             frame = self
         else:
-            frame = copy.deepcopy(self)
-            frame._tid_column_name = self._tid_column_name
-            frame._sid_column_name = self._sid_column_name
-            frame._trixel_column_name = self._trixel_column_name
-            frame._geometry_column_name = self._geometry_column_name
+            frame = self.__deepcopy__()
 
         if isinstance(col, (pandas.Series, geopandas.GeoSeries, list, numpy.ndarray)):
             col = geopandas.geodataframe._ensure_geometry(col)
@@ -689,11 +681,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         if inplace:
             df = self
         else:
-            df = copy.deepcopy(self)
-            df._tid_column_name = self._tid_column_name
-            df._sid_column_name = self._sid_column_name
-            df._trixel_column_name = self._trixel_column_name
-            df._geometry_column_name = self._geometry_column_name
+            frame = self.__deepcopy__()
 
         if not trixel_column_name:
             trixel_column_name = df._trixel_column_name
@@ -728,11 +716,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         # >>> germany = starepandas.STAREDataFrame(germany, add_sids=True, level=8, add_trixels=True, n_partitions=1)
         # >>> ax = germany.plot(trixels=True, boundary=True, color='y', zorder=0)
         """
-        df = copy.deepcopy(self)
-        df._tid_column_name = self._tid_column_name
-        df._sid_column_name = self._sid_column_name
-        df._trixel_column_name = self._trixel_column_name
-        df._geometry_column_name = self._geometry_column_name
+        df = self.__deepcopy__()
 
         if trixels:
             if not self.has_trixels():
@@ -969,11 +953,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         if inplace:
             df = self
         else:
-            df = copy.deepcopy(self)
-            df._tid_column_name = self._tid_column_name
-            df._sid_column_name = self._sid_column_name
-            df._trixel_column_name = self._trixel_column_name
-            df._geometry_column_name = self._geometry_column_name
+            df = self.__deepcopy__()
 
         sids = df[df._sid_column_name]
         if pandas.api.types.is_integer_dtype(sids):
@@ -1014,11 +994,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         if inplace:
             df = self
         else:
-            df = copy.deepcopy(self)
-            df._tid_column_name = self._tid_column_name
-            df._sid_column_name = self._sid_column_name
-            df._trixel_column_name = self._trixel_column_name
-            df._geometry_column_name = self._geometry_column_name
+            df = self.__deepcopy__()
 
         sids = df[df._sid_column_name]
         sids = pystare.spatial_clear_to_resolution(numpy.array(sids))
@@ -1058,11 +1034,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         if inplace:
             df = self
         else:
-            df = copy.deepcopy(self)
-            df._tid_column_name = self._tid_column_name
-            df._sid_column_name = self._sid_column_name
-            df._trixel_column_name = self._trixel_column_name
-            df._geometry_column_name = self._geometry_column_name
+            df = self.__deepcopy__()
 
         sids_col = df[df._sid_column_name]
 
