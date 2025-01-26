@@ -681,7 +681,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         if inplace:
             df = self
         else:
-            frame = self.__deepcopy__()
+            df = self.__deepcopy__()
 
         if not trixel_column_name:
             trixel_column_name = df._trixel_column_name
