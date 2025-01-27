@@ -142,8 +142,9 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
     def reset_index(self, inplace=False, drop=False):
         new_instance = super().reset_index(inplace=inplace, drop=drop)
-        new_instance.__class__ = STAREDataFrame
-        return new_instance
+        if not inplace:
+            new_instance.__class__ = STAREDataFrame
+            return new_instance
 
     def __getitem__(self, key):
 
