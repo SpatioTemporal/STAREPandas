@@ -547,7 +547,7 @@ def trixels_from_stareseries(sids_series, n_partitions=1, num_workers=None, wrap
         meta = {'name': 'geometry'}
         res = ddf.map_partitions(lambda df:
                                  from_shapely(
-                                     trixels_from_stareseries(df, n_partitions=1, wrap_lon=wrap_lon)).flatten(),
+                                     trixels_from_stareseries(df, n_partitions=1, wrap_lon=wrap_lon)).to_numpy().flatten(),
                                  meta=meta)
         trixels_series = res.compute(scheduler='processes', num_workers=num_workers)
         # Since the array would be ragged, we are probably safer with a list of arrays
@@ -581,7 +581,7 @@ def split_antimeridian_series(trixels_series, n_partitions=1, num_workers=None, 
         meta = {'trixels': 'object'}
         res = ddf.map_partitions(lambda df:
                                  from_shapely(
-                                     split_antimeridian_series(df, n_partitions=1, drop=drop)).flatten(),
+                                     split_antimeridian_series(df, n_partitions=1, drop=drop)).to_numpy().flatten(),
                                  meta=meta)
         trixels_series = res.compute(scheduler='processes', num_workers=num_workers)
         # Since the array would be ragged, we are probably safer with a list of arrays
