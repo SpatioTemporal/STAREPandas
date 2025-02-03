@@ -491,6 +491,9 @@ def to_trixels(sids, as_multipolygon=False, wrap_lon=True):
         # This is not ideal, but when we read sidecars, we get unit64 and have to cast
         sids = sids.astype(numpy.int64)
 
+    if isinstance(sids, str):
+        sids = numpy.array(sids.strip('[]').split(), dtype=numpy.int64)
+
     trixels = []
     vertices = to_corners(sids, wrap_lon=wrap_lon)
     for vertex in vertices:
