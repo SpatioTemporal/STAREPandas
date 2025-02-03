@@ -489,6 +489,8 @@ def series_intersects(series, other, method='binsearch', n_partitions=1, num_wor
         else:
             intersects = []
             for sids in series:
+                if isinstance(sids, str):
+                    sids = numpy.array(sids.strip('[]').split(), dtype=numpy.int64)
                 if len(sids) > len(other):
                     # For method 1, larger item first is faster
                     intersects.append(pystare.intersects(sids, other, method).any())
