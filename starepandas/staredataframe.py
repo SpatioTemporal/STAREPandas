@@ -902,6 +902,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         sdf.set_sids(self._sid_column_name, inplace=True)
 
         aggregated = sdf.join(aggregated_data)
+        aggregated.__class__ = STAREDataFrame
         return aggregated
 
     def spatial_level(self):
