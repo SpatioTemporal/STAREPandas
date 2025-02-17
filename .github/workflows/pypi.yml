@@ -28,7 +28,7 @@ jobs:
       - name: Build wheels
         env:
           CIBW_BEFORE_ALL: |
-            apt-get update && apt-get install -y swig
+            pip install swig
           CIBW_BEFORE_BUILD: |
             pip install numpy setuptools wheel
             python3 setup.py build_ext --inplace
