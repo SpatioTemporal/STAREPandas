@@ -101,12 +101,12 @@ def folder2catalog(path, granule_trunk='', granule_extension='*', add_sf=False, 
     if path[0:5] != 's3://':
         granule_paths = glob.glob(term)
     else:
-        granule_paths, s3 = starepandas.io.s3.s3_glob(path, '.*\.{ext}$'.format(ext=granule_extension))
+        granule_paths, s3 = starepandas.io.s3.s3_glob(path, r'.*\.{ext}$'.format(ext=granule_extension))
     if not granule_paths:
         print('no granules in folder')
         return None
 
-    pattern = '.*[^_stare]\.(nc|hdf|HDF5)'
+    pattern = r'.*[^_stare]\.(nc|hdf|HDF5)'
     granule_paths = list(filter(re.compile(pattern).match, granule_paths))
 
     rows = []
