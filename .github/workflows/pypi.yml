@@ -1,53 +1,31 @@
-name: pypa twine pypi
+name: Build and upload to pypi
 
 on:
   push:
     tags:
       - v*
+  pull_request:
+    tags:
+      - v*
 
 jobs:
-  build_wheels:
+  deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Check out code
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v3
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v2
         with:
-          fetch-depth: 0  # Ensure full history and tags are fetched
-
-      - name: Ensure clean state
-        run: git reset --hard
-
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.12'
-
-      - name: Install cibuildwheel
-        run: pip install cibuildwheel==2.22.0
-
-      - name: Build wheels
-        env:
-          CIBW_BEFORE_ALL: |
-            pip install swig
-          CIBW_BEFORE_BUILD: |
-            pip install numpy setuptools wheel
-            python3 setup.py build_ext --inplace
-          CIBW_BUILD: |
-            cp312-manylinux_x86_64
-            cp313-manylinux_x86_64
-        run: cibuildwheel --platform linux --output-dir wheelhouse
-
-      - name: Publish wheels to PyPI
-        if: github.event_name == 'push'
-        env:
-          TWINE_USERNAME: ${{ secrets.TWINE_USERNAME }}
-          TWINE_PASSWORD: ${{ secrets.TWINE_PASSWORD }}
+          python-version: 3.12
+      - name: Install dependencies
         run: |
-          pip install twine
-          twine upload wheelhouse/*
-
-
-
-
-
-
+          python -m pip install --upgrade pip
+          pip install build
+          pip install setuptools swig wheel
+      - name: Build package
+        run: python -m build
+      - name: Publish package
+        uses: pypa/gh-action-pypi-publish@27b31702a0e7fc50959f5ad993c78deac1bdfc29
+        with:
+          user: __token__
+          password: ${{ secrets.TWINE_PASSWORD }}
