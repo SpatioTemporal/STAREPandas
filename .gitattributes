@@ -4,3 +4,5 @@ starepandas/_version.py export-subst
 *.tif filter=lfs diff=lfs merge=lfs -text
 *.TIF filter=lfs diff=lfs merge=lfs -text
 *.zip filter=lfs diff=lfs merge=lfs -text
+tests/ne_110m_admin_0_countries.zip filter=lfs diff=lfs merge=lfs -text
+
