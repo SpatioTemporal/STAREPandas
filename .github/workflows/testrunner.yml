@@ -22,10 +22,10 @@ jobs:
     - uses: actions/checkout@v2
       with:
         lfs: 'true'
-    - name: Set up Python 3.9
+    - name: Set up Python 3.12
       uses: actions/setup-python@v3
       with:
-        python-version: 3.9
+        python-version: 3.12
       timeout-minutes: 30
     - name: Install dependencies
       run: |               
@@ -34,6 +34,8 @@ jobs:
         pip install nbmake pytest-xdist        
         pip install configparser 
         python3 -c "import configparser; c = configparser.ConfigParser(); c.read('setup.cfg'); print(c['options']['install_requires'])" | xargs pip install
+        pip install geodatasets
+        pip install setuptools swig wheel
     - name: Lint with flake8
       run: |
         # stop the build if there are Python syntax errors or undefined names

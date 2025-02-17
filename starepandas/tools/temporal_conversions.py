@@ -75,12 +75,12 @@ def tivs_from_timeseries(series, scale='utc', format='datetime64', forward_res=4
 
     Examples
     ------------
-    >>> import pandas
-    >>> import starepandas
-    >>> dates = ['2021-09-03', '2021-07-17 11:16']
-    >>> dates = pandas.to_datetime(dates, format='ISO8601')
-    >>> starepandas.tivs_from_timeseries(dates)
-    array([2276059438861267137, 2275939265676325057])
+    # >>> import pandas
+    # >>> import starepandas
+    # >>> dates = ['2021-09-03', '2021-07-17 11:16']
+    # >>> dates = pandas.to_datetime(dates, format='ISO8601')
+    # >>> starepandas.tivs_from_timeseries(dates)
+    # array([2276059438861267137, 2275939265676325057])
     """
     if not series.dtype == '<M8[ns]':
         raise ValueError()

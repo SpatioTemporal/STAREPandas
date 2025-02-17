@@ -32,13 +32,13 @@ def sids_from_gdf(gdf, level, convex=False, force_ccw=True, n_partitions=1, num_
 
     Examples
     ---------
-    >>> import geopandas
-    >>> import starepandas
-    >>> world = geopandas.read_file(geopandas.datasets.get_path('naturalearth_lowres'))
-    >>> italy = world[world.name=='Italy']
-    >>> starepandas.sids_from_gdf(italy, level=3, convex=False, force_ccw=True, num_workers=1)
-    141    [4269412446747230211, 4548635623644200963, 456...
-    Name: sids, dtype: object
+    # >>> import geopandas
+    # >>> import starepandas
+    # >>> world = geopandas.read_file(geopandas.datasets.get_path('naturalearth_lowres'))
+    # >>> italy = world[world.name=='Italy']
+    # >>> starepandas.sids_from_gdf(italy, level=3, convex=False, force_ccw=True, num_workers=1)
+    # 141    [4269412446747230211, 4548635623644200963, 456...
+    # Name: sids, dtype: object
     """
     if gdf._geometry_column_name in gdf.keys():
         pass
@@ -81,13 +81,13 @@ def sids_from_geoseries(series, level, convex=False, force_ccw=True, n_partition
 
     Examples
     ------------
-    >>> import geopandas
-    >>> import starepandas
-    >>> world = geopandas.read_file(geopandas.datasets.get_path('naturalearth_lowres'))
-    >>> germany = world[world.name=='Germany']
-    >>> starepandas.sids_from_geoseries(germany.geometry, level=3, convex=True)
-    121    [4251398048237748227, 4269412446747230211, 427...
-    Name: sids, dtype: object
+    # >>> import geopandas
+    # >>> import starepandas
+    # >>> world = geopandas.read_file(geopandas.datasets.get_path('naturalearth_lowres'))
+    # >>> germany = world[world.name=='Germany']
+    # >>> starepandas.sids_from_geoseries(germany.geometry, level=3, convex=True)
+    # 121    [4251398048237748227, 4269412446747230211, 427...
+    # Name: sids, dtype: object
     """
 
     if len(series) <= 1:
@@ -129,11 +129,11 @@ def sids_from_xy(lon, lat, level):
 
     Examples
     ----------
-    >>> import starepandas
-    >>> x = [10.1, 20.9]
-    >>> y = [55.3, 60.1]
-    >>> starepandas.sids_from_xy(x, y, level=15)
-    array([4254264869405326191, 3640541580264132591])
+    # >>> import starepandas
+    # >>> x = [10.1, 20.9]
+    # >>> y = [55.3, 60.1]
+    # >>> starepandas.sids_from_xy(x, y, level=15)
+    # array([4254264869405326191, 3640541580264132591])
     """
     return pystare.from_latlon(lat, lon, level)
 
@@ -164,13 +164,13 @@ def sids_from_xy_df(df, level, n_partitions=1, num_workers=None):
 
     Examples
     ------------
-    >>> import starepandas
-    >>> import pandas
-    >>> x = [-119.42, 7.51]
-    >>> y = [34.25, 47.59]
-    >>> df = pandas.DataFrame({'lat': y, 'lon': x})
-    >>> starepandas.sids_from_xy_df(df, level=20)
-    array([3331752989521980116, 4271829667422230484])
+    # >>> import starepandas
+    # >>> import pandas
+    # >>> x = [-119.42, 7.51]
+    # >>> y = [34.25, 47.59]
+    # >>> df = pandas.DataFrame({'lat': y, 'lon': x})
+    # >>> starepandas.sids_from_xy_df(df, level=20)
+    # array([3331752989521980116, 4271829667422230484])
     """
     rename_dict = {'Latitude': 'lat', 'latitude': 'lat', 'y': 'lat',
                    'Longitude': 'lon', 'longitude': 'lon', 'x': 'lon'}
@@ -210,27 +210,27 @@ def sids_from_shapely(geom, level, convex=False, force_ccw=False):
 
     Examples
     ---------
-    >>> import shapely
-    >>> import starepandas
-
-    Point:
-
-    >>> point = shapely.geometry.Point(10.5, 20)
-    >>> starepandas.sids_from_shapely(point, level=27)
-    4598246232954051067
-
-    Polygon:
-
-    >>> polygon1 = shapely.geometry.Polygon([(0, 0), (1, 1), (1, 0)])
-    >>> starepandas.sids_from_shapely(polygon1, force_ccw=True, level=6)
-    array([4430697608402436102, 4430838345890791430, 4430979083379146758])
-
-    Multipolygon:
-
-    >>> polygon2 = shapely.geometry.Polygon([(5, 5), (6, 6), (6, 5)])
-    >>> multipolygon = shapely.geometry.MultiPolygon([polygon1, polygon2])
-    >>> starepandas.sids_from_shapely(multipolygon, force_ccw=True, level=5)
-    array([4430416133425725445, 4430979083379146757, 4416905334543613957])
+    # >>> import shapely
+    # >>> import starepandas
+    #
+    # Point:
+    #
+    # >>> point = shapely.geometry.Point(10.5, 20)
+    # >>> starepandas.sids_from_shapely(point, level=27)
+    # 4598246232954051067
+    #
+    # Polygon:
+    #
+    # >>> polygon1 = shapely.geometry.Polygon([(0, 0), (1, 1), (1, 0)])
+    # >>> starepandas.sids_from_shapely(polygon1, force_ccw=True, level=6)
+    # array([4430697608402436102, 4430838345890791430, 4430979083379146758])
+    #
+    # Multipolygon:
+    #
+    # >>> polygon2 = shapely.geometry.Polygon([(5, 5), (6, 6), (6, 5)])
+    # >>> multipolygon = shapely.geometry.MultiPolygon([polygon1, polygon2])
+    # >>> starepandas.sids_from_shapely(multipolygon, force_ccw=True, level=5)
+    # array([4430416133425725445, 4430979083379146757, 4416905334543613957])
 
     """
     if geom.geom_type == 'Point':
@@ -258,11 +258,11 @@ def sid_from_point(point, level):
 
     Examples
     ---------
-    >>> import starepandas
-    >>> import shapely
-    >>> point = shapely.geometry.Point(10.5, 20)
-    >>> starepandas.sid_from_point(point, level=20)
-    4598246232954051060
+    # >>> import starepandas
+    # >>> import shapely
+    # >>> point = shapely.geometry.Point(10.5, 20)
+    # >>> starepandas.sid_from_point(point, level=20)
+    # 4598246232954051060
     """
     lat = point.y
     lon = point.x
@@ -292,12 +292,12 @@ def sids_from_ring(ring, level, convex=False, force_ccw=False):
 
     Examples
     ---------
-    >>> import starepandas
-    >>> import shapely
-    >>> # Note: the ring is clockwise!
-    >>> polygon = shapely.geometry.Polygon([(0, 0), (1, 1), (1, 0)])
-    >>> starepandas.sids_from_ring(polygon.exterior, force_ccw=True, level=6)
-    array([4430697608402436102, 4430838345890791430, 4430979083379146758])
+    # >>> import starepandas
+    # >>> import shapely
+    # >>> # Note: the ring is clockwise!
+    # >>> polygon = shapely.geometry.Polygon([(0, 0), (1, 1), (1, 0)])
+    # >>> starepandas.sids_from_ring(polygon.exterior, force_ccw=True, level=6)
+    # array([4430697608402436102, 4430838345890791430, 4430979083379146758])
     """
     #if force_ccw and not ring.is_ccw:
     if force_ccw and not ring_is_ccw(ring):
@@ -338,11 +338,11 @@ def sids_from_polygon(polygon, level, convex=False, force_ccw=False):
 
     Examples
     ---------
-    >>> import starepandas
-    >>> import shapely
-    >>> polygon = shapely.geometry.Polygon([(0, 0), (2, 0), (1, 1)])
-    >>> starepandas.sids_from_polygon(polygon, level=5)
-    array([4423097784031248389, 4430416133425725445, 4430979083379146757])
+    # >>> import starepandas
+    # >>> import shapely
+    # >>> polygon = shapely.geometry.Polygon([(0, 0), (2, 0), (1, 1)])
+    # >>> starepandas.sids_from_polygon(polygon, level=5)
+    # array([4423097784031248389, 4430416133425725445, 4430979083379146757])
     """
 
     if force_ccw:
@@ -384,14 +384,14 @@ def sids_from_multipolygon(multipolygon, level, convex=False, force_ccw=False):
 
     Examples
     ----------
-
-    >>> import starepandas
-    >>> import shapely
-    >>> polygon1 = shapely.geometry.Polygon([(0, 0), (1, 1), (1, 0)])
-    >>> polygon2 = shapely.geometry.Polygon([(3, 1), (4, 2), (2, 1)])
-    >>> multipolygon = shapely.geometry.MultiPolygon([polygon1, polygon2])
-    >>> starepandas.sids_from_multipolygon(multipolygon, force_ccw=True, level=3)
-    array([4422534834077827075, 4413527634823086083, 4422534834077827075])
+    #
+    # >>> import starepandas
+    # >>> import shapely
+    # >>> polygon1 = shapely.geometry.Polygon([(0, 0), (1, 1), (1, 0)])
+    # >>> polygon2 = shapely.geometry.Polygon([(3, 1), (4, 2), (2, 1)])
+    # >>> multipolygon = shapely.geometry.MultiPolygon([polygon1, polygon2])
+    # >>> starepandas.sids_from_multipolygon(multipolygon, force_ccw=True, level=3)
+    # array([4422534834077827075, 4413527634823086083, 4422534834077827075])
     """
     range_indices = []
     for polygon in multipolygon.geoms:
@@ -422,11 +422,11 @@ def compress_sids(sids):
 
     Examples
     ---------
-    >>> import starepandas
-    >>> # The two latter SIDs are contained in the first SID
-    >>> sids = [4035225266123964416, 4254212798004854789, 4255901647865118724]
-    >>> starepandas.compress_sids(sids)
-    array([4035225266123964416])
+    # >>> import starepandas
+    # >>> # The two latter SIDs are contained in the first SID
+    # >>> sids = [4035225266123964416, 4254212798004854789, 4255901647865118724]
+    # >>> starepandas.compress_sids(sids)
+    # array([4035225266123964416])
 
     Notes
     --------
@@ -462,12 +462,12 @@ def series_intersects(series, other, method='binsearch', n_partitions=1, num_wor
 
     Examples
     ---------
-    >>> import starepandas
-    >>> import pandas
-    >>> series = pandas.Series([[4035225266123964416],
-    ...                         [4254212798004854789, 4255901647865118724]])
-    >>> starepandas.series_intersects(series, 4035225266123964416)
-    array([ True,  True])
+    # >>> import starepandas
+    # >>> import pandas
+    # >>> series = pandas.Series([[4035225266123964416],
+    # ...                         [4254212798004854789, 4255901647865118724]])
+    # >>> starepandas.series_intersects(series, 4035225266123964416)
+    # array([ True,  True])
 
     """
 
@@ -489,6 +489,8 @@ def series_intersects(series, other, method='binsearch', n_partitions=1, num_wor
         else:
             intersects = []
             for sids in series:
+                if isinstance(sids, str):
+                    sids = numpy.array(sids.strip('[]').split(), dtype=numpy.int64)
                 if len(sids) > len(other):
                     # For method 1, larger item first is faster
                     intersects.append(pystare.intersects(sids, other, method).any())

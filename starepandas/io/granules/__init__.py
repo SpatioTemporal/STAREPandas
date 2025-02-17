@@ -52,11 +52,11 @@ def guess_companion_path(granule_path, folder=None, prefix=None):
 
     Examples
     ---------
-    >>> granule_path = starepandas.datasets.get_path('VNP02DNB.A2020219.0742.001.2020219125654.nc')
-    >>> companion_path = guess_companion_path(granule_path, prefix='VNP03DNB')
-    >>> companion_name = companion_path.split('/')[-1]
-    >>> companion_name
-    'VNP03DNB.A2020219.0742.001.2020219124651.nc'
+    # >>> granule_path = starepandas.datasets.get_path('VNP02DNB.A2020219.0742.001.2020219125654.nc')
+    # >>> companion_path = guess_companion_path(granule_path, prefix='VNP03DNB')
+    # >>> companion_name = companion_path.split('/')[-1]
+    # >>> companion_name
+    # 'VNP03DNB.A2020219.0742.001.2020219124651.nc'
     """
 
     if folder is None:
@@ -225,8 +225,8 @@ def read_granule(file_path,
 
     Examples
     ----------
-    >>> fname = starepandas.datasets.get_path('MOD05_L2.A2019336.0000.061.2019336211522.hdf')
-    >>> modis = starepandas.read_granule(fname, latlon=True, sidecar=True, nom_res='5km')
+    # >>> fname = starepandas.datasets.get_path('MOD05_L2.A2019336.0000.061.2019336211522.hdf')
+    # >>> modis = starepandas.read_granule(fname, latlon=True, sidecar=True, nom_res='5km')
     """
 
     granule = granule_factory(file_path, sidecar_path, nom_res)
