@@ -33,9 +33,6 @@ jobs:
             pip install numpy setuptools wheel
             python3 setup.py build_ext --inplace
           CIBW_BUILD: |
-            cp39-manylinux_x86_64
-            cp310-manylinux_x86_64
-            cp311-manylinux_x86_64
             cp312-manylinux_x86_64
             cp313-manylinux_x86_64
         run: cibuildwheel --platform linux --output-dir wheelhouse
