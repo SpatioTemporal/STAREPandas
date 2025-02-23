@@ -1084,7 +1084,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         return sids
 
     def write_pods_spatial(self, pod_root, level, chunk_name, hex=True, path_format=None, append=False,
-                           compress=None
+                           compress=None, format="pickle"
                            ):
         pod_path_format = '{pod_root}/{pod}'
         path_format = '{pod_path_format}/{chunk_name}' if path_format is None else path_format
@@ -1112,8 +1112,10 @@ class STAREDataFrame(geopandas.GeoDataFrame):
                 Path(dname).mkdir()
 
             fname = path_format.format(pod_path_format=dname, chunk_name=chunk_name)
-            write_pod_pickle(g, fname, append, compress)
-            pods_written.append(fname)
+            if format.lower() == "pickle":
+                write_pod_pickle(g, fname, append, compress)
+                pods_written.append(fname)
+            # TODO else:
 
         return pods_written
 
