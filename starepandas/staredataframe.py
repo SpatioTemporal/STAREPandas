@@ -33,25 +33,52 @@ def compress_sids_group(group):
 
 def write_pod_pickle(g, fname, append=False, compress=None):
     """Write or append to a pickle."""
+    # Note: To append data to a pickle file, it is necessary to read the existing data first, append
+    # the new data to it, and then write the combined data back to the file. Currently, direct appending
+    # is not possible due to the way pickle files are structured.
     logging.info('Writing to pickle: %s' % fname)
     if append:
-        raise NotImplementedError('appending not implemented')
-        with starepandas.io.pod.generic_open(fname)(fname, 'a+b') as f:
-            pickle.dump(g, f)
+        # Load existing data
+        try:
+            with open(fname, 'rb') as f:
+                existing_data = pickle.load(f)
+        except FileNotFoundError:
+            existing_data = []  # If the file doesn't exist, start with an empty list
+        except Exception as e:
+            logging.error(f"Error loading existing data from {fname}: {e}")
+            return
+
+        # Append new data
+        existing_data.append(g)
+
+        start = time.time()
+        if compress is None:
+            with open(fname, 'wb') as f:
+                pickle.dump(existing_data, f)
+                logging.info('Appending to chunk %s took %d seconds.' % (fname, time.time() - start))
+        elif compress == 'bz2':
+            with bz2.open(fname, 'wb') as f:
+                pickle.dump(existing_data, f)
+                logging.info('Appending bz2 chunk %s took %d seconds.' % (fname, time.time() - start))
+        else:
+            raise ValueError('write_pod_pickle argument compress="%s" not understood.' % compress)
     else:
         # Overwrite
         start = time.time()
-        if compress == None:
+        if compress is None:
             with open(fname, 'wb') as f:
                 pickle.dump(g, f)
                 logging.info('Writing chunk %s took %d seconds.' % (fname, time.time() - start))
-        elif compress == 'bz2':
+        elif compress.lower() == 'bz2':
             with bz2.open(fname, 'wb') as f:
                 pickle.dump(g, f)
                 logging.info('Writing bz2 chunk %s took %d seconds.' % (fname, time.time() - start))
         else:
             raise ValueError('write_pod_pickle argument compress="%s" not understood.'%compress)
     return
+
+def write_pod_zarr(g, fname, append=False, compress=None):
+    raise NotImplementedError('write_pod_zarr is not implemented')
 
 def write_pod_hdf(g, fname, append=False):
     """Write or append to an HDF file."""
@@ -1115,7 +1142,11 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             if format.lower() == "pickle":
                 write_pod_pickle(g, fname, append, compress)
                 pods_written.append(fname)
-            # TODO else:
+            elif format.lower() == "zarr":
+                write_pod_zarr(g, fname, append, compress)
+                pods_written.append(fname)
+            else:
+                raise ValueError("write_pod_spatial argument format='%s' no understood. Format argument needs to be either 'pickle' or 'zarr'"%format)
 
         return pods_written
 
