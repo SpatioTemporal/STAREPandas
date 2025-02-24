@@ -12,6 +12,7 @@ import multiprocessing
 import pickle
 
 import logging
+import zarr
 import time
 import copy
 
@@ -77,8 +78,62 @@ def write_pod_pickle(g, fname, append=False, compress=None):
             raise ValueError('write_pod_pickle argument compress="%s" not understood.'%compress)
     return
 
-def write_pod_zarr(g, fname, append=False, compress=None):
-    raise NotImplementedError('write_pod_zarr is not implemented')
+def write_pod_zarr(g, fname, zarr_group, target_array='data', append=False, compress=None, compress_type='blosc'):
+    """Write or append to a zarr dataset."""
+    logging.info(f'Writing to Zarr: {fname}')
+
+    # Determine the compression options for Zarr
+    if compress is not None:
+        if compress_type not in ['blosc', 'zstd', 'gzip']:
+            raise ValueError("Unsupported compression type. Supported types are: 'blosc', 'zstd', 'gzip'.")
+        zarr_compression_options = {
+            'compression': compress,
+            'compressor': zarr.Blosc(cname=compress, clevel=5, shuffle=1) if compress_type == 'blosc'
+            else zarr.Zstd() if compress_type == 'zstd'
+            else zarr.GZip()
+        }
+    else:
+        zarr_compression_options = {}
+
+    if append:
+        # Open an existing Zarr group
+        try:
+            zarr_data = zarr.open(fname, mode='a')  # Append mode
+            group = zarr_data.require_group(zarr_group) # If the group doesn't exist, it will be created.
+            existing_data = group[target_array]  # Access the specified target array
+            existing_shape = existing_data.shape
+
+            # Check and update the shape if needed
+            if existing_shape[0] + g.shape[0] <= existing_shape[0] + g.shape[0]:
+                # Append new data
+                existing_data.resize(existing_shape[0] + g.shape[0], axis=0)
+                existing_data[-g.shape[0]:] = g  # Insert new data at the end
+            else:
+                raise ValueError("New data exceeds allocated space in the Zarr array.")
+
+        except FileNotFoundError:
+            # If file doesn't exist, create a new Zarr group and dataset
+            zarr_data = zarr.open(fname, mode='w')
+            group = zarr_data.create_group(zarr_group)
+            group.create_dataset(target_array, data=g, **zarr_compression_options)
+
+        except Exception as e:
+            logging.error(f"Error appending data to {fname}: {e}")
+            return
+
+    else:
+        # Overwrite existing group/array
+        try:
+            zarr_data = zarr.open(fname, mode='w')
+            group = zarr_data.create_group(zarr_group)
+            group.create_dataset(target_array, data=g, **zarr_compression_options)
+
+        except Exception as e:
+            logging.error(f"Error writing data to {fname}: {e}")
+            return
+
+    logging.info(f'Successfully wrote to Zarr: {fname}')
+    return
 
 def write_pod_hdf(g, fname, append=False):
     """Write or append to an HDF file."""
