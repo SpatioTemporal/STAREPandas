@@ -105,12 +105,12 @@ xcode-select --install
 
 6. (Optional) May need to link librhash library
 ```
-cd /Users/tonhai/miniconda3/envs/<YOUR_CONDA_ENV>/lib
+cd /Users/YOU/miniconda3/envs/<YOUR_CONDA_ENV>/lib
 ln -s librhash.<VERSION>.dylib librhash.0.dylib
 ```
 E.g:
 ```
-cd /Users/tonhai/miniconda3/envs/stare_3.12/lib
+cd /Users/YOU/miniconda3/envs/stare_3.12/lib
 ln -s librhash.1.4.5.dylib librhash.0.dylib
 ```
 
