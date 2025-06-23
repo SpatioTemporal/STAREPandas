@@ -1,9 +1,10 @@
-from starepandas.io.granules.granule import Granule
+from starepandas.io.granules.granule import Granule, Sidecar
 import starepandas.io.s3
 import datetime
 import numpy
 import pystare
 import os
+import netCDF4
 
 
 class SSMIS(Granule):
@@ -269,8 +270,8 @@ class SSMIS(Granule):
 
         self.sids = {}
         for scan in self.scans:
-            self.sids[scan] = pystare.from_latlon2D(lat=self.lat[scan], lon=self.lon[scan],
-                                                    adapt_resolution=adapt_resolution)
+            self.sids[scan] = pystare.from_latlon_2d(lat=self.lat[scan], lon=self.lon[scan],
+                                                    adapt_level=adapt_resolution)
 
     def read_sidecar_latlon(self, sidecar_path=None):
         self.lat = {}
@@ -330,6 +331,67 @@ class SSMIS(Granule):
         """Close the dataset file."""
         if hasattr(self, 'dataset') and self.dataset is not None:
             self.dataset.close()
+
+    def create_sidecar(self, n_workers=1, cover_res=None, out_path=None):
+        """Create a STARE sidecar file for this SSMIS granule.
+        
+        Parameters
+        ----------
+        n_workers : int, optional
+            Number of workers for parallel processing. Default is 1.
+        cover_res : int, optional
+            Resolution for the cover. If None, will be automatically determined.
+        out_path : str, optional
+            Output path for the sidecar file. If None, uses default naming convention.
+            
+        Returns
+        -------
+        Sidecar
+            The created sidecar object.
+        """
+        if self.lat is None or self.lon is None:
+            raise ValueError("Latitude and longitude data must be loaded before creating sidecar. Call read_latlon() first.")
+            
+        sidecar = Sidecar(self.file_path, out_path)
+        
+        cover_all = []
+        for scan in self.scans:
+            lons = self.lon[scan]
+            lats = self.lat[scan]
+            sids = pystare.from_latlon_2d(lat=lats, lon=lons, adapt_level=True)
+            
+            if not cover_res:
+                cover_res = 10  # Use a fixed default cover resolution
+            # Clamp cover_res to [0, 27]
+            cover_res = max(0, min(27, cover_res))
+            
+            sids_adapted = pystare.spatial_coerce_resolution(sids, cover_res)
+            cover_sids = numpy.unique(sids_adapted)
+            
+            cover_all.append(cover_sids)
+            
+            i = lats.shape[0]
+            j = lats.shape[1]
+            l = cover_sids.size
+            
+            nom_res = None
+            
+            sidecar.write_dimensions(i, j, l, nom_res=nom_res, group=scan)
+            sidecar.write_lons(lons, nom_res=nom_res, group=scan)
+            sidecar.write_lats(lats, nom_res=nom_res, group=scan)
+            sidecar.write_sids(sids, nom_res=nom_res, group=scan)
+            sidecar.write_cover(cover_sids, nom_res=nom_res, group=scan)
+        
+        cover_all = numpy.concatenate(cover_all)
+        cover_all = numpy.unique(cover_all)
+        
+        # Only create the 'l' dimension if it does not already exist
+        with netCDF4.Dataset(sidecar.file_path, 'a', format='NETCDF4') as ncfile:
+            if 'l' not in ncfile.dimensions:
+                sidecar.write_dimension('l', cover_all.size)
+        sidecar.write_cover(cover_all, nom_res=nom_res)
+        
+        return sidecar
 
     def __enter__(self):
         return self

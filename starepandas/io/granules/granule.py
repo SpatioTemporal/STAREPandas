@@ -3,6 +3,149 @@ import starepandas
 import numpy
 import pystare
 import pandas
+import netCDF4
+
+
+class Sidecar:
+    """Helper class for creating STARE sidecar files."""
+    
+    def __init__(self, granule_path, out_path=None):
+        self.file_path = self.name_from_granule(granule_path, out_path)
+        self.create()
+        self.zlib = True
+        self.shuffle = True
+        
+    def name_from_granule(self, granule_path, out_path):
+        if out_path:
+            return out_path + '.'.join(granule_path.split('/')[-1].split('.')[0:-1]) + '_stare.nc'
+        else:
+            return '.'.join(granule_path.split('.')[0:-1]) + '_stare.nc'
+        
+    def create(self):
+        with netCDF4.Dataset(self.file_path, "w", format="NETCDF4") as rootgrp:
+            pass
+        
+    def write_dimension(self, name, length, group=None):
+        with netCDF4.Dataset(self.file_path , 'a', format="NETCDF4") as rootgrp:
+            if group:
+                grp = rootgrp.createGroup(group)
+            else:
+                grp = rootgrp
+            grp.createDimension(name, length)
+        
+    def write_dimensions(self, i, j, l, nom_res=None, group=None):
+        i_name = 'i'
+        j_name = 'j'
+        if nom_res:
+            i_name += '_{nom_res}'.format(nom_res=nom_res)
+            j_name += '_{nom_res}'.format(nom_res=nom_res)
+        with netCDF4.Dataset(self.file_path, 'a', format="NETCDF4") as rootgrp:
+            if group:
+                grp = rootgrp.createGroup(group)
+            else:
+                grp = rootgrp
+            grp.createDimension(i_name, i)
+            grp.createDimension(j_name, j)
+
+    def write_lons(self, lons, nom_res=None, group=None, fill_value=None):
+        i = lons.shape[0]
+        j = lons.shape[1]
+        varname = 'Longitude'
+        i_name = 'i'
+        j_name = 'j'
+        if nom_res:
+            varname += '_{nom_res}'.format(nom_res=nom_res)
+            i_name += '_{nom_res}'.format(nom_res=nom_res)
+            j_name += '_{nom_res}'.format(nom_res=nom_res)
+        with netCDF4.Dataset(self.file_path, 'a', format="NETCDF4") as rootgrp:
+            if group:
+                grp = rootgrp.createGroup(group)
+            else:
+                grp = rootgrp            
+            lons_netcdf = grp.createVariable(varname=varname, 
+                                             datatype='f4', 
+                                             dimensions=(i_name, j_name),
+                                             chunksizes=[i, j],
+                                             shuffle=self.shuffle,
+                                             zlib=self.zlib,
+                                             fill_value=fill_value)
+            lons_netcdf.long_name = 'Longitude'
+            lons_netcdf.units = 'degrees_east'
+            lons_netcdf[:, :] = lons
+    
+    def write_lats(self, lats, nom_res=None, group=None, fill_value=None):
+        i = lats.shape[0]
+        j = lats.shape[1]
+        varname = 'Latitude'
+        i_name = 'i'
+        j_name = 'j'
+        if nom_res:
+            varname += '_{nom_res}'.format(nom_res=nom_res)
+            i_name += '_{nom_res}'.format(nom_res=nom_res)
+            j_name += '_{nom_res}'.format(nom_res=nom_res)
+        with netCDF4.Dataset(self.file_path, 'a', format="NETCDF4") as rootgrp:
+            if group:
+                grp = rootgrp.createGroup(group)
+            else:
+                grp = rootgrp    
+            lats_netcdf = grp.createVariable(varname=varname, 
+                                             datatype='f4', 
+                                             dimensions=(i_name, j_name),
+                                             chunksizes=[i, j],
+                                             shuffle=self.shuffle,
+                                             zlib=self.zlib,
+                                             fill_value=fill_value)
+            lats_netcdf.long_name = 'Latitude'
+            lats_netcdf.units = 'degrees_north'
+            lats_netcdf[:, :] = lats            
+        
+    def write_sids(self, sids, nom_res=None, group=None, fill_value=0):
+        i = sids.shape[0]
+        j = sids.shape[1]
+        varname = 'STARE_index'.format(nom_res=nom_res)
+        i_name = 'i'
+        j_name = 'j'
+        if nom_res:
+            varname += '_{nom_res}'.format(nom_res=nom_res)
+            i_name += '_{nom_res}'.format(nom_res=nom_res)
+            j_name += '_{nom_res}'.format(nom_res=nom_res)   
+        with netCDF4.Dataset(self.file_path, 'a', format="NETCDF4") as rootgrp:
+            if group:
+                grp = rootgrp.createGroup(group)
+            else:
+                grp = rootgrp    
+            sids_netcdf = grp.createVariable(varname=varname, 
+                                             datatype='u8', 
+                                             dimensions=(i_name, j_name),
+                                             chunksizes=[i, j],
+                                             shuffle=self.shuffle,
+                                             zlib=self.zlib,
+                                             fill_value=fill_value)
+            sids_netcdf.long_name = 'SpatioTemporal Adaptive Resolution Encoding (STARE) index'
+            sids_netcdf[:, :] = sids
+
+    def write_cover(self, cover, nom_res=None, group=None, fill_value=None):
+        l = cover.size
+        varname = 'STARE_cover'
+        l_name = 'l'
+
+        with netCDF4.Dataset(self.file_path, 'a', format="NETCDF4") as rootgrp:
+            if group:
+                grp = rootgrp.createGroup(group)
+            else:
+                grp = rootgrp
+            # Only create the 'l' dimension if it does not already exist
+            if l_name not in grp.dimensions:
+                grp.createDimension(l_name, l)
+            cover_netcdf = grp.createVariable(varname=varname, 
+                                              datatype='u8', 
+                                              dimensions=(l_name),
+                                              chunksizes=[l],
+                                              shuffle=self.shuffle,
+                                              zlib=self.zlib,
+                                              fill_value=fill_value)
+            cover_netcdf.long_name = 'SpatioTemporal Adaptive Resolution Encoding (STARE) cover'
+            cover_netcdf[:] = cover
 
 
 class Granule:
@@ -46,6 +189,52 @@ class Granule:
 
     def add_sids(self, adapt_resolution=True):
         self.sids = pystare.from_latlon_2d(lat=self.lat, lon=self.lon, adapt_level=adapt_resolution)
+
+    def create_sidecar(self, n_workers=1, cover_res=None, out_path=None):
+        """Create a STARE sidecar file for this granule.
+        
+        Parameters
+        ----------
+        n_workers : int, optional
+            Number of workers for parallel processing. Default is 1.
+        cover_res : int, optional
+            Resolution for the cover. If None, will be automatically determined.
+        out_path : str, optional
+            Output path for the sidecar file. If None, uses default naming convention.
+            
+        Returns
+        -------
+        Sidecar
+            The created sidecar object.
+        """
+        if self.lat is None or self.lon is None:
+            raise ValueError("Latitude and longitude data must be loaded before creating sidecar. Call read_latlon() first.")
+            
+        sidecar = Sidecar(self.file_path, out_path)
+        
+        # Generate STARE indices
+        sids = pystare.from_latlon_2d(lat=self.lat, lon=self.lon, adapt_level=True)
+        
+        if not cover_res:
+            cover_res = 10  # Use a fixed default cover resolution
+        # Clamp cover_res to [0, 27]
+        cover_res = max(0, min(27, cover_res))
+        
+        sids_adapted = pystare.spatial_coerce_resolution(sids, cover_res)
+        cover_sids = numpy.unique(sids_adapted)
+        
+        i = self.lat.shape[0]
+        j = self.lat.shape[1]
+        l = cover_sids.size
+        
+        # Write dimensions and data
+        sidecar.write_dimensions(i, j, l, nom_res=self.nom_res)
+        sidecar.write_lons(self.lon, nom_res=self.nom_res)
+        sidecar.write_lats(self.lat, nom_res=self.nom_res)
+        sidecar.write_sids(sids, nom_res=self.nom_res)
+        sidecar.write_cover(cover_sids, nom_res=self.nom_res)
+        
+        return sidecar
 
     def read_sidecar_index(self, sidecar_path=None):
         if sidecar_path is not None:
