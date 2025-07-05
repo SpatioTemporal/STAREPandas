@@ -1559,6 +1559,130 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         
         return df
 
+    def to_pickle_s3(self, s3_path, storage_options=None, compress=None):
+        """
+        Write STAREDataFrame to S3 as pickle file.
+        
+        Parameters
+        ----------
+        s3_path : str
+            S3 path where the pickle file will be written (e.g., "s3://bucket/granule_name.pkl")
+        storage_options : dict, optional
+            S3 storage options including credentials and region
+        compress : str, optional
+            Compression method ('bz2' or None)
+            
+        Returns
+        -------
+        str
+            The S3 path where data was written
+        """
+        import s3fs
+        
+        # Create S3 filesystem
+        fs = s3fs.S3FileSystem(**storage_options or {})
+        
+        # Write pickle to S3
+        with fs.open(s3_path, 'wb') as f:
+            if compress == 'bz2':
+                import bz2
+                with bz2.open(f, 'wb') as bz2f:
+                    pickle.dump(self, bz2f)
+            else:
+                pickle.dump(self, f)
+        
+        return s3_path
+    
+    def to_pickle_local(self, local_path, compress=None):
+        """
+        Write STAREDataFrame to local storage as pickle file.
+        
+        Parameters
+        ----------
+        local_path : str
+            Local path where the pickle file will be written
+        compress : str, optional
+            Compression method ('bz2' or None)
+            
+        Returns
+        -------
+        str
+            The local path where data was written
+        """
+        # Write pickle to local filesystem
+        if compress == 'bz2':
+            import bz2
+            with bz2.open(local_path, 'wb') as f:
+                pickle.dump(self, f)
+        else:
+            with open(local_path, 'wb') as f:
+                pickle.dump(self, f)
+        
+        return local_path
+    
+    @classmethod
+    def from_pickle_s3(cls, s3_path, storage_options=None, compress=None):
+        """
+        Read STAREDataFrame from S3 pickle file.
+        
+        Parameters
+        ----------
+        s3_path : str
+            S3 path to the pickle file
+        storage_options : dict, optional
+            S3 storage options including credentials and region
+        compress : str, optional
+            Compression method ('bz2' or None)
+            
+        Returns
+        -------
+        STAREDataFrame
+            The reconstructed STAREDataFrame
+        """
+        import s3fs
+        
+        # Create S3 filesystem
+        fs = s3fs.S3FileSystem(**storage_options or {})
+        
+        # Read pickle from S3
+        with fs.open(s3_path, 'rb') as f:
+            if compress == 'bz2':
+                import bz2
+                with bz2.open(f, 'rb') as bz2f:
+                    df = pickle.load(bz2f)
+            else:
+                df = pickle.load(f)
+        
+        return df
+    
+    @classmethod
+    def from_pickle_local(cls, local_path, compress=None):
+        """
+        Read STAREDataFrame from local pickle file.
+        
+        Parameters
+        ----------
+        local_path : str
+            Local path to the pickle file
+        compress : str, optional
+            Compression method ('bz2' or None)
+            
+        Returns
+        -------
+        STAREDataFrame
+            The reconstructed STAREDataFrame
+        """
+        # Read pickle from local filesystem
+        if compress == 'bz2':
+            import bz2
+            with bz2.open(local_path, 'rb') as f:
+                df = pickle.load(f)
+        else:
+            with open(local_path, 'rb') as f:
+                df = pickle.load(f)
+        
+        return df
+
     def to_sidecar(self, file_name, cover=False, shuffle=True, zlib=True):
         """ Writes STARE Sidecar
 
