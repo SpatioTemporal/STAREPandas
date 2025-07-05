@@ -2,7 +2,7 @@ import bz2
 import geopandas.plotting
 import pystare
 import pandas
-import numpy
+import numpy as np
 import starepandas
 import netCDF4
 import starepandas.tools.trixel_conversions
@@ -10,6 +10,9 @@ import starepandas.tools.temporal_conversions
 import starepandas.io.pod
 import multiprocessing
 import pickle
+import zarr
+import s3fs
+import os
 
 import logging
 import time
@@ -24,10 +27,10 @@ DEFAULT_GEOMETRY_COLUMN_NAME = 'geometry'
 
 def compress_sids_group(group):
     sids = group[1].to_numpy()  # zero element is group label, 1 element is the df
-    if sids.dtype == numpy.dtype('O'):
+    if sids.dtype == np.dtype('O'):
         # If we receive a series of SID collections we merge all sids into a single 1D array
         # to_numpy() would have produced an array of lists in this case
-        sids = numpy.concatenate(sids)
+        sids = np.concatenate(sids)
     sids = starepandas.compress_sids(sids)
     return tuple([group[0], sids])
 
@@ -222,11 +225,11 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         """Drop all rows that have NA values for the SIDs and cast the column to numpy.int64 """
         if inplace:
             self.dropna(subset=[self._sid_column_name], inplace=inplace)
-            self[self._sid_column_name] = self[self._sid_column_name].astype(numpy.dtype('int64'))
+            self[self._sid_column_name] = self[self._sid_column_name].astype(np.dtype('int64'))
         else:
             frame = self.__deepcopy__()
             frame = frame.dropna(subset=[frame._sid_column_name], inplace=inplace)
-            frame[frame._sid_column_name] = frame[frame._sid_column_name].astype(numpy.dtype('int64'))
+            frame[frame._sid_column_name] = frame[frame._sid_column_name].astype(np.dtype('int64'))
             return frame
 
     def make_tids(self, column='ts_start', end_column=None, forward_res=48, reverse_res=48):
@@ -297,7 +300,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         else:
             frame = self.__deepcopy__()
 
-        if isinstance(col, (list, numpy.ndarray, pandas.Series)):
+        if isinstance(col, (list, np.ndarray, pandas.Series)):
             frame[frame._sid_column_name] = col
         elif hasattr(col, "ndim") and col.ndim != 1:
             raise ValueError("Must pass array with one dimension only.")
@@ -340,7 +343,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         else:
             frame = self.__deepcopy__()
 
-        if isinstance(col, (list, numpy.ndarray, pandas.Series)):
+        if isinstance(col, (list, np.ndarray, pandas.Series)):
             frame[frame._tid_column_name] = col
         elif hasattr(col, "ndim") and col.ndim != 1:
             raise ValueError("Must pass array with one dimension only.")
@@ -438,7 +441,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         else:
             frame = self.__deepcopy__()
 
-        if isinstance(col, (pandas.Series, geopandas.GeoSeries, list, numpy.ndarray)):
+        if isinstance(col, (pandas.Series, geopandas.GeoSeries, list, np.ndarray)):
             col = geopandas.geodataframe._ensure_geometry(col)
             frame[frame._trixel_column_name] = col
         elif isinstance(col, str) and col in self.columns:
@@ -466,7 +469,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
         Examples
         ---------
-        # >>> sids = numpy.array([3458764513820540928])
+        # >>> sids = np.array([3458764513820540928])
         # >>> df = starepandas.STAREDataFrame(sids=sids)
         # >>> df.trixel_vertices()
         (array([29.9999996 , 45.00000069, 29.9999996 ]), array([-170.26439001,  -45.        ,   80.26439001]), array([80.264389]), array([135.]))
@@ -491,7 +494,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
         Examples
         ---------
-        # >>> sids = numpy.array([3458764513820540928])
+        # >>> sids = np.array([3458764513820540928])
         # >>> df = starepandas.STAREDataFrame(sids=sids)
         # >>> df.trixel_centers()
         array([[134.9      ,  80.264389]])
@@ -520,7 +523,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
         Examples
         ---------
-        # >>> sids = numpy.array([3458764513820540928])
+        # >>> sids = np.array([3458764513820540928])
         # >>> df = starepandas.STAREDataFrame(sids=sids)
         # >>> df.trixel_centers_ecef()
         array([[-0.11957316,  0.11957316,  0.98559856]])
@@ -548,7 +551,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
         Examples
         ---------
-        # >>> sids = numpy.array([4458764513820540928])
+        # >>> sids = np.array([4458764513820540928])
         # >>> df = starepandas.STAREDataFrame(sids=sids)
         # >>> centers = df.trixel_centerpoints()
         # >>> print(centers[0])
@@ -582,7 +585,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
         Examples
         ----------
-        # >>> sids = numpy.array([3458764513820540928])
+        # >>> sids = np.array([3458764513820540928])
         # >>> df = starepandas.STAREDataFrame(sids=sids)
         # >>> df.trixel_corners()
         array([[[-170.26439001,  29.9999996 ],
@@ -620,7 +623,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
         Examples
         ----------
-        # >>> sids = numpy.array([3458764513820540928])
+        # >>> sids = np.array([3458764513820540928])
         # >>> df = starepandas.STAREDataFrame(sids=sids)
         # >>> df.trixel_corners_ecef()
         array([[[-0.85355339, -0.14644661,  0.49999999],
@@ -650,7 +653,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
         Examples
         ----------
-        # >>> sids = numpy.array([3458764513820540928])
+        # >>> sids = np.array([3458764513820540928])
         # >>> df = starepandas.STAREDataFrame(sids=sids)
         # >>> df.trixel_grings()
         array([[[ 0.14644661,  0.85355339,  0.49999999],
@@ -767,10 +770,10 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         dtype: bool
         """
 
-        if isinstance(other, (int, numpy.int64)):
+        if isinstance(other, (int, np.int64)):
             # Other is a single STARE index value
             other = [other]
-        elif isinstance(other, (numpy.ndarray, list)):
+        elif isinstance(other, (np.ndarray, list)):
             # Other is a collection/set of STARE index values
             pass
         else:
@@ -873,10 +876,10 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         """
         if by is None:
             sids = self[self._sid_column_name].to_numpy()
-            if sids.dtype == numpy.dtype('O'):
+            if sids.dtype == np.dtype('O'):
                 # If we receive a series of SID collections we merge all sids into a single 1D array
                 # to_numpy() would have produced an array of lists in this case
-                sids = numpy.concatenate(sids)
+                sids = np.concatenate(sids)
             sids = starepandas.compress_sids(sids)
             return sids
         else:
@@ -965,12 +968,12 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         sids = df[df._sid_column_name]
         if pandas.api.types.is_integer_dtype(sids):
             # We have column of single SIDs and can send whole column to pystare
-            sids = sids.astype(numpy.dtype('int64'))
+            sids = sids.astype(np.dtype('int64'))
             sids = pystare.spatial_coerce_resolution(sids, level)
 
             if clear_to_level:
                 # pystare_terminator_mask uses << operator, which requires us to cast to numpy array first
-                sids = pystare.spatial_clear_to_resolution(numpy.array(sids))
+                sids = pystare.spatial_clear_to_resolution(np.array(sids))
         else:
             pass
 
@@ -1004,7 +1007,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             df = self.__deepcopy__()
 
         sids = df[df._sid_column_name]
-        sids = pystare.spatial_clear_to_resolution(numpy.array(sids))
+        sids = pystare.spatial_clear_to_resolution(np.array(sids))
 
         df[df._sid_column_name] = sids
         if not inplace:
@@ -1381,6 +1384,180 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             arrays[column] = self.to_array(column, shape=shape, pivot=pivot)
 
         return arrays
+
+    def to_zarr_s3(self, s3_path, level, chunk_size=250000, storage_options=None):
+        """
+        Partition STAREDataFrame by SIDs at specified level and write to S3 in zarr format.
+        
+        Parameters
+        ----------
+        s3_path : str
+            S3 path where the zarr store will be created (e.g., "s3://bucket/granule_name")
+        level : int
+            STARE level for partitioning SIDs
+        chunk_size : int, optional
+            Size of chunks for zarr arrays (default: 250000)
+        storage_options : dict, optional
+            S3 storage options including credentials and region
+            
+        Returns
+        -------
+        str
+            The S3 path where data was written
+        """
+        # Group by SIDs at the specified level
+        grouped = self.groupby(self.to_sids_level(level=level, clear_to_level=True)['sids'])
+        
+        # Create zarr group on S3
+        group = zarr.open_group(
+            s3_path,
+            mode="w",
+            storage_options=storage_options or {}
+        )
+        
+        n = self.shape[0]  # number of rows
+        
+        # Write each column as a zarr array
+        for col in self.columns:
+            col_vals = self[col].to_numpy()
+            
+            # Handle object dtype (strings, etc.) by converting to fixed-length unicode
+            if col_vals.dtype == np.dtype('O'):
+                # Convert object arrays to fixed-length unicode strings
+                col_vals = col_vals.astype('U')
+            
+            # Create 1-D zarr array
+            arr = group.empty(
+                name=col,
+                shape=(n,),
+                dtype=col_vals.dtype,
+                chunks=(chunk_size,)
+            )
+            # Write all values
+            arr[:] = col_vals
+            
+        return s3_path
+    
+    def to_zarr_local(self, local_path, level, chunk_size=250000):
+        """
+        Partition STAREDataFrame by SIDs at specified level and write to local storage in zarr format.
+        
+        Parameters
+        ----------
+        local_path : str
+            Local path where the zarr store will be created
+        level : int
+            STARE level for partitioning SIDs
+        chunk_size : int, optional
+            Size of chunks for zarr arrays (default: 250000)
+            
+        Returns
+        -------
+        str
+            The local path where data was written
+        """
+        # Group by SIDs at the specified level
+        grouped = self.groupby(self.to_sids_level(level=level, clear_to_level=True)['sids'])
+        
+        # Create zarr group on local filesystem
+        group = zarr.open_group(local_path, mode="w")
+        
+        n = self.shape[0]  # number of rows
+        
+        # Write each column as a zarr array
+        for col in self.columns:
+            col_vals = self[col].to_numpy()
+            
+            # Handle object dtype (strings, etc.) by converting to fixed-length unicode
+            if col_vals.dtype == np.dtype('O'):
+                # Convert object arrays to fixed-length unicode strings
+                col_vals = col_vals.astype('U')
+            
+            # Create 1-D zarr array
+            arr = group.empty(
+                name=col,
+                shape=(n,),
+                dtype=col_vals.dtype,
+                chunks=(chunk_size,)
+            )
+            # Write all values
+            arr[:] = col_vals
+            
+        return local_path
+    
+    @classmethod
+    def from_zarr_s3(cls, s3_path, storage_options=None):
+        """
+        Read STAREDataFrame from S3 zarr store.
+        
+        Parameters
+        ----------
+        s3_path : str
+            S3 path to the zarr store
+        storage_options : dict, optional
+            S3 storage options including credentials and region
+            
+        Returns
+        -------
+        STAREDataFrame
+            The reconstructed STAREDataFrame
+        """
+        # Open zarr group from S3
+        group = zarr.open_group(
+            s3_path,
+            mode="r",
+            storage_options=storage_options or {}
+        )
+        
+        # Read each array (column) back into a dict
+        data = {}
+        for name in group.array_keys():
+            col_data = group[name][:]  # load the full array
+            
+            # Convert unicode strings back to Python strings if needed
+            if col_data.dtype.kind == 'U':
+                col_data = col_data.astype('O')
+            
+            data[name] = col_data
+            
+        # Rebuild STAREDataFrame
+        df = cls(data)
+        
+        return df
+    
+    @classmethod
+    def from_zarr_local(cls, local_path):
+        """
+        Read STAREDataFrame from local zarr store.
+        
+        Parameters
+        ----------
+        local_path : str
+            Local path to the zarr store
+            
+        Returns
+        -------
+        STAREDataFrame
+            The reconstructed STAREDataFrame
+        """
+        # Open zarr group from local filesystem
+        group = zarr.open_group(local_path, mode="r")
+        
+        # Read each array (column) back into a dict
+        data = {}
+        for name in group.array_keys():
+            col_data = group[name][:]  # load the full array
+            
+            # Convert unicode strings back to Python strings if needed
+            if col_data.dtype.kind == 'U':
+                col_data = col_data.astype('O')
+            
+            data[name] = col_data
+            
+        # Rebuild STAREDataFrame
+        df = cls(data)
+        
+        return df
 
     def to_sidecar(self, file_name, cover=False, shuffle=True, zlib=True):
         """ Writes STARE Sidecar
