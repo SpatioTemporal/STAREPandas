@@ -13,12 +13,244 @@ import pickle
 import zarr
 import s3fs
 import os
+import json
+import datetime
 
 import logging
 import time
 import copy
 
 from pathlib import Path
+
+_AWS_S3_STORAGE_OPTIONS = {}
+_AWS_RDS_OPTIONS = {}
+
+def aws_configure(key=None, secret=None, token=None, region_name=None, endpoint_url=None, client_kwargs=None,
+                  rds=None, db_host=None, db_port=None, db_username=None, db_password=None, db_database=None,
+                  **s3fs_kwargs):
+    """
+    Configure default AWS/S3 options for zarr S3 helpers and optional RDS Postgres metadata store.
+
+    Parameters
+    - key: AWS access key id
+    - secret: AWS secret access key
+    - token: AWS session token (optional)
+    - region_name: AWS region (e.g., "us-west-2")
+    - endpoint_url: Custom S3-compatible endpoint (optional)
+    - client_kwargs: dict to merge into s3fs client_kwargs
+    - rds: dict with keys {host, port, username, password, database} for RDS connection
+    - db_host/db_port/db_username/db_password/db_database: overrides for rds dict
+    - **s3fs_kwargs: any additional s3fs.S3FileSystem kwargs
+
+    Notes
+    - These options are used by to_zarr_s3/from_zarr_s3 when storage_options is not provided.
+    - You can pass a ready-made 'client_kwargs' dict or individual fields like 'region_name'/'endpoint_url'.
+    """
+    global _AWS_S3_STORAGE_OPTIONS, _AWS_RDS_OPTIONS
+    options = dict(s3fs_kwargs) if s3fs_kwargs else {}
+    if key is not None:
+        options['key'] = key
+    if secret is not None:
+        options['secret'] = secret
+    if token is not None:
+        options['token'] = token
+
+    ck = dict(client_kwargs) if client_kwargs else {}
+    if region_name is not None:
+        ck['region_name'] = region_name
+    if endpoint_url is not None:
+        ck['endpoint_url'] = endpoint_url
+    if ck:
+        options['client_kwargs'] = ck
+
+    _AWS_S3_STORAGE_OPTIONS = options
+
+    # Configure RDS/PostgreSQL connection options
+    rds_opts = {}
+    if isinstance(rds, dict):
+        rds_opts.update(rds)
+    if db_host is not None:
+        rds_opts['host'] = db_host
+    if db_port is not None:
+        rds_opts['port'] = int(db_port)
+    if db_username is not None:
+        rds_opts['username'] = db_username
+    if db_password is not None:
+        rds_opts['password'] = db_password
+    if db_database is not None:
+        rds_opts['database'] = db_database
+
+    if rds_opts:
+        _AWS_RDS_OPTIONS = rds_opts
+    return _AWS_S3_STORAGE_OPTIONS
+
+def load_aws_configure(config_path):
+    """
+    Load AWS/S3 configuration from a JSON file and set defaults for zarr S3 helpers.
+
+    The JSON may contain either s3fs-style keys (key, secret, token, client_kwargs)
+    or AWS-style keys (aws_access_key_id, aws_secret_access_key, aws_session_token, region_name, endpoint_url).
+
+    It may also include an 'rds' block with {host, port, username, password, database}, or top-level aliases.
+    """
+    with open(config_path, 'r') as f:
+        data = json.load(f)
+
+    key = data.get('key') or data.get('aws_access_key_id')
+    secret = data.get('secret') or data.get('aws_secret_access_key')
+    token = data.get('token') or data.get('aws_session_token')
+
+    client_kwargs = data.get('client_kwargs', {})
+    region_name = data.get('region_name') or data.get('region')
+    endpoint_url = data.get('endpoint_url')
+
+    rds_block = data.get('rds') or {}
+    for k in ['host', 'port', 'username', 'password', 'database']:
+        if k in data and k not in rds_block:
+            rds_block[k] = data[k]
+
+    return aws_configure(
+        key=key,
+        secret=secret,
+        token=token,
+        region_name=region_name,
+        endpoint_url=endpoint_url,
+        client_kwargs=client_kwargs,
+        rds=rds_block,
+        **{k: v for k, v in data.items() if k not in {
+            'key', 'secret', 'token', 'client_kwargs',
+            'aws_access_key_id', 'aws_secret_access_key', 'aws_session_token',
+            'region', 'region_name', 'endpoint_url', 'rds',
+            'host', 'port', 'username', 'password', 'database'
+        }}
+    )
+
+def _load_config_from_default_locations() -> bool:
+    """Try to load configuration from default file locations.
+
+    Order of precedence:
+    - Env var STAREPANDAS_AWS_CONFIG
+    - ./.config (current working directory)
+    - <package_root>/.config (project root next to this module)
+    - ~/.starepandas_aws_config.json
+    - ~/.starepandas/aws.json
+    Returns True if successfully loaded, else False.
+    """
+    candidates = []
+    env_path = os.environ.get('STAREPANDAS_AWS_CONFIG')
+    if env_path:
+        candidates.append(env_path)
+    candidates.append(os.path.join(os.getcwd(), '.config'))
+    candidates.append(str(Path(__file__).resolve().parents[1] / '.config'))
+    candidates.append(os.path.join(Path.home(), '.starepandas_aws_config.json'))
+    candidates.append(os.path.join(Path.home(), '.starepandas', 'aws.json'))
+
+    for cfg in candidates:
+        try:
+            if os.path.isfile(cfg):
+                # Support simple .config key=value pairs as well as JSON
+                try:
+                    with open(cfg, 'r') as f:
+                        txt = f.read().strip()
+                    if txt.startswith('{'):
+                        load_aws_configure(cfg)
+                    else:
+                        # Parse simple key=value lines
+                        kv = {}
+                        for line in txt.splitlines():
+                            line = line.strip()
+                            if not line or line.startswith('#'):
+                                continue
+                            if '=' in line:
+                                k, v = line.split('=', 1)
+                                kv[k.strip()] = v.strip()
+                        # Map to expected fields
+                        rds_block = {
+                            'host': kv.get('rds_host') or kv.get('host'),
+                            'port': int(kv.get('port', '5432')),
+                            'username': kv.get('username') or kv.get('user'),
+                            'password': kv.get('password'),
+                            'database': kv.get('database') or 'postgres'
+                        }
+                        aws_configure(
+                            key=kv.get('key'),
+                            secret=kv.get('secret'),
+                            region_name=kv.get('region_name') or kv.get('region'),
+                            rds=rds_block
+                        )
+                except Exception:
+                    # Fallback to JSON loader if parsing failed unexpectedly
+                    load_aws_configure(cfg)
+                return True
+        except Exception:
+            continue
+    return False
+
+def _ensure_rds_db_and_table(target_dbname='StarePodsMetadata'):
+    """
+    Ensure the RDS Postgres database and table exist, and return a connection to the target DB.
+    Expects _AWS_RDS_OPTIONS with keys: host, port, username, password, database (admin DB to connect first).
+    """
+    if not _AWS_RDS_OPTIONS:
+        # Attempt to auto-load default config file if available
+        _load_config_from_default_locations()
+    if not _AWS_RDS_OPTIONS:
+        raise ValueError(
+            "Missing RDS configuration. Call load_aws_configure(config_path) or aws_configure(..., rds=...) "
+            "to set RDS connection parameters."
+        )
+
+    try:
+        import psycopg2
+        from psycopg2 import sql
+    except ImportError as e:
+        raise ImportError("psycopg2 is required for RDS metadata operations. Install 'psycopg2-binary'.") from e
+
+    host = _AWS_RDS_OPTIONS.get('host')
+    port = int(_AWS_RDS_OPTIONS.get('port', 5432))
+    user = _AWS_RDS_OPTIONS.get('username') or _AWS_RDS_OPTIONS.get('user')
+    password = _AWS_RDS_OPTIONS.get('password')
+    admin_db = _AWS_RDS_OPTIONS.get('database') or 'postgres'
+
+    if not all([host, user, password]):
+        raise ValueError("RDS configuration incomplete: require host, username, password (and optionally port, database).")
+
+    # Connect to admin DB to ensure target DB exists
+    admin_conn = psycopg2.connect(host=host, port=port, user=user, password=password, dbname=admin_db)
+    admin_conn.set_session(autocommit=True)
+    try:
+        with admin_conn.cursor() as cur:
+            cur.execute("SELECT 1 FROM pg_database WHERE datname=%s", (target_dbname,))
+            exists = cur.fetchone() is not None
+            if not exists:
+                cur.execute(sql.SQL("CREATE DATABASE {} ").format(sql.Identifier(target_dbname)))
+    finally:
+        admin_conn.close()
+
+    # Connect to target DB and ensure table
+    conn = psycopg2.connect(host=host, port=port, user=user, password=password, dbname=target_dbname)
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS "PodsMetadata" (
+                "Dataset" TEXT,
+                "DataLevel" TEXT,
+                "RawData Collected Time" TIMESTAMP,
+                grouped_id INTEGER,
+                "S3 bucket" TEXT,
+                "Resolution level" INTEGER,
+                "MetadataJson" JSONB
+            )
+            """
+        )
+        conn.commit()
+    return conn
+
+def _parse_s3_bucket(s3_path: str) -> str:
+    if not s3_path.startswith('s3://'):
+        return ''
+    rest = s3_path[5:]
+    return rest.split('/', 1)[0] if '/' in rest else rest
 
 DEFAULT_SID_COLUMN_NAME = 'sids'
 DEFAULT_TID_COLUMN_NAME = 'tids'
@@ -1385,67 +1617,130 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
         return arrays
 
-    def to_zarr_s3(self, s3_path, level, chunk_size=250000, storage_options=None):
+    def to_zarr_s3(self, s3_path, level, chunk_size=250000, storage_options=None,
+                   dataset=None, data_level=None, raw_collected_time=None, metadata=None):
         """
-        Partition STAREDataFrame by SIDs at specified level and write to S3 in zarr format.
+        Partition STAREDataFrame by SIDs at specified level and write to S3 in grouped layout.
+        
+        Layout: s3_path/<grouped_id>/[one array per column + __row_positions__]
         
         Parameters
         ----------
         s3_path : str
-            S3 path where the zarr store will be created (e.g., "s3://bucket/granule_name")
+            S3 path where the zarr root directory will be created (e.g., "s3://bucket/granule_name")
         level : int
             STARE level for partitioning SIDs
         chunk_size : int, optional
             Size of chunks for zarr arrays (default: 250000)
         storage_options : dict, optional
             S3 storage options including credentials and region
+        dataset : str, optional
+            Dataset name to record in metadata table
+        data_level : str, optional
+            Data level string to record in metadata table
+        raw_collected_time : datetime, optional
+            Timestamp when raw data was collected; defaults to UTC now if not provided
+        metadata : dict, optional
+            Additional metadata to store in the JSON field
             
         Returns
         -------
         str
             The S3 path where data was written
         """
-        # Group by SIDs at the specified level
-        grouped = self.groupby(self.to_sids_level(level=level, clear_to_level=True)['sids'])
-        
-        # Create zarr group on S3
-        group = zarr.open_group(
-            s3_path,
-            mode="w",
-            storage_options=storage_options or {}
-        )
-        
-        n = self.shape[0]  # number of rows
-        
-        # Write each column as a zarr array
-        for col in self.columns:
-            col_vals = self[col].to_numpy()
-            
-            # Handle object dtype (strings, etc.) by converting to fixed-length unicode
-            if col_vals.dtype == np.dtype('O'):
-                # Convert object arrays to fixed-length unicode strings
-                col_vals = col_vals.astype('U')
-            
-            # Create 1-D zarr array
-            arr = group.empty(
-                name=col,
-                shape=(n,),
-                dtype=col_vals.dtype,
-                chunks=(chunk_size,)
+        # Resolve storage options: use per-call options over configured defaults
+        merged_opts = dict(_AWS_S3_STORAGE_OPTIONS)
+        if not merged_opts:
+            # Attempt to auto-load default config file if available
+            _load_config_from_default_locations()
+            merged_opts = dict(_AWS_S3_STORAGE_OPTIONS)
+        if storage_options:
+            merged_opts.update(storage_options)
+        if not merged_opts:
+            raise ValueError(
+                "Missing S3 configuration. Call load_aws_configure(config_path) or aws_configure(...) "
+                "to set credentials/region, or pass storage_options to to_zarr_s3."
             )
-            # Write all values
-            arr[:] = col_vals
-            
+
+        # Ensure grouping by coerced SIDs and preserve encounter order of groups
+        coerced = self.to_sids_level(level=level, clear_to_level=True)
+        grouped = self.groupby(coerced[self._sid_column_name], sort=False)
+
+        # Record original row order so we can reconstruct the exact order on read
+        original_positions = pandas.Series(np.arange(len(self), dtype=np.int64), index=self.index)
+
+        # Prepare RDS connection and metadata defaults
+        conn = _ensure_rds_db_and_table('StarePodsMetadata')
+        bucket_name = _parse_s3_bucket(s3_path)
+        ts = raw_collected_time if raw_collected_time is not None else datetime.datetime.utcnow()
+        base_meta = dict(metadata or {})
+
+        # Write each group to its own zarr group under s3_path/<group_id>
+        for group_id, gdf in grouped:
+            # Skip invalid groups if any
+            if isinstance(group_id, (int, np.integer)) and group_id < 0:
+                continue
+
+            group_path = f"{s3_path}/{group_id}"
+            zg = zarr.open_group(group_path, mode="w", storage_options=merged_opts)
+
+            # Per-group arrays for each column
+            for col in self.columns:
+                values = gdf[col].to_numpy()
+                if values.dtype == np.dtype('O'):
+                    values = values.astype('U')
+                zg.empty(name=col, shape=(len(values),), dtype=values.dtype, chunks=(min(chunk_size, max(1, len(values))),))[:] = values
+
+            # Hidden helper to preserve original order
+            row_pos = original_positions.loc[gdf.index].to_numpy(dtype=np.int64)
+            zg.empty(name="__row_positions__", shape=(len(row_pos),), dtype=row_pos.dtype, chunks=(min(chunk_size, max(1, len(row_pos))),))[:] = row_pos
+
+            # Insert metadata row into RDS for this group
+            try:
+                # best-effort to fit grouped_id into 4-byte signed int, also store full in json
+                full_gid = int(group_id)
+                gid32 = full_gid & 0x7fffffff
+                meta_row = dict(base_meta)
+                meta_row.update({
+                    'grouped_id_full': full_gid,
+                    'group_path': group_path,
+                    'num_rows': int(len(gdf)),
+                    'columns': list(self.columns),
+                })
+                with conn.cursor() as cur:
+                    cur.execute(
+                        'INSERT INTO "PodsMetadata" ("Dataset", "DataLevel", "RawData Collected Time", grouped_id, "S3 bucket", "Resolution level", "MetadataJson")\
+                         VALUES (%s, %s, %s, %s, %s, %s, %s)',
+                        (
+                            dataset, data_level, ts, gid32, bucket_name, int(level), json.dumps(meta_row)
+                        )
+                    )
+            except Exception:
+                # Do not fail writing data due to metadata issues
+                pass
+
+        try:
+            conn.commit()
+        except Exception:
+            pass
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
         return s3_path
     
     def to_zarr_local(self, local_path, level, chunk_size=250000):
         """
-        Partition STAREDataFrame by SIDs at specified level and write to local storage in zarr format.
+        Partition STAREDataFrame by SIDs at specified level and write to local storage in grouped layout.
+        
+        Layout: local_path/<grouped_id>/[one array per column + __row_positions__]
         
         Parameters
         ----------
         local_path : str
-            Local path where the zarr store will be created
+            Local path where the zarr root directory will be created
         level : int
             STARE level for partitioning SIDs
         chunk_size : int, optional
@@ -1456,108 +1751,152 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         str
             The local path where data was written
         """
-        # Group by SIDs at the specified level
-        grouped = self.groupby(self.to_sids_level(level=level, clear_to_level=True)['sids'])
-        
-        # Create zarr group on local filesystem
-        group = zarr.open_group(local_path, mode="w")
-        
-        n = self.shape[0]  # number of rows
-        
-        # Write each column as a zarr array
-        for col in self.columns:
-            col_vals = self[col].to_numpy()
-            
-            # Handle object dtype (strings, etc.) by converting to fixed-length unicode
-            if col_vals.dtype == np.dtype('O'):
-                # Convert object arrays to fixed-length unicode strings
-                col_vals = col_vals.astype('U')
-            
-            # Create 1-D zarr array
-            arr = group.empty(
-                name=col,
-                shape=(n,),
-                dtype=col_vals.dtype,
-                chunks=(chunk_size,)
-            )
-            # Write all values
-            arr[:] = col_vals
-            
+        # Ensure root directory exists
+        os.makedirs(local_path, exist_ok=True)
+
+        # Group by SIDs at the specified level, preserving encounter order
+        coerced = self.to_sids_level(level=level, clear_to_level=True)
+        grouped = self.groupby(coerced[self._sid_column_name], sort=False)
+
+        # Record original row order
+        original_positions = pandas.Series(np.arange(len(self), dtype=np.int64), index=self.index)
+
+        # Write each group to its own zarr group under local_path/<group_id>
+        for group_id, gdf in grouped:
+            if isinstance(group_id, (int, np.integer)) and group_id < 0:
+                continue
+
+            group_dir = os.path.join(local_path, str(group_id))
+            zg = zarr.open_group(group_dir, mode="w")
+
+            for col in self.columns:
+                values = gdf[col].to_numpy()
+                if values.dtype == np.dtype('O'):
+                    values = values.astype('U')
+                zg.empty(name=col, shape=(len(values),), dtype=values.dtype, chunks=(min(chunk_size, max(1, len(values))),))[:] = values
+
+            row_pos = original_positions.loc[gdf.index].to_numpy(dtype=np.int64)
+            zg.empty(name="__row_positions__", shape=(len(row_pos),), dtype=row_pos.dtype, chunks=(min(chunk_size, max(1, len(row_pos))),))[:] = row_pos
+
         return local_path
     
     @classmethod
     def from_zarr_s3(cls, s3_path, storage_options=None):
         """
-        Read STAREDataFrame from S3 zarr store.
+        Read STAREDataFrame from S3 grouped zarr store written by to_zarr_s3.
         
         Parameters
         ----------
         s3_path : str
-            S3 path to the zarr store
+            S3 path to the zarr root directory
         storage_options : dict, optional
             S3 storage options including credentials and region
             
         Returns
         -------
         STAREDataFrame
-            The reconstructed STAREDataFrame
+            The reconstructed STAREDataFrame in original row order
         """
-        # Open zarr group from S3
-        group = zarr.open_group(
-            s3_path,
-            mode="r",
-            storage_options=storage_options or {}
-        )
-        
-        # Read each array (column) back into a dict
-        data = {}
-        for name in group.array_keys():
-            col_data = group[name][:]  # load the full array
-            
-            # Convert unicode strings back to Python strings if needed
-            if col_data.dtype.kind == 'U':
-                col_data = col_data.astype('O')
-            
-            data[name] = col_data
-            
-        # Rebuild STAREDataFrame
-        df = cls(data)
-        
-        return df
+        merged_opts = dict(_AWS_S3_STORAGE_OPTIONS)
+        if not merged_opts:
+            _load_config_from_default_locations()
+            merged_opts = dict(_AWS_S3_STORAGE_OPTIONS)
+        if storage_options:
+            merged_opts.update(storage_options)
+        if not merged_opts:
+            raise ValueError(
+                "Missing S3 configuration. Call load_aws_configure(config_path) or aws_configure(...) "
+                "to set credentials/region, or pass storage_options to from_zarr_s3."
+            )
+        fs = s3fs.S3FileSystem(**merged_opts)
+
+        # Discover immediate child prefixes that are zarr groups (contain .zgroup)
+        try:
+            entries = fs.ls(s3_path)
+        except Exception:
+            entries = []
+
+        group_dirs = []
+        for entry in entries:
+            # Ensure path is a directory-like and has a .zgroup
+            candidate = entry.rstrip('/')
+            if fs.exists(candidate + '/.zgroup'):
+                group_dirs.append(candidate)
+
+        # Read each group's arrays into a DataFrame and collect
+        frames = []
+        for gpath in group_dirs:
+            zg = zarr.open_group(gpath, mode="r", storage_options=merged_opts)
+            cols = [name for name in zg.array_keys() if name != "__row_positions__"]
+            data = {}
+            for name in cols:
+                arr = zg[name][:]
+                if arr.dtype.kind == 'U':
+                    arr = arr.astype('O')
+                data[name] = arr
+            df_part = pandas.DataFrame(data)
+            row_pos = zg["__row_positions__"][:].astype(np.int64)
+            df_part["__row_pos__"] = row_pos
+            frames.append(df_part)
+
+        if not frames:
+            return cls()
+
+        df = pandas.concat(frames, ignore_index=True)
+        df.sort_values("__row_pos__", inplace=True)
+        df.drop(columns=["__row_pos__"], inplace=True)
+
+        return cls(df)
     
     @classmethod
     def from_zarr_local(cls, local_path):
         """
-        Read STAREDataFrame from local zarr store.
+        Read STAREDataFrame from local grouped zarr store written by to_zarr_local.
         
         Parameters
         ----------
         local_path : str
-            Local path to the zarr store
+            Local path to the zarr root directory
             
         Returns
         -------
         STAREDataFrame
-            The reconstructed STAREDataFrame
+            The reconstructed STAREDataFrame in original row order
         """
-        # Open zarr group from local filesystem
-        group = zarr.open_group(local_path, mode="r")
-        
-        # Read each array (column) back into a dict
-        data = {}
-        for name in group.array_keys():
-            col_data = group[name][:]  # load the full array
-            
-            # Convert unicode strings back to Python strings if needed
-            if col_data.dtype.kind == 'U':
-                col_data = col_data.astype('O')
-            
-            data[name] = col_data
-            
-        # Rebuild STAREDataFrame
-        df = cls(data)
-        
-        return df
+        if not os.path.isdir(local_path):
+            # Nothing to read
+            return cls()
+
+        # Discover child directories that contain a .zgroup file
+        group_dirs = []
+        for name in os.listdir(local_path):
+            candidate = os.path.join(local_path, name)
+            if os.path.isdir(candidate) and os.path.exists(os.path.join(candidate, '.zgroup')):
+                group_dirs.append(candidate)
+
+        frames = []
+        for gdir in group_dirs:
+            zg = zarr.open_group(gdir, mode="r")
+            cols = [n for n in zg.array_keys() if n != "__row_positions__"]
+            data = {}
+            for n in cols:
+                arr = zg[n][:]
+                if arr.dtype.kind == 'U':
+                    arr = arr.astype('O')
+                data[n] = arr
+            df_part = pandas.DataFrame(data)
+            row_pos = zg["__row_positions__"][:].astype(np.int64)
+            df_part["__row_pos__"] = row_pos
+            frames.append(df_part)
+
+        if not frames:
+            return cls()
+
+        df = pandas.concat(frames, ignore_index=True)
+        df.sort_values("__row_pos__", inplace=True)
+        df.drop(columns=["__row_pos__"], inplace=True)
+
+        return cls(df)
 
     def to_pickle_s3(self, s3_path, storage_options=None, compress=None):
         """
@@ -1739,7 +2078,6 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             """
             starepandas.io.postgis.write(gdf=self, engine=con, table_name=name)
 
-
 def _dataframe_set_sids(self, col, inplace=False):
     # We create a function here so that we can take conventional DataFrames and convert them to sdfs
     if inplace:
@@ -1747,7 +2085,6 @@ def _dataframe_set_sids(self, col, inplace=False):
     sdf = STAREDataFrame(self)
     # this will copy so that BlockManager gets copied
     return sdf.set_sids(col, inplace=False)
-
 
 geopandas.GeoDataFrame.set_sids = _dataframe_set_sids
 pandas.DataFrame.set_sids = _dataframe_set_sids
