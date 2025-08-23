@@ -1,2 +1,3 @@
 include versioneer.py
 include starepandas/_version.py
+include starepandas/.config
