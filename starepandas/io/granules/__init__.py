@@ -1,5 +1,7 @@
 import glob
 import re
+import pandas as pd
+import json
 import starepandas
 from .modis import Mod09GA, Mod05, Mod09, Mod03
 from .viirsl2 import VNP02DNB, VNP03DNB, VNP03MOD, VNP03IMG, CLDMSKL2VIIRS, VNP09
@@ -254,3 +256,703 @@ def read_granule(file_path,
     df = granule.to_df(xy=xy)
 
     return df
+
+
+def to_zarr_s3(file_path, s3_path, level, chunk_size=250000, storage_options=None,
+               dataset=None, data_level=None, raw_collected_time=None, metadata=None,
+               sidecar_path=None, add_sids=True, adapt_resolution=True, read_timestamp=False,
+               keep_na_sids=False, nom_res=None, scan=None, **kwargs):
+    """
+    Generic function to convert a granule file to STAREDataFrame and write it to S3 in zarr format.
+    
+    This function combines the functionality of read_granule() and STAREDataFrame.to_zarr_s3()
+    to provide a convenient way to process granule files and store them in S3 with STARE indexing.
+    
+    Parameters
+    ----------
+    file_path : str
+        Path to the granule file to process
+    s3_path : str
+        S3 path where the zarr root directory will be created (e.g., "s3://bucket/granule_name")
+    level : int
+        STARE level for partitioning SIDs
+    chunk_size : int, optional
+        Size of chunks for zarr arrays (default: 250000)
+    storage_options : dict, optional
+        S3 storage options including credentials and region
+    dataset : str, optional
+        Dataset name to record in metadata table
+    data_level : str, optional
+        Data level string to record in metadata table
+    raw_collected_time : datetime, optional
+        Timestamp when raw data was collected; defaults to UTC now if not provided
+    metadata : dict, optional
+        Additional metadata to store in the JSON field
+    sidecar_path : str, optional
+        Path to the sidecar file. If not provided, it is assumed to be ${file_path}_stare.nc
+    add_sids : bool, optional
+        Whether to add STARE indices to the dataframe (default: True)
+    adapt_resolution : bool, optional
+        Whether to adapt the resolution when adding SIDs (default: True)
+    read_timestamp : bool, optional
+        Whether to read timestamp data (default: False)
+    keep_na_sids : bool, optional
+        Whether to keep rows containing NA values for SIDs (default: False)
+    nom_res : str, optional
+        For multi-resolution products, specify which resolution to read
+    scan : str, optional
+        For granules that return multiple scans (e.g., SSMIS), specify which scan to process.
+        If None and multiple scans are available, will process all scans separately.
+    **kwargs : dict
+        Additional keyword arguments passed to read_granule()
+        
+    Returns
+    -------
+    str or list
+        The S3 path(s) where data was written. Returns a list of paths if multiple scans were processed.
+        
+    Examples
+    --------
+    >>> # Convert a MODIS granule to zarr and store in S3
+    >>> s3_path = to_zarr_s3(
+    ...     file_path="path/to/MOD05_L2.A2019336.0000.061.2019336211522.hdf",
+    ...     s3_path="s3://my-bucket/modis_data",
+    ...     level=10,
+    ...     dataset="MOD05_L2",
+    ...     data_level="L2"
+    ... )
+    
+    >>> # Convert a VIIRS granule with custom metadata
+    >>> s3_path = to_zarr_s3(
+    ...     file_path="path/to/VNP02DNB.A2020219.0742.001.2020219125654.nc",
+    ...     s3_path="s3://my-bucket/viirs_data",
+    ...     level=12,
+    ...     dataset="VNP02DNB",
+    ...     data_level="L1B",
+    ...     metadata={"satellite": "SNPP", "instrument": "VIIRS"}
+    ... )
+    
+    >>> # Convert a specific SSMIS scan
+    >>> s3_path = to_zarr_s3(
+    ...     file_path="path/to/ssmis_file.h5",
+    ...     s3_path="s3://my-bucket/ssmis_data",
+    ...     level=8,
+    ...     scan="S1",
+    ...     dataset="SSMIS",
+    ...     data_level="L1C"
+    ... )
+    """
+    # Read the granule
+    result = read_granule(
+        file_path=file_path,
+        sidecar_path=sidecar_path,
+        add_sids=add_sids,
+        adapt_resolution=adapt_resolution,
+        read_timestamp=read_timestamp,
+        keep_na_sids=keep_na_sids,
+        nom_res=nom_res,
+        **kwargs
+    )
+    
+    # Handle different return types from read_granule
+    if isinstance(result, dict):
+        # Multiple scans (e.g., SSMIS)
+        if scan is not None:
+            # Process specific scan
+            if scan not in result:
+                raise ValueError(f"Scan '{scan}' not found. Available scans: {list(result.keys())}")
+            df = result[scan]
+            scan_s3_path = f"{s3_path}_{scan}" if scan else s3_path
+            return df.to_zarr_s3(
+                s3_path=scan_s3_path,
+                level=level,
+                chunk_size=chunk_size,
+                storage_options=storage_options,
+                dataset=dataset,
+                data_level=data_level,
+                raw_collected_time=raw_collected_time,
+                metadata=metadata
+            )
+        else:
+            # Process all scans
+            s3_paths = []
+            for scan_name, df in result.items():
+                scan_s3_path = f"{s3_path}_{scan_name}"
+                scan_metadata = metadata.copy() if metadata else {}
+                scan_metadata.update({"scan": scan_name})
+                
+                scan_result = df.to_zarr_s3(
+                    s3_path=scan_s3_path,
+                    level=level,
+                    chunk_size=chunk_size,
+                    storage_options=storage_options,
+                    dataset=dataset,
+                    data_level=data_level,
+                    raw_collected_time=raw_collected_time,
+                    metadata=scan_metadata
+                )
+                s3_paths.append(scan_result)
+            return s3_paths
+    else:
+        # Single DataFrame (e.g., MODIS, VIIRS)
+        return result.to_zarr_s3(
+             s3_path=s3_path,
+             level=level,
+             chunk_size=chunk_size,
+             storage_options=storage_options,
+             dataset=dataset,
+             data_level=data_level,
+             raw_collected_time=raw_collected_time,
+             metadata=metadata
+         )
+
+
+def load_zarr_metadata(dataset=None, data_level=None, s3_bucket=None, 
+                      resolution_level=None, start_date=None, end_date=None,
+                      grouped_id=None, limit=None, order_by=None):
+    """
+    Load metadata from the RDS database for zarr data stored in S3.
+    
+    This function queries the PodsMetadata table to retrieve information about
+    zarr datasets that have been stored in S3 using the to_zarr_s3 function.
+    
+    Parameters
+    ----------
+    dataset : str, optional
+        Filter by dataset name (e.g., "MOD05_L2", "VNP02DNB", "SSMIS")
+    data_level : str, optional
+        Filter by data level (e.g., "L1B", "L2", "L1C")
+    s3_bucket : str, optional
+        Filter by S3 bucket name
+    resolution_level : int, optional
+        Filter by STARE resolution level
+    start_date : str or datetime, optional
+        Filter by start date (inclusive). Can be string in format 'YYYY-MM-DD' or datetime object
+    end_date : str or datetime, optional
+        Filter by end date (inclusive). Can be string in format 'YYYY-MM-DD' or datetime object
+    grouped_id : int, optional
+        Filter by specific grouped_id
+    limit : int, optional
+        Limit the number of results returned
+    order_by : str, optional
+        Column to order results by (e.g., "RawData Collected Time", "Dataset", "grouped_id")
+        
+    Returns
+    -------
+    pandas.DataFrame
+        DataFrame containing metadata with columns:
+        - Dataset: Dataset name
+        - DataLevel: Data level
+        - RawData Collected Time: Timestamp when data was collected
+        - grouped_id: STARE group ID
+        - S3 bucket: S3 bucket name
+        - Resolution level: STARE resolution level
+        - MetadataJson: JSON metadata containing additional information
+        - group_path: S3 path to the zarr group (from MetadataJson)
+        - num_rows: Number of rows in the group (from MetadataJson)
+        - columns: List of columns in the group (from MetadataJson)
+        - scan: Scan name if applicable (from MetadataJson)
+        
+    Examples
+    --------
+    >>> # Load all metadata
+    >>> df = load_zarr_metadata()
+    
+    >>> # Load metadata for specific dataset
+    >>> df = load_zarr_metadata(dataset="MOD05_L2")
+    
+    >>> # Load metadata for specific date range
+    >>> df = load_zarr_metadata(
+    ...     start_date="2023-01-01",
+    ...     end_date="2023-12-31"
+    ... )
+    
+    >>> # Load metadata for specific S3 bucket and resolution
+    >>> df = load_zarr_metadata(
+    ...     s3_bucket="my-data-bucket",
+    ...     resolution_level=10
+    ... )
+    
+    >>> # Load metadata with custom ordering and limit
+    >>> df = load_zarr_metadata(
+    ...     dataset="SSMIS",
+    ...     order_by="RawData Collected Time",
+    ...     limit=100
+    ... )
+    """
+    # Import the RDS connection function from staredataframe
+    from starepandas.staredataframe import _ensure_rds_db_and_table
+    
+    try:
+        # Get database connection
+        conn = _ensure_rds_db_and_table('StarePodsMetadata')
+        
+        # Build the SQL query
+        query = 'SELECT * FROM "PodsMetadata"'
+        conditions = []
+        params = []
+        
+        # Add filters
+        if dataset is not None:
+            conditions.append('"Dataset" = %s')
+            params.append(dataset)
+            
+        if data_level is not None:
+            conditions.append('"DataLevel" = %s')
+            params.append(data_level)
+            
+        if s3_bucket is not None:
+            conditions.append('"S3 bucket" = %s')
+            params.append(s3_bucket)
+            
+        if resolution_level is not None:
+            conditions.append('"Resolution level" = %s')
+            params.append(resolution_level)
+            
+        if grouped_id is not None:
+            conditions.append('grouped_id = %s')
+            params.append(grouped_id)
+            
+        if start_date is not None:
+            conditions.append('"RawData Collected Time" >= %s')
+            params.append(start_date)
+            
+        if end_date is not None:
+            conditions.append('"RawData Collected Time" <= %s')
+            params.append(end_date)
+        
+        # Add WHERE clause if conditions exist
+        if conditions:
+            query += ' WHERE ' + ' AND '.join(conditions)
+        
+        # Add ORDER BY clause
+        if order_by is not None:
+            query += f' ORDER BY "{order_by}"'
+        else:
+            query += ' ORDER BY "RawData Collected Time" DESC'
+        
+        # Add LIMIT clause
+        if limit is not None:
+            query += f' LIMIT {limit}'
+        
+        # Execute query
+        with conn.cursor() as cur:
+            cur.execute(query, params)
+            columns = [desc[0] for desc in cur.description]
+            rows = cur.fetchall()
+        
+        # Create DataFrame
+        df = pd.DataFrame(rows, columns=columns)
+        
+        # Parse JSON metadata and expand into separate columns
+        if not df.empty and 'MetadataJson' in df.columns:
+            # Parse JSON metadata
+            metadata_list = []
+            for json_str in df['MetadataJson']:
+                if json_str:
+                    try:
+                        if isinstance(json_str, str):
+                            metadata_list.append(json.loads(json_str))
+                        else:
+                            # Already parsed JSON object
+                            metadata_list.append(json_str)
+                    except (json.JSONDecodeError, TypeError):
+                        metadata_list.append({})
+                else:
+                    metadata_list.append({})
+            
+            # Create DataFrame from metadata
+            metadata_df = pd.DataFrame(metadata_list)
+            
+            # Add metadata columns to main DataFrame
+            for col in metadata_df.columns:
+                if col not in df.columns:
+                    df[col] = metadata_df[col]
+        
+        # Close connection
+        conn.close()
+        
+        return df
+        
+    except Exception as e:
+        # Try to close connection if it exists
+        try:
+            if 'conn' in locals():
+                conn.close()
+        except:
+            pass
+        raise RuntimeError(f"Error loading zarr metadata from database: {e}")
+
+
+def get_zarr_summary(dataset=None, data_level=None, s3_bucket=None):
+    """
+    Get a summary of zarr metadata stored in the database.
+    
+    Parameters
+    ----------
+    dataset : str, optional
+        Filter by dataset name
+    data_level : str, optional
+        Filter by data level
+    s3_bucket : str, optional
+        Filter by S3 bucket name
+        
+    Returns
+    -------
+    pandas.DataFrame
+        Summary DataFrame with columns:
+        - Dataset: Dataset name
+        - DataLevel: Data level
+        - S3 bucket: S3 bucket name
+        - Resolution level: STARE resolution level
+        - count: Number of groups
+        - total_rows: Total number of rows across all groups (if available)
+        - date_range: Date range of the data
+        - latest_date: Most recent data collection date
+        
+    Examples
+    --------
+    >>> # Get summary of all data
+    >>> summary = get_zarr_summary()
+    
+    >>> # Get summary for specific dataset
+    >>> summary = get_zarr_summary(dataset="MOD05_L2")
+    """
+    # Load metadata
+    df = load_zarr_metadata(dataset=dataset, data_level=data_level, s3_bucket=s3_bucket)
+    
+    if df.empty:
+        return pd.DataFrame()
+    
+    # Group by key fields and aggregate
+    agg_dict = {
+        'grouped_id': 'count',
+        'RawData Collected Time': ['min', 'max']
+    }
+    
+    # Add num_rows aggregation if the column exists (from parsed JSON metadata)
+    if 'num_rows' in df.columns:
+        agg_dict['num_rows'] = 'sum'
+    
+    summary = df.groupby(['Dataset', 'DataLevel', 'S3 bucket', 'Resolution level']).agg(agg_dict).reset_index()
+    
+    # Flatten column names
+    if 'num_rows' in df.columns:
+        summary.columns = ['Dataset', 'DataLevel', 'S3 bucket', 'Resolution level', 
+                          'count', 'total_rows', 'earliest_date', 'latest_date']
+    else:
+        summary.columns = ['Dataset', 'DataLevel', 'S3 bucket', 'Resolution level', 
+                          'count', 'earliest_date', 'latest_date']
+        # Add total_rows column with NaN values if num_rows not available
+        summary['total_rows'] = pd.NA
+    
+    # Create date range string
+    summary['date_range'] = summary['earliest_date'].astype(str) + ' to ' + summary['latest_date'].astype(str)
+    
+    # Sort by latest date
+    summary = summary.sort_values('latest_date', ascending=False)
+    
+    return summary
+
+
+def from_zarr_s3_chunked(s3_path, storage_options=None):
+    """
+    Read STAREDataFrame from S3 chunked zarr store (alternative format to grouped zarr).
+    
+    This function reads zarr data stored as a single chunked group, which is different
+    from the grouped format expected by STAREDataFrame.from_zarr_s3().
+    
+    Parameters
+    ----------
+    s3_path : str
+        S3 path to the zarr root directory containing chunked arrays
+    storage_options : dict, optional
+        S3 storage options including credentials and region
+        
+    Returns
+    -------
+    STAREDataFrame
+        The reconstructed STAREDataFrame
+        
+    Examples
+    --------
+    >>> # Read chunked zarr data from S3
+    >>> df = from_zarr_s3_chunked('s3://my-bucket/granule_data/')
+    
+    >>> # With custom storage options
+    >>> df = from_zarr_s3_chunked(
+    ...     's3://my-bucket/granule_data/',
+    ...     storage_options={'key': '...', 'secret': '...', 'client_kwargs': {'region_name': 'us-west-2'}}
+    ... )
+    """
+    import zarr
+    import numpy as np
+    from starepandas.staredataframe import _AWS_S3_STORAGE_OPTIONS, _load_config_from_default_locations
+    
+    # Resolve storage options
+    merged_opts = dict(_AWS_S3_STORAGE_OPTIONS)
+    if not merged_opts:
+        _load_config_from_default_locations()
+        merged_opts = dict(_AWS_S3_STORAGE_OPTIONS)
+    if storage_options:
+        merged_opts.update(storage_options)
+    if not merged_opts:
+        raise ValueError(
+            "Missing S3 configuration. Call load_aws_configure(config_path) or aws_configure(...) "
+            "to set credentials/region, or pass storage_options to from_zarr_s3_chunked."
+        )
+    
+    # Open zarr group
+    zg = zarr.open_group(s3_path, mode="r", storage_options=merged_opts)
+    
+    # Read all arrays
+    data = {}
+    for key in zg.array_keys():
+        arr = zg[key][:]
+        if arr.dtype.kind == 'U':
+            arr = arr.astype('O')
+        data[key] = arr
+    
+    # Create DataFrame
+    df = pd.DataFrame(data)
+    
+    # Convert to STAREDataFrame
+    from starepandas import STAREDataFrame
+    return STAREDataFrame(df)
+
+
+def from_zarr_s3_chunked_groups(s3_path, group_sid_ids, storage_options=None):
+    """
+    Read specific STARE group SIDs from S3 chunked zarr store.
+    
+    This function efficiently reads only the data for specified STARE group SIDs
+    from a chunked zarr store, avoiding the need to load the entire dataset.
+    
+    The function supports two approaches:
+    1. If group_sid_ids are individual SIDs, it filters the chunked data
+    2. If group_sid_ids are group directory names, it reads from those directories
+    
+    Parameters
+    ----------
+    s3_path : str
+        S3 path to the zarr root directory containing chunked arrays
+    group_sid_ids : list
+        List of STARE group SID IDs to read (e.g., [3447505514752114692, 3445253714938429444])
+    storage_options : dict, optional
+        S3 storage options including credentials and region
+        
+    Returns
+    -------
+    STAREDataFrame
+        The reconstructed STAREDataFrame containing only the specified groups
+        
+    Examples
+    --------
+    >>> # Read specific groups from chunked zarr data
+    >>> group_ids = [3447505514752114692, 3445253714938429444]
+    >>> df = from_zarr_s3_chunked_groups('s3://my-bucket/granule_data/', group_ids)
+    
+    >>> # With custom storage options
+    >>> df = from_zarr_s3_chunked_groups(
+    ...     's3://my-bucket/granule_data/',
+    ...     group_ids,
+    ...     storage_options={'key': '...', 'secret': '...', 'client_kwargs': {'region_name': 'us-west-2'}}
+    ... )
+    """
+    import zarr
+    import numpy as np
+    import s3fs
+    from starepandas.staredataframe import _AWS_S3_STORAGE_OPTIONS, _load_config_from_default_locations
+    
+    # Validate input
+    if not isinstance(group_sid_ids, (list, tuple, np.ndarray)):
+        raise ValueError("group_sid_ids must be a list, tuple, or numpy array")
+    
+    if len(group_sid_ids) == 0:
+        raise ValueError("group_sid_ids cannot be empty")
+    
+    # Convert to numpy array for efficient operations
+    group_sid_ids = np.array(group_sid_ids, dtype=np.int64)
+    
+    # Resolve storage options
+    merged_opts = dict(_AWS_S3_STORAGE_OPTIONS)
+    if not merged_opts:
+        _load_config_from_default_locations()
+        merged_opts = dict(_AWS_S3_STORAGE_OPTIONS)
+    if storage_options:
+        merged_opts.update(storage_options)
+    if not merged_opts:
+        raise ValueError(
+            "Missing S3 configuration. Call load_aws_configure(config_path) or aws_configure(...) "
+            "to set credentials/region, or pass storage_options to from_zarr_s3_chunked_groups."
+        )
+    
+    # First, try to read from group directories (more efficient)
+    fs = s3fs.S3FileSystem(**merged_opts)
+    all_data = []
+    
+    for group_id in group_sid_ids:
+        group_path = s3_path + str(group_id)
+        
+        # Check if group directory exists
+        if fs.exists(group_path):
+            print(f"Reading from group directory: {group_id}")
+            
+            # Read arrays from this group directory
+            group_data = {}
+            try:
+                # List contents of group directory
+                contents = fs.ls(group_path)
+                
+                # Read each array
+                for item in contents:
+                    array_name = item.split('/')[-1]
+                    # Check if it's a zarr array (either .zarray file or zarr.json with chunks)
+                    if fs.exists(item + '/.zarray') or fs.exists(item + '/zarr.json'):
+                        try:
+                            # Use the S3 filesystem directly for zarr arrays
+                            store = fs.get_mapper(item)
+                            arr = zarr.open_array(store, mode='r')
+                            group_data[array_name] = arr[:]
+                        except Exception as e:
+                            print(f"Warning: Could not read array {array_name}: {e}")
+                
+                if group_data:
+                    # Create DataFrame for this group
+                    group_df = pd.DataFrame(group_data)
+                    all_data.append(group_df)
+                    print(f"  - Read {len(group_df)} rows from group {group_id}")
+                else:
+                    print(f"  - No data found in group {group_id}")
+                    
+            except Exception as e:
+                print(f"Warning: Could not read group {group_id}: {e}")
+        else:
+            print(f"Group directory not found: {group_id}")
+    
+    # If we found data in group directories, combine and return
+    if all_data:
+        df = pd.concat(all_data, ignore_index=True)
+        from starepandas import STAREDataFrame
+        return STAREDataFrame(df)
+    
+    # Fallback: try to filter the chunked data by SIDs
+    print("Group directories not found or empty. Trying to filter chunked data by SIDs...")
+    
+    try:
+        # Open zarr group
+        zg = zarr.open_group(s3_path, mode="r", storage_options=merged_opts)
+        
+        # Check if sids array exists
+        if 'sids' not in zg.array_keys():
+            raise ValueError("No 'sids' array found in zarr store. Cannot filter by group SIDs.")
+        
+        # Read the sids array to find matching indices
+        sids_array = zg['sids'][:]
+        
+        # Find indices where sids match any of the requested group SIDs
+        mask = np.isin(sids_array, group_sid_ids)
+        
+        if not np.any(mask):
+            print(f"Warning: No data found for the specified group SIDs: {group_sid_ids}")
+            # Return empty DataFrame with correct structure
+            from starepandas import STAREDataFrame
+            return STAREDataFrame()
+        
+        # Get the indices of matching rows
+        matching_indices = np.where(mask)[0]
+        
+        print(f"Found {len(matching_indices)} rows matching {len(group_sid_ids)} group SIDs")
+        
+        # Read only the matching rows from each array
+        data = {}
+        for key in zg.array_keys():
+            arr = zg[key][matching_indices]
+            if arr.dtype.kind == 'U':
+                arr = arr.astype('O')
+            data[key] = arr
+        
+        # Create DataFrame
+        df = pd.DataFrame(data)
+        
+        # Convert to STAREDataFrame
+        from starepandas import STAREDataFrame
+        return STAREDataFrame(df)
+        
+    except Exception as e:
+        print(f"Error filtering chunked data: {e}")
+        from starepandas import STAREDataFrame
+        return STAREDataFrame()
+
+
+def generate_zarr_path(sid, dataset_name):
+    """
+    Generate relative path for storing zarr file based on STARE SID structure.
+    
+    This is a convenience function that creates a temporary STAREDataFrame instance
+    and calls its generate_zarr_path method.
+    
+    Parameters
+    ----------
+    sid : int
+        8-byte STARE SID integer
+    dataset_name : str
+        Name of the dataset
+        
+    Returns
+    -------
+    str
+        Relative path for storing zarr file in format Q00_X/Q01_Y/.../QN_M/DatasetName
+        
+    Examples
+    --------
+    >>> from starepandas.io.granules import generate_zarr_path
+    >>> path = generate_zarr_path(3445253714938429444, "MOD09")
+    >>> print(path)
+    Q00_5/Q01_3/Q02_3/Q03_2/Q04_2/MOD09
+    
+    See Also
+    --------
+    STAREDataFrame.generate_zarr_path : The underlying method
+    parse_zarr_path : Reverse operation to parse paths back to SIDs
+    to_zarr_s3 : Generic zarr writing function
+    """
+    from starepandas import STAREDataFrame
+    sdf = STAREDataFrame()
+    return sdf.generate_zarr_path(sid, dataset_name)
+
+
+def parse_zarr_path(zarr_path):
+    """
+    Parse hierarchical zarr path and reconstruct STARE SID from path components.
+    
+    This is a convenience function that creates a temporary STAREDataFrame instance
+    and calls its parse_zarr_path method. This is the reverse operation of generate_zarr_path.
+    
+    Parameters
+    ----------
+    zarr_path : str
+        Hierarchical path in format Q00_X/Q01_Y/.../QN_M/DatasetName
+        
+    Returns
+    -------
+    tuple
+        (sid, dataset_name) where sid is the reconstructed STARE SID integer
+        and dataset_name is the extracted dataset name
+        
+    Examples
+    --------
+    >>> from starepandas.io.granules import parse_zarr_path
+    >>> sid, dataset = parse_zarr_path("Q00_5/Q01_3/Q02_3/Q03_2/Q04_2/MOD09")
+    >>> print(f"SID: {sid}, Dataset: {dataset}")
+    SID: 3445253714938429444, Dataset: MOD09
+    
+    See Also
+    --------
+    STAREDataFrame.parse_zarr_path : The underlying method
+    generate_zarr_path : Reverse operation to generate paths from SIDs
+    from_zarr_s3_chunked : Read chunked zarr from S3
+    """
+    from starepandas import STAREDataFrame
+    sdf = STAREDataFrame()
+    return sdf.parse_zarr_path(zarr_path)

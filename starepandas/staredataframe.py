@@ -1698,11 +1698,11 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             # Insert metadata row into RDS for this group
             try:
                 # best-effort to fit grouped_id into 4-byte signed int, also store full in json
-                full_gid = int(group_id)
-                gid32 = full_gid & 0x7fffffff
+                # full_gid = int(group_id)
+                # gid32 = full_gid & 0x7fffffff
                 meta_row = dict(base_meta)
                 meta_row.update({
-                    'grouped_id_full': full_gid,
+                    'grouped_id_full': group_id,
                     'group_path': group_path,
                     'num_rows': int(len(gdf)),
                     'columns': list(self.columns),
@@ -1712,7 +1712,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
                         'INSERT INTO "PodsMetadata" ("Dataset", "DataLevel", "RawData Collected Time", grouped_id, "S3 bucket", "Resolution level", "MetadataJson")\
                          VALUES (%s, %s, %s, %s, %s, %s, %s)',
                         (
-                            dataset, data_level, ts, gid32, bucket_name, int(level), json.dumps(meta_row)
+                            dataset, data_level, ts, group_id, bucket_name, int(level), json.dumps(meta_row)
                         )
                     )
             except Exception:
@@ -1727,6 +1727,10 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             try:
                 conn.close()
             except Exception:
+                print
+                # This function, to_zarr_local, partitions the STAREDataFrame by STARE index (SID) at a specified level and writes each group to local storage in a grouped zarr layout.
+                # For each group (determined by the SID at the given level), it creates a subdirectory under the given local_path, and stores each column as a separate zarr array, along with a special array "__row_positions__" to preserve the original row order.
+                # The function ensures the output directory exists, groups the DataFrame, and writes each group efficiently in chunks. It returns the local path where the data was written.
                 pass
 
         return s3_path
@@ -1779,7 +1783,195 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             zg.empty(name="__row_positions__", shape=(len(row_pos),), dtype=row_pos.dtype, chunks=(min(chunk_size, max(1, len(row_pos))),))[:] = row_pos
 
         return local_path
-    
+
+    def generate_zarr_path(self, sid, dataset_name):
+        """
+        Generate relative path for storing zarr file based on STARE SID structure.
+        
+        The path follows the pattern: Q00_0/Q01_2/Q02_3/.../QN_M/DatasetName
+        where:
+        - Q00, Q01, ..., QN are the levels of sids (N+1 nodes from root to leaf)
+        - _0, _1, ..._M are the values at each level of sids
+        - DatasetName is the input dataset name
+        
+        Bit layout:
+        - Bits 0-4: Number of levels (5 bits, values 0-31)
+        - Bits 5-6: Level 27 value (2 bits, values 0-3)
+        - Bits 7-8: Level 26 value (2 bits, values 0-3)
+        - ...
+        - Bits 57-58: Level 1 value (2 bits, values 0-3)
+        - Bits 59-61: Level 0 value (3 bits, values 0-7)
+        - Bits 62-63: Ignored
+        
+        Parameters
+        ----------
+        sid : int
+            8-byte STARE SID integer
+        dataset_name : str
+            Name of the dataset
+            
+        Returns
+        -------
+        str
+            Relative path for storing zarr file
+            
+        Examples
+        --------
+        >>> sdf = STAREDataFrame()
+        >>> path = sdf.generate_zarr_path(12345678901234567890, "MOD09")
+        >>> print(path)
+        Q00_2/Q01_1/Q02_3/.../MOD09
+        """
+        # Ensure sid is a 64-bit integer
+        sid = int(sid) & 0xFFFFFFFFFFFFFFFF
+        
+        # Extract the number of levels from bits 0-4 (first 5 bits)
+        num_levels = (sid & 0x1F) + 1  # +1 because we want N+1 nodes from root to leaf
+        
+        # Build path components
+        path_components = []
+        
+        # Process each level from 0 to num_levels-1
+        for level in range(num_levels):
+            if level == 0:
+                # Level 0: bits 59-61 (3 bits, values 0-7)
+                bit_start = 59
+                bit_width = 3
+                level_value = (sid >> bit_start) & ((1 << bit_width) - 1)
+            elif level <= 27:
+                # Levels 1-27: each uses 2 bits (values 0-3)
+                # Level 1: bits 57-58, Level 2: bits 55-56, etc.
+                # Level k: bits (59 - 2*k - 1) to (59 - 2*k)
+                bit_start = 59 - 2 * level
+                bit_width = 2
+                level_value = (sid >> bit_start) & ((1 << bit_width) - 1)
+            else:
+                # For levels > 27, we don't have more bits, so use 0
+                level_value = 0
+            
+            # Create path component: Q{level:02d}_{value}
+            component = f"Q{level:02d}_{level_value}"
+            path_components.append(component)
+        
+        # Add dataset name at the end
+        path_components.append(dataset_name)
+        
+        # Join with forward slashes
+        return '/'.join(path_components)
+
+    def parse_zarr_path(self, zarr_path):
+        """
+        Parse hierarchical zarr path and reconstruct STARE SID from path components.
+        
+        This is the reverse operation of generate_zarr_path. Takes a path in the format
+        Q00_X/Q01_Y/Q02_Z/.../QN_M/DatasetName and reconstructs the original STARE SID.
+        
+        Parameters
+        ----------
+        zarr_path : str
+            Hierarchical path in format Q00_X/Q01_Y/.../QN_M/DatasetName
+            
+        Returns
+        -------
+        tuple
+            (sid, dataset_name) where sid is the reconstructed STARE SID integer
+            and dataset_name is the extracted dataset name
+            
+        Examples
+        --------
+        >>> sdf = STAREDataFrame()
+        >>> sid, dataset = sdf.parse_zarr_path("Q00_5/Q01_3/Q02_2/Q03_1/MOD09")
+        >>> print(f"SID: {sid}, Dataset: {dataset}")
+        SID: 12345678901234567890, Dataset: MOD09
+        """
+        if not zarr_path:
+            raise ValueError("zarr_path cannot be empty")
+        
+        # Split path into components
+        components = zarr_path.split('/')
+        if len(components) < 2:
+            raise ValueError("Path must contain at least one level and dataset name")
+        
+        # Extract dataset name (last component)
+        dataset_name = components[-1]
+        level_components = components[:-1]
+        
+        # Validate and parse level components
+        parsed_levels = []
+        for i, component in enumerate(level_components):
+            if not component.startswith('Q'):
+                raise ValueError(f"Invalid level component '{component}' at position {i}. Must start with 'Q'")
+            
+            if '_' not in component:
+                raise ValueError(f"Invalid level component '{component}' at position {i}. Must contain '_'")
+            
+            try:
+                level_part, value_part = component.split('_', 1)
+                level_num = int(level_part[1:])  # Remove 'Q' prefix
+                level_value = int(value_part)
+                
+                # Validate level number matches position
+                if level_num != i:
+                    raise ValueError(f"Level number {level_num} doesn't match position {i} in component '{component}'")
+                
+                # Validate level value ranges
+                if i == 0:  # Level 0: 3 bits (values 0-7)
+                    if not (0 <= level_value <= 7):
+                        raise ValueError(f"Level 0 value {level_value} out of range (0-7)")
+                else:  # Levels 1+: 2 bits (values 0-3)
+                    if not (0 <= level_value <= 3):
+                        raise ValueError(f"Level {i} value {level_value} out of range (0-3)")
+                
+                parsed_levels.append((level_num, level_value))
+                
+            except ValueError as e:
+                if "invalid literal" in str(e):
+                    raise ValueError(f"Invalid number in component '{component}' at position {i}")
+                else:
+                    raise
+        
+        # Validate level sequence is continuous from 0
+        expected_levels = list(range(len(parsed_levels)))
+        actual_levels = [level for level, _ in parsed_levels]
+        if actual_levels != expected_levels:
+            raise ValueError(f"Level sequence must be continuous from 0. Expected {expected_levels}, got {actual_levels}")
+        
+        # Reconstruct SID
+        sid = 0
+        num_levels = len(parsed_levels)
+        
+        # Validate number of levels fits in 5 bits
+        if num_levels > 32:
+            raise ValueError(f"Too many levels ({num_levels}). Maximum is 32.")
+        
+        # Set number of levels in bits 0-4 (subtract 1 because we store N-1 for N levels)
+        sid |= (num_levels - 1) & 0x1F
+        
+        # Set level values in their respective bit positions
+        for level_num, level_value in parsed_levels:
+            if level_num == 0:
+                # Level 0: bits 59-61 (3 bits)
+                bit_start = 59
+                bit_width = 3
+            elif level_num <= 27:
+                # Levels 1-27: 2 bits each
+                # Level 1: bits 57-58, Level 2: bits 55-56, etc.
+                bit_start = 59 - 2 * level_num
+                bit_width = 2
+            else:
+                # Levels beyond 27 cannot be encoded (not enough bits)
+                continue
+            
+            # Clear existing bits and set new value
+            mask = ((1 << bit_width) - 1) << bit_start
+            sid &= ~mask  # Clear the bits
+            sid |= (level_value & ((1 << bit_width) - 1)) << bit_start  # Set new value
+        
+        # Ensure bits 62 and 63 are set to 0 as requested
+        sid &= ~(0x3 << 62)  # Clear bits 62 and 63
+        
+        return sid, dataset_name
+
     @classmethod
     def from_zarr_s3(cls, s3_path, storage_options=None):
         """
