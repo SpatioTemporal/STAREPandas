@@ -28,3 +28,10 @@ test.json
 starepandas/.DS_Store
 tests/.DS_Store
 tests/data/.DS_Store
+
+# Config files with credentials
+.config
+*.config
+*_config
+aws_config*
+credentials*

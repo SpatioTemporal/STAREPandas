@@ -377,16 +377,17 @@ def to_zarr_s3(file_path, s3_path, level, chunk_size=250000, storage_options=Non
             # Process all scans
             s3_paths = []
             for scan_name, df in result.items():
-                scan_s3_path = f"{s3_path}_{scan_name}"
+                # Append scan name to dataset name, not S3 path
+                scan_dataset = f"{dataset}_{scan_name}" if dataset else f"data_{scan_name}"
                 scan_metadata = metadata.copy() if metadata else {}
                 scan_metadata.update({"scan": scan_name})
                 
                 scan_result = df.to_zarr_s3(
-                    s3_path=scan_s3_path,
+                    s3_path=s3_path,  # Keep original S3 path
                     level=level,
                     chunk_size=chunk_size,
                     storage_options=storage_options,
-                    dataset=dataset,
+                    dataset=scan_dataset,  # Use scan-specific dataset name
                     data_level=data_level,
                     raw_collected_time=raw_collected_time,
                     metadata=scan_metadata

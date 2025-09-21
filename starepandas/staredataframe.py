@@ -1620,9 +1620,11 @@ class STAREDataFrame(geopandas.GeoDataFrame):
     def to_zarr_s3(self, s3_path, level, chunk_size=250000, storage_options=None,
                    dataset=None, data_level=None, raw_collected_time=None, metadata=None):
         """
-        Partition STAREDataFrame by SIDs at specified level and write to S3 in grouped layout.
+        Partition STAREDataFrame by SIDs at specified level and write to S3 in hierarchical grouped layout.
         
-        Layout: s3_path/<grouped_id>/[one array per column + __row_positions__]
+        Layout: s3_path/<hierarchical_path>/[one array per column + __row_positions__]
+        where hierarchical_path is generated using generate_zarr_path(group_id, dataset)
+        (e.g., s3_path/Q00_5/Q01_3/Q02_2/Q03_1/dataset_name/[arrays])
         
         Parameters
         ----------
@@ -1675,13 +1677,26 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         ts = raw_collected_time if raw_collected_time is not None else datetime.datetime.utcnow()
         base_meta = dict(metadata or {})
 
-        # Write each group to its own zarr group under s3_path/<group_id>
+        # Write each group to its own zarr group using hierarchical paths
         for group_id, gdf in grouped:
             # Skip invalid groups if any
             if isinstance(group_id, (int, np.integer)) and group_id < 0:
                 continue
 
-            group_path = f"{s3_path}/{group_id}"
+            # Generate hierarchical path for this group
+            hierarchical_path = self.generate_zarr_path(group_id, dataset or "data")
+            group_path = f"{s3_path}/{hierarchical_path}"
+            
+            # Ensure parent directory exists before creating zarr group
+            try:
+                fs = s3fs.S3FileSystem(**merged_opts)
+                parent_path = '/'.join(group_path.split('/')[:-1])  # Remove the final component
+                if parent_path and not fs.exists(parent_path):
+                    fs.makedirs(parent_path, exist_ok=True)
+            except Exception as e:
+                # Log warning but continue - zarr.open_group might handle directory creation
+                print(f"Warning: Could not ensure parent directory for {group_path}: {e}")
+            
             zg = zarr.open_group(group_path, mode="w", storage_options=merged_opts)
 
             # Per-group arrays for each column
@@ -2002,18 +2017,38 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             )
         fs = s3fs.S3FileSystem(**merged_opts)
 
-        # Discover immediate child prefixes that are zarr groups (contain .zgroup)
-        try:
-            entries = fs.ls(s3_path)
-        except Exception:
-            entries = []
+        # Recursively discover zarr groups in hierarchical directory structure
+        def find_zarr_groups(base_path, max_depth=10):
+            """Recursively find zarr groups in hierarchical structure."""
+            zarr_groups = []
+            
+            def _recursive_search(current_path, depth):
+                if depth > max_depth:
+                    return
+                
+                try:
+                    entries = fs.ls(current_path)
+                except Exception:
+                    return
+                
+                for entry in entries:
+                    candidate = entry.rstrip('/')
+                    
+                    # Check if this is a zarr group
+                    if fs.exists(candidate + '/.zgroup'):
+                        zarr_groups.append(candidate)
+                    else:
+                        # Check if it's a directory that might contain zarr groups
+                        try:
+                            if fs.isdir(candidate):
+                                _recursive_search(candidate, depth + 1)
+                        except Exception:
+                            continue
+            
+            _recursive_search(base_path, 0)
+            return zarr_groups
 
-        group_dirs = []
-        for entry in entries:
-            # Ensure path is a directory-like and has a .zgroup
-            candidate = entry.rstrip('/')
-            if fs.exists(candidate + '/.zgroup'):
-                group_dirs.append(candidate)
+        group_dirs = find_zarr_groups(s3_path)
 
         # Read each group's arrays into a DataFrame and collect
         frames = []

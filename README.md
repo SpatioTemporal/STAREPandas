@@ -326,6 +326,14 @@ This is typically caused by a problem with the PROJ library and Geopandas. So, o
     - `print(pyproj.datadir.get_data_dir())`
     - `export PROJ_LIB=/path/to/proj/data`
 
+## Steps:
+- cd to /Users/tonhai/workspace/Bayesics/StarePandas_par/STAREPandas/starepandas/.config
+- export STAREPANDAS_AWS_CONFIG=/Users/tonhai/workspace/Bayesics/StarePandas_par/STAREPandas/starepandas/.config
+- from starepandas.io.granules import from_zarr_s3_chunked_groups
+- starepandas.staredataframe._load_config_from_default_locations()
+- path = 's3://zarrpods/MOD09.A2020032.1940.006.2020034015024/'
+- df = from_zarr_s3_chunked(path)
+
 # Acknowledgments
 2018-2021 STARE development supported by NASA/ACCESS-17 grant 80NSSC18M0118.
 
