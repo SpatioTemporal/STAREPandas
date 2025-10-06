@@ -236,13 +236,29 @@ def _ensure_rds_db_and_table(target_dbname='StarePodsMetadata'):
                 "Dataset" TEXT,
                 "DataLevel" TEXT,
                 "RawData Collected Time" TIMESTAMP,
-                grouped_id INTEGER,
+                grouped_id BIGINT,
                 "S3 bucket" TEXT,
                 "Resolution level" INTEGER,
                 "MetadataJson" JSONB
             )
             """
         )
+        
+        # Check if grouped_id column needs to be upgraded from INTEGER to BIGINT
+        cur.execute(
+            """
+            SELECT data_type 
+            FROM information_schema.columns 
+            WHERE table_name = 'PodsMetadata' 
+            AND column_name = 'grouped_id'
+            """
+        )
+        result = cur.fetchone()
+        if result and result[0] == 'integer':
+            print("Upgrading grouped_id column from INTEGER to BIGINT to support 64-bit STARE SIDs...")
+            cur.execute('ALTER TABLE "PodsMetadata" ALTER COLUMN grouped_id TYPE BIGINT')
+            print("✓ Column upgraded successfully")
+        
         conn.commit()
     return conn
 
@@ -1710,7 +1726,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             row_pos = original_positions.loc[gdf.index].to_numpy(dtype=np.int64)
             zg.empty(name="__row_positions__", shape=(len(row_pos),), dtype=row_pos.dtype, chunks=(min(chunk_size, max(1, len(row_pos))),))[:] = row_pos
 
-            # Insert metadata row into RDS for this group
+            # Insert metadata row into RDS for this group (each in its own transaction)
             try:
                 # best-effort to fit grouped_id into 4-byte signed int, also store full in json
                 # full_gid = int(group_id)
@@ -1722,6 +1738,17 @@ class STAREDataFrame(geopandas.GeoDataFrame):
                     'num_rows': int(len(gdf)),
                     'columns': list(self.columns),
                 })
+                
+                print(f"Attempting to write metadata for group {group_id}:")
+                print(f"  Dataset: {dataset}")
+                print(f"  DataLevel: {data_level}")
+                print(f"  Timestamp: {ts}")
+                print(f"  Group ID: {group_id}")
+                print(f"  Bucket: {bucket_name}")
+                print(f"  Level: {int(level)}")
+                print(f"  Group path: {group_path}")
+                print(f"  Num rows: {len(gdf)}")
+                
                 with conn.cursor() as cur:
                     cur.execute(
                         'INSERT INTO "PodsMetadata" ("Dataset", "DataLevel", "RawData Collected Time", grouped_id, "S3 bucket", "Resolution level", "MetadataJson")\
@@ -1730,23 +1757,30 @@ class STAREDataFrame(geopandas.GeoDataFrame):
                             dataset, data_level, ts, group_id, bucket_name, int(level), json.dumps(meta_row)
                         )
                     )
-            except Exception:
-                # Do not fail writing data due to metadata issues
-                pass
+                    # Commit each group's metadata immediately
+                    conn.commit()
+                    print(f"✓ Successfully inserted metadata for group {group_id}")
+            except Exception as e:
+                # Do not fail writing data due to metadata issues, but log the error
+                print(f"Warning: Failed to write metadata for group {group_id}: {e}")
+                print(f"  Error type: {type(e).__name__}")
+                print(f"  Dataset: {dataset}, DataLevel: {data_level}")
+                print(f"  Group path: {group_path}")
+                import traceback
+                traceback.print_exc()
+                # Rollback the failed transaction to recover
+                try:
+                    conn.rollback()
+                    print(f"  → Transaction rolled back, continuing with next group")
+                except Exception as rollback_error:
+                    print(f"  → Failed to rollback transaction: {rollback_error}")
 
+        # Close the database connection
         try:
-            conn.commit()
-        except Exception:
-            pass
-        finally:
-            try:
-                conn.close()
-            except Exception:
-                print
-                # This function, to_zarr_local, partitions the STAREDataFrame by STARE index (SID) at a specified level and writes each group to local storage in a grouped zarr layout.
-                # For each group (determined by the SID at the given level), it creates a subdirectory under the given local_path, and stores each column as a separate zarr array, along with a special array "__row_positions__" to preserve the original row order.
-                # The function ensures the output directory exists, groups the DataFrame, and writes each group efficiently in chunks. It returns the local path where the data was written.
-                pass
+            conn.close()
+            print(f"✓ Database connection closed")
+        except Exception as e:
+            print(f"Warning: Failed to close database connection: {e}")
 
         return s3_path
     
