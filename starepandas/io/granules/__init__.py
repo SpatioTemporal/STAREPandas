@@ -6,6 +6,8 @@ import starepandas
 from .modis import Mod09GA, Mod05, Mod09, Mod03
 from .viirsl2 import VNP02DNB, VNP03DNB, VNP03MOD, VNP03IMG, CLDMSKL2VIIRS, VNP09
 from .ssmis import SSMIS
+from .gmi import GMI
+from .amsr2 import AMSR2
 from .atms import ATMS
 from .imergl3 import L3IMERG, DYAMONDv2
 
@@ -96,6 +98,8 @@ granule_factory_library = {
     'VNP09': VNP09,
     'CLDMSKL2VIIRS': CLDMSKL2VIIRS,
     'SSMIS': SSMIS,
+    'GMI': GMI,
+    'AMSR2': AMSR2,
     'ATMS': ATMS,
     'L3IMERG': L3IMERG,
     'DYAMONDv2': DYAMONDv2
