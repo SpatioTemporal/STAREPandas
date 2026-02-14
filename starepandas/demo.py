@@ -103,10 +103,12 @@ class StarePodsDemo:
                 s3_path = f"{s3_prefix}/{base_name}"
                 
                 # Use existing to_zarr_s3 function
+                # Use level from kwargs if provided, otherwise default to 10
+                level = kwargs.pop('level', 10)
                 s3_result = starepandas.io.granules.to_zarr_s3(
                     file_path=granule_file,
                     s3_path=s3_path,
-                    level=10,  # STARE level for spatial indexing
+                    level=level,
                     dataset=instrument,
                     scan=scan,
                     **kwargs
