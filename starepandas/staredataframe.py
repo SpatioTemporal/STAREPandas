@@ -25,6 +25,12 @@ from pathlib import Path
 _AWS_S3_STORAGE_OPTIONS = {}
 _AWS_RDS_OPTIONS = {}
 
+# Maximum STARE level used for spatial partitioning when writing to S3.
+# Higher levels create too many tiny groups (1-3 rows each), resulting in
+# excessive S3 API calls. Level 6 (~250 km tiles) provides a good balance
+# between spatial locality and chunk size (~3-5 MB per group).
+MAX_PARTITION_LEVEL = 6
+
 def aws_configure(key=None, secret=None, token=None, region_name=None, endpoint_url=None, client_kwargs=None,
                   rds=None, db_host=None, db_port=None, db_username=None, db_password=None, db_database=None,
                   **s3fs_kwargs):
@@ -1634,14 +1640,15 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         return arrays
 
     def to_zarr_s3(self, s3_path, level, chunk_size=250000, storage_options=None,
-                   dataset=None, data_level=None, raw_collected_time=None, metadata=None):
+                   dataset=None, data_level=None, raw_collected_time=None, metadata=None,
+                   conn=None):
         """
         Partition STAREDataFrame by SIDs at specified level and write to S3 in hierarchical grouped layout.
-        
+
         Layout: s3_path/<hierarchical_path>/[one array per column + __row_positions__]
         where hierarchical_path is generated using generate_zarr_path(group_id, dataset)
         (e.g., s3_path/Q00_5/Q01_3/Q02_2/Q03_1/dataset_name/[arrays])
-        
+
         Parameters
         ----------
         s3_path : str
@@ -1660,7 +1667,10 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             Timestamp when raw data was collected; defaults to UTC now if not provided
         metadata : dict, optional
             Additional metadata to store in the JSON field
-            
+        conn : psycopg2 connection, optional
+            Existing database connection to reuse. If None, a new connection is created
+            and closed at the end. If provided, the caller is responsible for closing it.
+
         Returns
         -------
         str
@@ -1680,39 +1690,59 @@ class STAREDataFrame(geopandas.GeoDataFrame):
                 "to set credentials/region, or pass storage_options to to_zarr_s3."
             )
 
-        # Ensure grouping by coerced SIDs and preserve encounter order of groups
-        coerced = self.to_sids_level(level=level, clear_to_level=True)
-        grouped = self.groupby(coerced[self._sid_column_name], sort=False)
+        # Early exit for empty DataFrames
+        if len(self) == 0:
+            print("Warning: Cannot write empty DataFrame to S3")
+            return s3_path
+
+        # Cap partition level to avoid extreme fragmentation (thousands of tiny groups)
+        partition_level = min(level, MAX_PARTITION_LEVEL)
+        if partition_level < level:
+            print(f"Note: Partition level capped from {level} to {partition_level} for optimal chunk size. "
+                  f"SID data retains full level {level} resolution.")
+
+        # Compute coerced SIDs for grouping without deep-copying the entire DataFrame
+        sids_array = self[self._sid_column_name].to_numpy().astype(np.int64, copy=False)
+        coerced_sids = pystare.spatial_coerce_resolution(sids_array, partition_level)
+        coerced_sids = pystare.spatial_clear_to_resolution(coerced_sids)
+        grouped = self.groupby(coerced_sids, sort=False)
 
         # Record original row order so we can reconstruct the exact order on read
         original_positions = pandas.Series(np.arange(len(self), dtype=np.int64), index=self.index)
 
         # Prepare RDS connection and metadata defaults
-        conn = _ensure_rds_db_and_table('StarePodsMetadata')
+        owns_conn = conn is None
+        if conn is None:
+            conn = _ensure_rds_db_and_table('StarePodsMetadata')
         bucket_name = _parse_s3_bucket(s3_path)
         ts = raw_collected_time if raw_collected_time is not None else datetime.datetime.utcnow()
         base_meta = dict(metadata or {})
 
+        # Collect metadata rows for batch insert at the end
+        metadata_rows = []
+
+        num_groups = len(grouped)
+        print(f"Writing {num_groups} groups to S3...")
+
+        # TODO: Consider using concurrent.futures.ThreadPoolExecutor to parallelize
+        # S3 group writes for further speedup. Each group write is independent.
+
         # Write each group to its own zarr group using hierarchical paths
+        written_count = 0
         for group_id, gdf in grouped:
             # Skip invalid groups if any
             if isinstance(group_id, (int, np.integer)) and group_id < 0:
                 continue
 
+            written_count += 1
+            if written_count % 50 == 0:
+                print(f"  Progress: {written_count}/{num_groups} groups written...")
+
             # Generate hierarchical path for this group
             hierarchical_path = self.generate_zarr_path(group_id, dataset or "data")
             group_path = f"{s3_path}/{hierarchical_path}"
-            
-            # Ensure parent directory exists before creating zarr group
-            try:
-                fs = s3fs.S3FileSystem(**merged_opts)
-                parent_path = '/'.join(group_path.split('/')[:-1])  # Remove the final component
-                if parent_path and not fs.exists(parent_path):
-                    fs.makedirs(parent_path, exist_ok=True)
-            except Exception as e:
-                # Log warning but continue - zarr.open_group might handle directory creation
-                print(f"Warning: Could not ensure parent directory for {group_path}: {e}")
-            
+
+            # zarr.open_group with mode="w" handles directory creation via S3's implicit model
             zg = zarr.open_group(group_path, mode="w", storage_options=merged_opts)
 
             # Per-group arrays for each column
@@ -1726,62 +1756,70 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             row_pos = original_positions.loc[gdf.index].to_numpy(dtype=np.int64)
             zg.empty(name="__row_positions__", shape=(len(row_pos),), dtype=row_pos.dtype, chunks=(min(chunk_size, max(1, len(row_pos))),))[:] = row_pos
 
-            # Insert metadata row into RDS for this group (each in its own transaction)
+            # Collect metadata for batch insert
+            meta_row = dict(base_meta)
+            meta_row.update({
+                'grouped_id_full': group_id,
+                'group_path': group_path,
+                'num_rows': int(len(gdf)),
+                'columns': list(self.columns),
+            })
+            metadata_rows.append((
+                dataset, data_level, ts, group_id, bucket_name, int(partition_level), json.dumps(meta_row)
+            ))
+
+        # Batch insert all metadata rows into RDS in a single transaction
+        if metadata_rows:
             try:
-                # best-effort to fit grouped_id into 4-byte signed int, also store full in json
-                # full_gid = int(group_id)
-                # gid32 = full_gid & 0x7fffffff
-                meta_row = dict(base_meta)
-                meta_row.update({
-                    'grouped_id_full': group_id,
-                    'group_path': group_path,
-                    'num_rows': int(len(gdf)),
-                    'columns': list(self.columns),
-                })
-                
-                print(f"Attempting to write metadata for group {group_id}:")
-                print(f"  Dataset: {dataset}")
-                print(f"  DataLevel: {data_level}")
-                print(f"  Timestamp: {ts}")
-                print(f"  Group ID: {group_id}")
-                print(f"  Bucket: {bucket_name}")
-                print(f"  Level: {int(level)}")
-                print(f"  Group path: {group_path}")
-                print(f"  Num rows: {len(gdf)}")
-                
+                from psycopg2.extras import execute_values
                 with conn.cursor() as cur:
-                    cur.execute(
-                        'INSERT INTO "PodsMetadata" ("Dataset", "DataLevel", "RawData Collected Time", grouped_id, "S3 bucket", "Resolution level", "MetadataJson")\
-                         VALUES (%s, %s, %s, %s, %s, %s, %s)',
-                        (
-                            dataset, data_level, ts, group_id, bucket_name, int(level), json.dumps(meta_row)
-                        )
+                    execute_values(
+                        cur,
+                        'INSERT INTO "PodsMetadata" '
+                        '("Dataset", "DataLevel", "RawData Collected Time", grouped_id, '
+                        '"S3 bucket", "Resolution level", "MetadataJson") '
+                        'VALUES %s',
+                        metadata_rows,
                     )
-                    # Commit each group's metadata immediately
-                    conn.commit()
-                    print(f"✓ Successfully inserted metadata for group {group_id}")
+                conn.commit()
+                print(f"✓ Inserted {len(metadata_rows)} metadata rows into RDS")
             except Exception as e:
-                # Do not fail writing data due to metadata issues, but log the error
-                print(f"Warning: Failed to write metadata for group {group_id}: {e}")
-                print(f"  Error type: {type(e).__name__}")
-                print(f"  Dataset: {dataset}, DataLevel: {data_level}")
-                print(f"  Group path: {group_path}")
-                import traceback
-                traceback.print_exc()
-                # Rollback the failed transaction to recover
+                print(f"Warning: Batch insert failed ({e}), falling back to row-by-row insert...")
                 try:
                     conn.rollback()
-                    print(f"  → Transaction rolled back, continuing with next group")
-                except Exception as rollback_error:
-                    print(f"  → Failed to rollback transaction: {rollback_error}")
+                except Exception:
+                    pass
+                # Fallback: insert rows individually so partial success is possible
+                inserted = 0
+                for row in metadata_rows:
+                    try:
+                        with conn.cursor() as cur:
+                            cur.execute(
+                                'INSERT INTO "PodsMetadata" '
+                                '("Dataset", "DataLevel", "RawData Collected Time", grouped_id, '
+                                '"S3 bucket", "Resolution level", "MetadataJson") '
+                                'VALUES (%s, %s, %s, %s, %s, %s, %s)',
+                                row
+                            )
+                        conn.commit()
+                        inserted += 1
+                    except Exception:
+                        try:
+                            conn.rollback()
+                        except Exception:
+                            pass
+                print(f"  Inserted {inserted}/{len(metadata_rows)} metadata rows via fallback")
+        else:
+            print("Warning: No valid STARE groups found to write")
 
-        # Close the database connection
-        try:
-            conn.close()
-            print(f"✓ Database connection closed")
-        except Exception as e:
-            print(f"Warning: Failed to close database connection: {e}")
+        # Close the database connection only if we created it
+        if owns_conn:
+            try:
+                conn.close()
+            except Exception as e:
+                print(f"Warning: Failed to close database connection: {e}")
 
+        print(f"✓ Finished writing {num_groups} groups to {s3_path}")
         return s3_path
     
     def to_zarr_local(self, local_path, level, chunk_size=250000):

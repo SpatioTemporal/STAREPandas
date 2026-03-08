@@ -49,8 +49,8 @@ class StarePodsDemo:
         # Load AWS configuration
         starepandas.staredataframe._load_config_from_default_locations()
         
-    def ingest_granules(self, data_path: str, instrument: str, s3_prefix: str, 
-                     scan: Optional[str] = None, **kwargs) -> List[str]:
+    def ingest_granules(self, data_path: str, instrument: str, s3_prefix: str,
+                     scan: Optional[str] = None, level: int = 10, **kwargs) -> List[str]:
         """
         Partition granules into zarr chunks and store in S3.
         
@@ -102,9 +102,6 @@ class StarePodsDemo:
                 base_name = os.path.splitext(os.path.basename(granule_file))[0]
                 s3_path = f"{s3_prefix}/{base_name}"
                 
-                # Use existing to_zarr_s3 function
-                # Use level from kwargs if provided, otherwise default to 10
-                level = kwargs.pop('level', 10)
                 s3_result = starepandas.io.granules.to_zarr_s3(
                     file_path=granule_file,
                     s3_path=s3_path,
@@ -152,63 +149,65 @@ class StarePodsDemo:
         pd.DataFrame
             Metadata for intersecting datasets
         """
+        from starepandas.staredataframe import MAX_PARTITION_LEVEL
+
         logger.info(f"Finding intersections for {len(location_sids)} SIDs across {instruments}")
-        
+
         # Handle time range parameters
         if time_range is None and start_date is not None and end_date is not None:
             time_range = (start_date, end_date)
-        
-        # Convert location SIDs to grouped SIDs for hierarchical lookup
-        grouped_sids = {}
-        for sid in location_sids:
-            # Group STARE SIDs to appropriate level (level 10 -> group level)
-            grouped_sid = pystare.sid_from_int64_to_int32(sid) // 1000
-            grouped_sids[grouped_sid] = sid
-        
-        logger.info(f"Searching for {len(grouped_sids)} grouped SIDs")
-        
+
+        # Coerce query SIDs down to partition level for coarse matching against grouped_id in RDS.
+        # A level-10 query SID maps to its ancestor level-6 trixel, which is what's stored as grouped_id.
+        sids_array = np.array(location_sids, dtype=np.int64)
+        coerced_sids = pystare.spatial_coerce_resolution(sids_array, MAX_PARTITION_LEVEL)
+        coerced_sids = pystare.spatial_clear_to_resolution(coerced_sids)
+        query_grouped_ids = set(int(s) for s in coerced_sids)
+
+        logger.info(f"Coerced {len(location_sids)} query SIDs to {len(query_grouped_ids)} "
+                     f"partition-level (level {MAX_PARTITION_LEVEL}) grouped IDs")
+
         # Search metadata for each instrument
         all_results = []
         for instrument in instruments:
             try:
                 logger.info(f"Searching {instrument} metadata...")
-                
+
                 # Query metadata using existing function
                 metadata = starepandas.io.granules.load_zarr_metadata(
                     dataset=instrument,
                     **kwargs
                 )
-                
+
                 if metadata.empty:
                     logger.warning(f"No metadata found for {instrument}")
                     continue
-                
-                # Filter by grouped SIDs
+
+                # Filter by coerced grouped SIDs — stored grouped_ids are already
+                # at partition level since to_zarr_s3() partitions at that level
                 intersecting_results = []
                 for _, row in metadata.iterrows():
-                    # Check if this chunk contains any of our location SIDs
-                    row_group_sids = row.get('grouped_id', row.get('group_path', '').split('/')[-1])
-                    if pd.isna(row_group_sids):
+                    row_grouped_id = row.get('grouped_id')
+                    if pd.isna(row_grouped_id):
                         continue
-                    
+
                     try:
-                        row_group_sids_int = int(row_group_sids)
-                        if row_group_sids_int in grouped_sids:
+                        if int(row_grouped_id) in query_grouped_ids:
                             intersecting_results.append(row)
                     except (ValueError, TypeError):
                         continue
-                
+
                 logger.info(f"Found {len(intersecting_results)} intersecting chunks for {instrument}")
                 all_results.extend(intersecting_results)
-                
+
             except Exception as e:
                 logger.error(f"Error searching {instrument} metadata: {e}")
                 continue
-        
+
         if not all_results:
             logger.warning("No intersecting data found")
             return pd.DataFrame()
-        
+
         result_df = pd.DataFrame(all_results)
         logger.info(f"Found {len(result_df)} total intersecting chunks")
         return result_df

@@ -358,58 +358,72 @@ def to_zarr_s3(file_path, s3_path, level, chunk_size=250000, storage_options=Non
         **kwargs
     )
     
-    # Handle different return types from read_granule
-    if isinstance(result, dict):
-        # Multiple scans (e.g., SSMIS)
-        if scan is not None:
-            # Process specific scan
-            if scan not in result:
-                raise ValueError(f"Scan '{scan}' not found. Available scans: {list(result.keys())}")
-            df = result[scan]
-            scan_s3_path = f"{s3_path}_{scan}" if scan else s3_path
-            return df.to_zarr_s3(
-                s3_path=scan_s3_path,
-                level=level,
-                chunk_size=chunk_size,
-                storage_options=storage_options,
-                dataset=dataset,
-                data_level=data_level,
-                raw_collected_time=raw_collected_time,
-                metadata=metadata
-            )
-        else:
-            # Process all scans
-            s3_paths = []
-            for scan_name, df in result.items():
-                # Append scan name to dataset name, not S3 path
-                scan_dataset = f"{dataset}_{scan_name}" if dataset else f"data_{scan_name}"
-                scan_metadata = metadata.copy() if metadata else {}
-                scan_metadata.update({"scan": scan_name})
-                
-                scan_result = df.to_zarr_s3(
-                    s3_path=s3_path,  # Keep original S3 path
+    # Share a single DB connection across all scans to avoid repeated connection setup
+    from starepandas.staredataframe import _ensure_rds_db_and_table
+    conn = _ensure_rds_db_and_table('StarePodsMetadata')
+
+    try:
+        # Handle different return types from read_granule
+        if isinstance(result, dict):
+            # Multiple scans (e.g., SSMIS)
+            if scan is not None:
+                # Process specific scan
+                if scan not in result:
+                    raise ValueError(f"Scan '{scan}' not found. Available scans: {list(result.keys())}")
+                df = result[scan]
+                scan_s3_path = f"{s3_path}_{scan}" if scan else s3_path
+                return df.to_zarr_s3(
+                    s3_path=scan_s3_path,
                     level=level,
                     chunk_size=chunk_size,
                     storage_options=storage_options,
-                    dataset=scan_dataset,  # Use scan-specific dataset name
+                    dataset=dataset,
                     data_level=data_level,
                     raw_collected_time=raw_collected_time,
-                    metadata=scan_metadata
+                    metadata=metadata,
+                    conn=conn
                 )
-                s3_paths.append(scan_result)
-            return s3_paths
-    else:
-        # Single DataFrame (e.g., MODIS, VIIRS)
-        return result.to_zarr_s3(
-             s3_path=s3_path,
-             level=level,
-             chunk_size=chunk_size,
-             storage_options=storage_options,
-             dataset=dataset,
-             data_level=data_level,
-             raw_collected_time=raw_collected_time,
-             metadata=metadata
-         )
+            else:
+                # Process all scans
+                s3_paths = []
+                for scan_name, df in result.items():
+                    # Append scan name to dataset name, not S3 path
+                    scan_dataset = f"{dataset}_{scan_name}" if dataset else f"data_{scan_name}"
+                    scan_metadata = metadata.copy() if metadata else {}
+                    scan_metadata.update({"scan": scan_name})
+
+                    scan_result = df.to_zarr_s3(
+                        s3_path=s3_path,  # Keep original S3 path
+                        level=level,
+                        chunk_size=chunk_size,
+                        storage_options=storage_options,
+                        dataset=scan_dataset,  # Use scan-specific dataset name
+                        data_level=data_level,
+                        raw_collected_time=raw_collected_time,
+                        metadata=scan_metadata,
+                        conn=conn
+                    )
+                    s3_paths.append(scan_result)
+                return s3_paths
+        else:
+            # Single DataFrame (e.g., MODIS, VIIRS)
+            return result.to_zarr_s3(
+                 s3_path=s3_path,
+                 level=level,
+                 chunk_size=chunk_size,
+                 storage_options=storage_options,
+                 dataset=dataset,
+                 data_level=data_level,
+                 raw_collected_time=raw_collected_time,
+                 metadata=metadata,
+                 conn=conn
+             )
+    finally:
+        try:
+            if conn is not None and not conn.closed:
+                conn.close()
+        except Exception:
+            pass
 
 
 def load_zarr_metadata(dataset=None, data_level=None, s3_bucket=None, 
