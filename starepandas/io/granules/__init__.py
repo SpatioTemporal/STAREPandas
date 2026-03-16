@@ -1,8 +1,20 @@
 import glob
+import logging
+import os
 import re
+import numpy as np
 import pandas as pd
 import json
 import starepandas
+
+# Lookup table: "INSTRUMENT_Sn" → across-track pixel_width
+SCAN_PIXEL_WIDTHS = {
+    "GMI_S1": 221, "GMI_S2": 221,
+    "SSMIS_S1": 90, "SSMIS_S2": 90, "SSMIS_S3": 180, "SSMIS_S4": 180,
+    "AMSR2_S1": 243, "AMSR2_S2": 243, "AMSR2_S3": 243, "AMSR2_S4": 243,
+    "AMSR2_S5": 486, "AMSR2_S6": 486,
+}
+
 from .modis import Mod09GA, Mod05, Mod09, Mod03
 from .viirsl2 import VNP02DNB, VNP03DNB, VNP03MOD, VNP03IMG, CLDMSKL2VIIRS, VNP09
 from .ssmis import SSMIS
@@ -372,6 +384,11 @@ def to_zarr_s3(file_path, s3_path, level, chunk_size=250000, storage_options=Non
                     raise ValueError(f"Scan '{scan}' not found. Available scans: {list(result.keys())}")
                 df = result[scan]
                 scan_s3_path = f"{s3_path}_{scan}" if scan else s3_path
+                single_meta = metadata.copy() if metadata else {}
+                scan_key = f"{dataset}_{scan}" if dataset else None
+                pw = SCAN_PIXEL_WIDTHS.get(scan_key) if scan_key else None
+                if pw is not None:
+                    single_meta['pixel_width'] = pw
                 return df.to_zarr_s3(
                     s3_path=scan_s3_path,
                     level=level,
@@ -380,7 +397,7 @@ def to_zarr_s3(file_path, s3_path, level, chunk_size=250000, storage_options=Non
                     dataset=dataset,
                     data_level=data_level,
                     raw_collected_time=raw_collected_time,
-                    metadata=metadata,
+                    metadata=single_meta,
                     conn=conn
                 )
             else:
@@ -391,6 +408,9 @@ def to_zarr_s3(file_path, s3_path, level, chunk_size=250000, storage_options=Non
                     scan_dataset = f"{dataset}_{scan_name}" if dataset else f"data_{scan_name}"
                     scan_metadata = metadata.copy() if metadata else {}
                     scan_metadata.update({"scan": scan_name})
+                    pw = SCAN_PIXEL_WIDTHS.get(scan_dataset)
+                    if pw is not None:
+                        scan_metadata['pixel_width'] = pw
 
                     scan_result = df.to_zarr_s3(
                         s3_path=s3_path,  # Keep original S3 path
@@ -975,3 +995,209 @@ def parse_zarr_path(zarr_path):
     from starepandas import STAREDataFrame
     sdf = STAREDataFrame()
     return sdf.parse_zarr_path(zarr_path)
+
+
+def reconstruct_hdf5_from_zarr(
+    zarr_path, dataset, output_hdf5_path,
+    area_sids=None, bbox=None,
+    storage_options=None, pixel_width=None,
+    compression='gzip', compression_opts=4,
+):
+    """
+    Reconstruct an HDF5 granule from zarr chunks stored on S3 or local disk.
+
+    Reads only the zarr groups whose STARE partition SIDs intersect the
+    requested area, concatenates them into a STAREDataFrame, then calls
+    ``STAREDataFrame.to_hdf5()`` to write the original granule structure.
+
+    Parameters
+    ----------
+    zarr_path : str
+        Root zarr path.  Use ``"s3://bucket/prefix"`` for S3 or a local
+        directory path for local storage.
+    dataset : str
+        Dataset / scan identifier used when the data were written
+        (e.g. ``"GMI_S1"``).  Used to:
+
+        * Locate the correct zarr groups via ``generate_zarr_path``.
+        * Derive the HDF5 scan group name (``"S1"`` extracted from
+          ``"GMI_S1"``).
+        * Look up ``pixel_width`` from ``SCAN_PIXEL_WIDTHS`` when not
+          provided explicitly.
+    output_hdf5_path : str
+        Destination HDF5 file path.
+    area_sids : array-like of int, optional
+        STARE SIDs covering the area of interest.  Exactly one of
+        ``area_sids`` or ``bbox`` must be provided.
+    bbox : tuple of float, optional
+        Bounding box ``(lon_min, lat_min, lon_max, lat_max)``.  Converted
+        internally to ``area_sids`` via ``pystare.cover_from_hull``.
+    storage_options : dict, optional
+        Passed to ``zarr.open_group`` for S3 authentication / configuration.
+        If ``None`` and ``zarr_path`` starts with ``"s3://"``, the built-in
+        ``_AWS_S3_STORAGE_OPTIONS`` are used.
+    pixel_width : int, optional
+        Explicit pixel_width override.  When ``None``, the function looks
+        first in the zarr group attributes then in ``SCAN_PIXEL_WIDTHS``.
+    compression : str, optional
+        HDF5 compression filter (default ``'gzip'``).
+    compression_opts : int, optional
+        Compression level (default ``4``).
+
+    Returns
+    -------
+    str
+        ``output_hdf5_path``
+
+    Raises
+    ------
+    ValueError
+        If neither or both of ``area_sids`` / ``bbox`` are provided, if no
+        matching zarr groups are found, or if ``pixel_width`` cannot be
+        determined.
+    """
+    import zarr
+    import pystare
+    from starepandas import STAREDataFrame
+    from starepandas.staredataframe import _AWS_S3_STORAGE_OPTIONS, MAX_PARTITION_LEVEL
+
+    # ── Validate inputs ──────────────────────────────────────────────────────
+    if (area_sids is None) == (bbox is None):
+        raise ValueError(
+            "Provide exactly one of 'area_sids' or 'bbox', not both or neither."
+        )
+
+    # ── Build query SIDs ─────────────────────────────────────────────────────
+    if bbox is not None:
+        lon_min, lat_min, lon_max, lat_max = bbox
+        lats = [lat_min, lat_min, lat_max, lat_max]
+        lons = [lon_min, lon_max, lon_max, lon_min]
+        area_sids = pystare.cover_from_hull(lats, lons, MAX_PARTITION_LEVEL)
+
+    coerced = pystare.spatial_coerce_resolution(
+        np.array(area_sids, dtype=np.int64), MAX_PARTITION_LEVEL
+    )
+    query_group_ids = set(int(s) for s in np.unique(coerced))
+
+    # ── Collect matching zarr group paths ─────────────────────────────────────
+    is_s3 = zarr_path.startswith('s3://')
+    merged_opts = storage_options or (_AWS_S3_STORAGE_OPTIONS if is_s3 else {})
+
+    group_paths = []       # (group_path, group_id) tuples
+    zarr_pixel_width = None  # pixel_width read from zarr attrs
+
+    if is_s3:
+        from starepandas.staredataframe import load_zarr_metadata
+        meta_df = load_zarr_metadata(dataset=dataset)
+        if meta_df is not None and not meta_df.empty:
+            meta_df['grouped_id'] = meta_df['grouped_id'].astype(np.int64)
+            matching = meta_df[meta_df['grouped_id'].isin(query_group_ids)]
+            for _, row in matching.iterrows():
+                group_paths.append((row['group_path'], int(row['grouped_id'])))
+        else:
+            # Fallback: construct paths directly from query SIDs
+            dummy = STAREDataFrame()
+            for gid in query_group_ids:
+                rel = dummy.generate_zarr_path(gid, dataset)
+                group_paths.append((f"{zarr_path}/{rel}", gid))
+    else:
+        # Local: flat layout — each sub-directory name is the integer group SID
+        if not os.path.isdir(zarr_path):
+            raise ValueError(f"Local zarr path does not exist: {zarr_path}")
+        for entry in os.listdir(zarr_path):
+            entry_path = os.path.join(zarr_path, entry)
+            if not os.path.isdir(entry_path):
+                continue
+            try:
+                gid = int(entry)
+            except ValueError:
+                continue
+            if gid in query_group_ids:
+                group_paths.append((entry_path, gid))
+
+    if not group_paths:
+        raise ValueError(
+            f"No zarr groups found for dataset '{dataset}' intersecting the "
+            f"requested area.  Queried {len(query_group_ids)} partition SIDs."
+        )
+
+    # ── Read matching groups ──────────────────────────────────────────────────
+    frames = []
+    for gpath, _gid in group_paths:
+        try:
+            zg = zarr.open_group(gpath, mode='r', storage_options=merged_opts if is_s3 else {})
+        except Exception as e:
+            logging.warning("Skipping zarr group %s — could not open: %s", gpath, e)
+            continue
+
+        # Harvest pixel_width from zarr attrs (first group wins)
+        if zarr_pixel_width is None and 'pixel_width' in zg.attrs:
+            zarr_pixel_width = int(zg.attrs['pixel_width'])
+
+        # Read all per-column arrays (skip the hidden helper array)
+        col_data = {}
+        for key in zg.array_keys():
+            if key == '__row_positions__':
+                continue
+            col_data[key] = zg[key][:]
+
+        if not col_data:
+            continue
+
+        row_positions = zg['__row_positions__'][:] if '__row_positions__' in zg else None
+        df_chunk = pd.DataFrame(col_data)
+        if row_positions is not None:
+            df_chunk['__row_positions__'] = row_positions
+        frames.append(df_chunk)
+
+    if not frames:
+        raise ValueError(
+            f"All matched zarr groups were empty for dataset '{dataset}'."
+        )
+
+    # ── Concatenate and sort by original row order ────────────────────────────
+    combined = pd.concat(frames, ignore_index=True)
+    if '__row_positions__' in combined.columns:
+        combined = combined.sort_values('__row_positions__').drop(
+            columns=['__row_positions__']
+        ).reset_index(drop=True)
+
+    sdf = STAREDataFrame(combined)
+
+    # ── Resolve pixel_width ───────────────────────────────────────────────────
+    if pixel_width is not None:
+        resolved_pw = pixel_width
+        logging.debug("pixel_width=%d provided explicitly for dataset '%s'", resolved_pw, dataset)
+    elif zarr_pixel_width is not None:
+        resolved_pw = zarr_pixel_width
+        logging.debug("pixel_width=%d read from zarr group attrs for dataset '%s'", resolved_pw, dataset)
+    else:
+        resolved_pw = SCAN_PIXEL_WIDTHS.get(dataset)
+        if resolved_pw is not None:
+            logging.debug("pixel_width=%d from SCAN_PIXEL_WIDTHS for dataset '%s'", resolved_pw, dataset)
+
+    if resolved_pw is None:
+        raise ValueError(
+            f"Cannot determine pixel_width for dataset '{dataset}'. "
+            "Pass pixel_width explicitly or ensure it was stored in zarr group attrs."
+        )
+
+    # ── Derive scan group name from dataset string ────────────────────────────
+    m = re.search(r'_(S\d+)$', dataset)
+    scan = m.group(1) if m else None
+    if scan is None:
+        raise ValueError(
+            f"Cannot derive scan group name from dataset '{dataset}'. "
+            "Expected a suffix like '_S1'.  Pass the dataset in 'INSTRUMENT_Sn' format."
+        )
+
+    # ── Write HDF5 ───────────────────────────────────────────────────────────
+    os.makedirs(os.path.dirname(os.path.abspath(output_hdf5_path)), exist_ok=True)
+    sdf.to_hdf5(
+        output_hdf5_path,
+        scan=scan,
+        pixel_width=resolved_pw,
+        compression=compression,
+        compression_opts=compression_opts,
+    )
+    return output_hdf5_path

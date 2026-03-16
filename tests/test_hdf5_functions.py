@@ -1,0 +1,758 @@
+"""
+Tests for STAREDataFrame.to_hdf5() and reconstruct_hdf5_from_zarr().
+
+These tests exercise the zarr → HDF5 reconstruction pipeline introduced in
+plan.md ("Reconstruct HDF5 from Zarr").
+
+Test inventory
+--------------
+TestToHdf5Structure          — dataset names, dtypes, shapes, group name, attrs
+TestToHdf5DataFidelity       — lat/lon/Tc values preserved; Tc column order; return value
+TestToHdf5ScanTime           — 7 int16 1D fields; values correct
+TestToHdf5EdgeCases          — missing params, truncation, no Tc, no timestamp
+TestToHdf5OutputDirectory    — auto-creates parent directory
+TestToZarrLocalPixelWidth    — pixel_width stored/absent in zarr group attrs
+TestReconstructFromZarr      — full integration round-trips (area_sids & bbox),
+                               pixel_width resolution chain, error cases
+TestReconstructScanNameExtraction — dataset → scan group name for each instrument
+TestScanPixelWidths          — SCAN_PIXEL_WIDTHS constant values
+"""
+import os
+import shutil
+import tempfile
+import warnings
+
+import numpy as np
+import pandas as pd
+import pytest
+
+import starepandas
+from starepandas import STAREDataFrame, reconstruct_hdf5_from_zarr
+from starepandas.io.granules import SCAN_PIXEL_WIDTHS
+
+
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+
+def _make_sdf(n_scans=3, pixel_width=5, n_tc=2, with_timestamp=True, with_sids=True):
+    """Build a synthetic STAREDataFrame with GMI-like columns."""
+    import pystare
+
+    N = n_scans * pixel_width
+    lats = np.random.uniform(32, 42, N)
+    lons = np.random.uniform(-125, -115, N)
+    data = {
+        'lat': lats,
+        'lon': lons,
+    }
+    if with_sids:
+        data['sids'] = pystare.from_latlon(lats, lons, level=6)
+    else:
+        data['sids'] = np.zeros(N, dtype=np.int64)
+
+    for i in range(1, n_tc + 1):
+        data[f'Tc{i}'] = np.random.rand(N).astype(np.float32)
+
+    if with_timestamp:
+        timestamps = []
+        for s in range(n_scans):
+            ts = pd.Timestamp('2020-06-15 12:00:00') + pd.Timedelta(seconds=s)
+            timestamps.extend([ts] * pixel_width)
+        data['timestamp'] = timestamps
+
+    sdf = STAREDataFrame(data)
+    sdf._sid_column_name = 'sids'
+    return sdf, n_scans, pixel_width
+
+
+# ---------------------------------------------------------------------------
+# STAREDataFrame.to_hdf5() — unit tests
+# ---------------------------------------------------------------------------
+
+class TestToHdf5Structure:
+    """Verify exact HDF5 dataset names, dtypes, and shapes."""
+
+    def test_exact_dataset_names(self, tmp_path):
+        import h5py
+        sdf, n_scans, pw = _make_sdf(n_scans=2, pixel_width=5, n_tc=2)
+        out = str(tmp_path / "test.h5")
+        sdf.to_hdf5(out, scan="S1", pixel_width=pw)
+
+        with h5py.File(out, 'r') as f:
+            assert 'S1' in f
+            keys = set(f['S1'].keys())
+            assert 'Latitude' in keys
+            assert 'Longitude' in keys
+            assert 'Tc' in keys
+            assert 'ScanTime' in keys
+            # STARE_index must NOT be written (not in original format)
+            assert 'STARE_index' not in keys
+
+    def test_latitude_longitude_dtype_and_shape(self, tmp_path):
+        import h5py
+        sdf, n_scans, pw = _make_sdf(n_scans=3, pixel_width=5, n_tc=2)
+        out = str(tmp_path / "test.h5")
+        sdf.to_hdf5(out, scan="S1", pixel_width=pw)
+
+        with h5py.File(out, 'r') as f:
+            assert f['S1']['Latitude'].dtype == np.float64
+            assert f['S1']['Longitude'].dtype == np.float64
+            assert f['S1']['Latitude'].shape == (n_scans, pw)
+            assert f['S1']['Longitude'].shape == (n_scans, pw)
+
+    def test_tc_3d_shape_and_dtype(self, tmp_path):
+        import h5py
+        n_tc = 3
+        sdf, n_scans, pw = _make_sdf(n_scans=2, pixel_width=5, n_tc=n_tc)
+        out = str(tmp_path / "test.h5")
+        sdf.to_hdf5(out, scan="S1", pixel_width=pw)
+
+        with h5py.File(out, 'r') as f:
+            tc = f['S1']['Tc']
+            assert tc.dtype == np.float32
+            assert tc.shape == (n_scans, pw, n_tc)
+
+    def test_scan_group_name_respected(self, tmp_path):
+        import h5py
+        sdf, n_scans, pw = _make_sdf()
+        out = str(tmp_path / "test.h5")
+        sdf.to_hdf5(out, scan="S3", pixel_width=pw)
+
+        with h5py.File(out, 'r') as f:
+            assert 'S3' in f
+            assert 'S1' not in f
+
+    def test_group_attributes_written(self, tmp_path):
+        import h5py
+        sdf, n_scans, pw = _make_sdf()
+        out = str(tmp_path / "test.h5")
+        sdf.to_hdf5(out, scan="S1", pixel_width=pw)
+
+        with h5py.File(out, 'r') as f:
+            attrs = dict(f['S1'].attrs)
+            assert attrs.get('StarePodsReconstruction')  # h5py may return numpy.bool_
+            assert attrs.get('PixelWidth') == pw
+
+
+class TestToHdf5ScanTime:
+    """Verify ScanTime subgroup — 7 int16 1D datasets."""
+
+    def test_scantime_datasets_present(self, tmp_path):
+        import h5py
+        sdf, n_scans, pw = _make_sdf(n_scans=2, pixel_width=5)
+        out = str(tmp_path / "test.h5")
+        sdf.to_hdf5(out, scan="S1", pixel_width=pw)
+
+        with h5py.File(out, 'r') as f:
+            st = f['S1']['ScanTime']
+            for field in ('Year', 'Month', 'DayOfMonth', 'Hour', 'Minute', 'Second', 'MilliSecond'):
+                assert field in st, f"Missing ScanTime field: {field}"
+
+    def test_scantime_dtype_int16(self, tmp_path):
+        import h5py
+        sdf, n_scans, pw = _make_sdf(n_scans=2, pixel_width=5)
+        out = str(tmp_path / "test.h5")
+        sdf.to_hdf5(out, scan="S1", pixel_width=pw)
+
+        with h5py.File(out, 'r') as f:
+            st = f['S1']['ScanTime']
+            for field in ('Year', 'Month', 'DayOfMonth', 'Hour', 'Minute', 'Second', 'MilliSecond'):
+                assert st[field].dtype == np.int16, f"Wrong dtype for ScanTime/{field}"
+
+    def test_scantime_1d_length(self, tmp_path):
+        import h5py
+        n_scans, pw = 4, 5
+        sdf, _, _ = _make_sdf(n_scans=n_scans, pixel_width=pw)
+        out = str(tmp_path / "test.h5")
+        sdf.to_hdf5(out, scan="S1", pixel_width=pw)
+
+        with h5py.File(out, 'r') as f:
+            assert f['S1']['ScanTime']['Year'].shape == (n_scans,)
+
+    def test_scantime_values_correct(self, tmp_path):
+        import h5py
+        n_scans, pw = 2, 3
+        ts_base = pd.Timestamp('2021-08-15 06:30:45')
+        timestamps = []
+        for s in range(n_scans):
+            ts = ts_base + pd.Timedelta(seconds=s)
+            timestamps.extend([ts] * pw)
+
+        import pystare
+        N = n_scans * pw
+        lats = np.zeros(N)
+        lons = np.zeros(N)
+        sdf = STAREDataFrame({
+            'lat': lats, 'lon': lons,
+            'sids': pystare.from_latlon(lats, lons, level=6),
+            'timestamp': timestamps,
+        })
+        sdf._sid_column_name = 'sids'
+        out = str(tmp_path / "test.h5")
+        sdf.to_hdf5(out, scan="S1", pixel_width=pw)
+
+        with h5py.File(out, 'r') as f:
+            assert f['S1']['ScanTime']['Year'][0] == 2021
+            assert f['S1']['ScanTime']['Month'][0] == 8
+            assert f['S1']['ScanTime']['DayOfMonth'][0] == 15
+            assert f['S1']['ScanTime']['Hour'][0] == 6
+            assert f['S1']['ScanTime']['Minute'][0] == 30
+            assert f['S1']['ScanTime']['Second'][0] == 45
+
+
+class TestToHdf5EdgeCases:
+    """Truncation, missing columns, invalid inputs."""
+
+    def test_no_pixel_width_raises(self, tmp_path):
+        sdf, _, _ = _make_sdf()
+        with pytest.raises(ValueError, match="pixel_width is required"):
+            sdf.to_hdf5(str(tmp_path / "out.h5"), scan="S1", pixel_width=None)
+
+    def test_no_scan_raises(self, tmp_path):
+        sdf, _, pw = _make_sdf()
+        with pytest.raises(ValueError, match="scan group name is required"):
+            sdf.to_hdf5(str(tmp_path / "out.h5"), scan=None, pixel_width=pw)
+
+    def test_truncation_warning(self, tmp_path):
+        import h5py
+        # N=11 is not divisible by pixel_width=5 → 1 row truncated
+        sdf, _, _ = _make_sdf(n_scans=2, pixel_width=5)
+        # Append one extra row
+        extra = sdf.iloc[:1].copy()
+        extra.index = [len(sdf)]
+        sdf_extra = pd.concat([sdf, extra])
+        sdf_extra = STAREDataFrame(sdf_extra)
+        sdf_extra._sid_column_name = 'sids'
+
+        out = str(tmp_path / "trunc.h5")
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            sdf_extra.to_hdf5(out, scan="S1", pixel_width=5)
+            assert any("truncated" in str(x.message).lower() for x in w)
+
+        with h5py.File(out, 'r') as f:
+            assert f['S1']['Latitude'].shape == (2, 5)  # 2 full scans
+
+    def test_no_tc_columns(self, tmp_path):
+        import h5py
+        import pystare
+        N = 10
+        lats = np.zeros(N)
+        lons = np.zeros(N)
+        sdf = STAREDataFrame({
+            'lat': lats, 'lon': lons,
+            'sids': pystare.from_latlon(lats, lons, level=6),
+        })
+        sdf._sid_column_name = 'sids'
+        out = str(tmp_path / "no_tc.h5")
+        sdf.to_hdf5(out, scan="S1", pixel_width=5)
+
+        with h5py.File(out, 'r') as f:
+            assert 'Tc' not in f['S1']
+
+    def test_no_timestamp_column(self, tmp_path):
+        import h5py
+        sdf, n_scans, pw = _make_sdf(with_timestamp=False)
+        out = str(tmp_path / "no_ts.h5")
+        sdf.to_hdf5(out, scan="S1", pixel_width=pw)
+
+        with h5py.File(out, 'r') as f:
+            assert 'ScanTime' not in f['S1']
+
+
+# ---------------------------------------------------------------------------
+# reconstruct_hdf5_from_zarr() — integration tests (local zarr only)
+# ---------------------------------------------------------------------------
+
+class TestReconstructFromZarr:
+    """Integration: write zarr locally, reconstruct HDF5, verify structure.
+
+    Note: many tests in this class produce a UserWarning about truncation.
+    This is expected: STARE level-6 partitioning splits rows across groups, so
+    the spatial subset recovered by ``reconstruct_hdf5_from_zarr`` is rarely an
+    exact multiple of ``pixel_width``.  The truncation warning fires inside
+    ``to_hdf5()`` and is correct behaviour; it does not indicate a test failure.
+    """
+
+    def _write_local_zarr(self, tmp_path, n_scans=3, pixel_width=5, n_tc=2):
+        import pystare
+        N = n_scans * pixel_width
+        lats = np.random.uniform(33, 41, N)
+        lons = np.random.uniform(-124, -116, N)
+        timestamps = []
+        for s in range(n_scans):
+            ts = pd.Timestamp('2020-06-15 12:00:00') + pd.Timedelta(seconds=s)
+            timestamps.extend([ts] * pixel_width)
+
+        data = {
+            'lat': lats,
+            'lon': lons,
+            'sids': pystare.from_latlon(lats, lons, level=6),
+            'timestamp': timestamps,
+        }
+        for i in range(1, n_tc + 1):
+            data[f'Tc{i}'] = np.random.rand(N).astype(np.float32)
+
+        sdf = STAREDataFrame(data)
+        sdf._sid_column_name = 'sids'
+
+        zarr_root = str(tmp_path / "zarr_root")
+        sdf.to_zarr_local(zarr_root, level=6, pixel_width=pixel_width)
+        return zarr_root, sdf, n_scans, pixel_width
+
+    def test_reconstruct_with_area_sids(self, tmp_path):
+        import h5py, pystare
+        zarr_root, _, n_scans, pw = self._write_local_zarr(tmp_path)
+        out_hdf5 = str(tmp_path / "out.h5")
+
+        # Broad area SIDs covering California coast
+        area_sids = pystare.cover_from_hull(
+            [33, 33, 41, 41], [-124, -116, -116, -124], 6
+        )
+        reconstruct_hdf5_from_zarr(
+            zarr_path=zarr_root,
+            dataset="GMI_S1",
+            output_hdf5_path=out_hdf5,
+            area_sids=area_sids,
+            pixel_width=pw,
+        )
+        assert os.path.exists(out_hdf5)
+        with h5py.File(out_hdf5, 'r') as f:
+            assert 'S1' in f
+            assert 'Latitude' in f['S1']
+            assert 'Longitude' in f['S1']
+
+    def test_reconstruct_with_bbox(self, tmp_path):
+        import h5py
+        zarr_root, _, n_scans, pw = self._write_local_zarr(tmp_path)
+        out_hdf5 = str(tmp_path / "out_bbox.h5")
+
+        reconstruct_hdf5_from_zarr(
+            zarr_path=zarr_root,
+            dataset="GMI_S1",
+            output_hdf5_path=out_hdf5,
+            bbox=(-124, 33, -116, 41),
+            pixel_width=pw,
+        )
+        assert os.path.exists(out_hdf5)
+        with h5py.File(out_hdf5, 'r') as f:
+            assert 'S1' in f
+
+    def test_reconstruct_scantime_structure(self, tmp_path):
+        import h5py
+        zarr_root, _, n_scans, pw = self._write_local_zarr(tmp_path)
+        out_hdf5 = str(tmp_path / "out_st.h5")
+
+        reconstruct_hdf5_from_zarr(
+            zarr_root, "GMI_S1", out_hdf5,
+            bbox=(-124, 33, -116, 41),
+            pixel_width=pw,
+        )
+        with h5py.File(out_hdf5, 'r') as f:
+            st = f['S1']['ScanTime']
+            for field in ('Year', 'Month', 'DayOfMonth', 'Hour', 'Minute', 'Second', 'MilliSecond'):
+                assert field in st
+                assert st[field].dtype == np.int16
+
+    def test_reconstruct_tc_3d(self, tmp_path):
+        import h5py
+        n_tc = 2
+        zarr_root, _, n_scans, pw = self._write_local_zarr(tmp_path, n_tc=n_tc)
+        out_hdf5 = str(tmp_path / "out_tc.h5")
+
+        reconstruct_hdf5_from_zarr(
+            zarr_root, "GMI_S1", out_hdf5,
+            bbox=(-124, 33, -116, 41),
+            pixel_width=pw,
+        )
+        with h5py.File(out_hdf5, 'r') as f:
+            assert f['S1']['Tc'].dtype == np.float32
+            assert f['S1']['Tc'].ndim == 3
+            assert f['S1']['Tc'].shape[2] == n_tc
+
+    def test_pixel_width_from_zarr_attrs(self, tmp_path):
+        """pixel_width stored in zarr attrs → no need to pass explicitly."""
+        import h5py
+        zarr_root, _, _, pw = self._write_local_zarr(tmp_path, pixel_width=5)
+        out_hdf5 = str(tmp_path / "out_pw.h5")
+
+        # Do NOT pass pixel_width — should be read from zarr attrs
+        reconstruct_hdf5_from_zarr(
+            zarr_root, "GMI_S1", out_hdf5,
+            bbox=(-124, 33, -116, 41),
+        )
+        with h5py.File(out_hdf5, 'r') as f:
+            assert f['S1']['Latitude'].ndim == 2
+
+    def test_pixel_width_from_scan_pixel_widths_table(self, tmp_path):
+        """Fallback: pixel_width from SCAN_PIXEL_WIDTHS when zarr attrs absent."""
+        import h5py
+        import zarr as zarr_mod
+        # Write zarr WITHOUT pixel_width in attrs by using STAREDataFrame directly
+        # (without pixel_width param so attrs are not set)
+        import pystare
+        N = 3 * 221
+        lats = np.random.uniform(33, 41, N)
+        lons = np.random.uniform(-124, -116, N)
+        timestamps = [pd.Timestamp('2020-06-15') + pd.Timedelta(seconds=i // 221) for i in range(N)]
+        sdf = STAREDataFrame({
+            'lat': lats, 'lon': lons,
+            'sids': pystare.from_latlon(lats, lons, level=6),
+            'Tc1': np.random.rand(N).astype(np.float32),
+            'timestamp': timestamps,
+        })
+        sdf._sid_column_name = 'sids'
+        zarr_root = str(tmp_path / "zarr_no_pw")
+        # pixel_width=None → attrs not written
+        sdf.to_zarr_local(zarr_root, level=6)
+
+        out_hdf5 = str(tmp_path / "out_fallback.h5")
+        # SCAN_PIXEL_WIDTHS["GMI_S1"] == 221 → used as fallback
+        reconstruct_hdf5_from_zarr(
+            zarr_root, "GMI_S1", out_hdf5,
+            bbox=(-124, 33, -116, 41),
+        )
+        with h5py.File(out_hdf5, 'r') as f:
+            assert f['S1']['Latitude'].ndim == 2
+
+    def test_reconstruct_no_area_sids_or_bbox_raises(self, tmp_path):
+        with pytest.raises(ValueError, match="exactly one"):
+            reconstruct_hdf5_from_zarr(
+                str(tmp_path), "GMI_S1", str(tmp_path / "out.h5"),
+            )
+
+    def test_reconstruct_both_area_sids_and_bbox_raises(self, tmp_path):
+        import pystare
+        area_sids = pystare.cover_from_hull([33, 33, 41, 41], [-124, -116, -116, -124], 6)
+        with pytest.raises(ValueError, match="exactly one"):
+            reconstruct_hdf5_from_zarr(
+                str(tmp_path), "GMI_S1", str(tmp_path / "out.h5"),
+                area_sids=area_sids, bbox=(-124, 33, -116, 41),
+            )
+
+    def test_reconstruct_no_matching_data_raises(self, tmp_path):
+        import pystare
+        zarr_root, _, _, pw = self._write_local_zarr(tmp_path)
+        # Query an area far from the data (South Pacific)
+        with pytest.raises(ValueError):
+            reconstruct_hdf5_from_zarr(
+                zarr_root, "GMI_S1", str(tmp_path / "out.h5"),
+                bbox=(170, -50, 180, -40),
+                pixel_width=pw,
+            )
+
+    def test_reconstruct_bad_dataset_name_no_scan_suffix_raises(self, tmp_path):
+        zarr_root, _, _, pw = self._write_local_zarr(tmp_path)
+        with pytest.raises(ValueError, match="scan group name"):
+            reconstruct_hdf5_from_zarr(
+                zarr_root, "GMI",  # no _S1 suffix
+                str(tmp_path / "out.h5"),
+                bbox=(-124, 33, -116, 41),
+                pixel_width=pw,
+            )
+
+
+# ---------------------------------------------------------------------------
+# SCAN_PIXEL_WIDTHS constant
+# ---------------------------------------------------------------------------
+
+class TestScanPixelWidths:
+    def test_known_instruments_present(self):
+        for key in ("GMI_S1", "GMI_S2", "SSMIS_S1", "SSMIS_S3",
+                    "AMSR2_S1", "AMSR2_S5"):
+            assert key in SCAN_PIXEL_WIDTHS
+
+    def test_gmi_pixel_width(self):
+        assert SCAN_PIXEL_WIDTHS["GMI_S1"] == 221
+        assert SCAN_PIXEL_WIDTHS["GMI_S2"] == 221
+
+    def test_ssmis_pixel_widths(self):
+        assert SCAN_PIXEL_WIDTHS["SSMIS_S1"] == 90
+        assert SCAN_PIXEL_WIDTHS["SSMIS_S3"] == 180
+
+    def test_amsr2_pixel_widths(self):
+        assert SCAN_PIXEL_WIDTHS["AMSR2_S1"] == 243
+        assert SCAN_PIXEL_WIDTHS["AMSR2_S5"] == 486
+
+
+# ---------------------------------------------------------------------------
+# Data fidelity — to_hdf5() preserves actual values
+# ---------------------------------------------------------------------------
+
+class TestToHdf5DataFidelity:
+    """Verify that lat/lon/Tc values are numerically preserved."""
+
+    def test_latitude_values_preserved(self, tmp_path):
+        import h5py
+        n_scans, pw = 2, 4
+        lats = np.array([10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0])
+        lons = np.zeros(n_scans * pw)
+        import pystare
+        sdf = STAREDataFrame({
+            'lat': lats, 'lon': lons,
+            'sids': pystare.from_latlon(lats, lons, level=6),
+        })
+        sdf._sid_column_name = 'sids'
+        out = str(tmp_path / "fid.h5")
+        sdf.to_hdf5(out, scan="S1", pixel_width=pw)
+
+        with h5py.File(out, 'r') as f:
+            lat_2d = f['S1']['Latitude'][:]
+            np.testing.assert_allclose(lat_2d.ravel(), lats, rtol=1e-10)
+
+    def test_longitude_values_preserved(self, tmp_path):
+        import h5py
+        n_scans, pw = 2, 3
+        lons = np.array([-120.0, -119.5, -119.0, -118.5, -118.0, -117.5])
+        lats = np.zeros(n_scans * pw)
+        import pystare
+        sdf = STAREDataFrame({
+            'lat': lats, 'lon': lons,
+            'sids': pystare.from_latlon(lats, lons, level=6),
+        })
+        sdf._sid_column_name = 'sids'
+        out = str(tmp_path / "lon_fid.h5")
+        sdf.to_hdf5(out, scan="S1", pixel_width=pw)
+
+        with h5py.File(out, 'r') as f:
+            np.testing.assert_allclose(f['S1']['Longitude'][:].ravel(), lons, rtol=1e-10)
+
+    def test_tc_values_preserved_and_channel_order(self, tmp_path):
+        """Tc1 must map to channel 0, Tc2 to channel 1, etc."""
+        import h5py
+        n_scans, pw = 2, 3
+        N = n_scans * pw
+        import pystare
+        tc1 = np.arange(N, dtype=np.float32) * 1.0
+        tc2 = np.arange(N, dtype=np.float32) * 2.0
+        tc3 = np.arange(N, dtype=np.float32) * 3.0
+        lats = np.zeros(N)
+        lons = np.zeros(N)
+        sdf = STAREDataFrame({
+            'lat': lats, 'lon': lons,
+            'sids': pystare.from_latlon(lats, lons, level=6),
+            'Tc1': tc1, 'Tc2': tc2, 'Tc3': tc3,
+        })
+        sdf._sid_column_name = 'sids'
+        out = str(tmp_path / "tc_order.h5")
+        sdf.to_hdf5(out, scan="S1", pixel_width=pw)
+
+        with h5py.File(out, 'r') as f:
+            tc = f['S1']['Tc'][:]  # (N_scans, pw, 3)
+            np.testing.assert_allclose(tc[:, :, 0].ravel(), tc1, rtol=1e-6,
+                                        err_msg="Tc1 not in channel 0")
+            np.testing.assert_allclose(tc[:, :, 1].ravel(), tc2, rtol=1e-6,
+                                        err_msg="Tc2 not in channel 1")
+            np.testing.assert_allclose(tc[:, :, 2].ravel(), tc3, rtol=1e-6,
+                                        err_msg="Tc3 not in channel 2")
+
+    def test_return_value_is_file_path(self, tmp_path):
+        sdf, _, pw = _make_sdf()
+        out = str(tmp_path / "ret.h5")
+        result = sdf.to_hdf5(out, scan="S1", pixel_width=pw)
+        assert result == out
+
+
+# ---------------------------------------------------------------------------
+# Output directory auto-creation
+# ---------------------------------------------------------------------------
+
+class TestToHdf5OutputDirectory:
+    def test_creates_parent_directory(self, tmp_path):
+        import h5py
+        sdf, _, pw = _make_sdf()
+        nested = str(tmp_path / "a" / "b" / "c" / "out.h5")
+        sdf.to_hdf5(nested, scan="S1", pixel_width=pw)
+        assert os.path.exists(nested)
+        with h5py.File(nested, 'r') as f:
+            assert 'S1' in f
+
+
+# ---------------------------------------------------------------------------
+# to_zarr_local() pixel_width attr persistence
+# ---------------------------------------------------------------------------
+
+class TestToZarrLocalPixelWidth:
+    """Verify that pixel_width is correctly stored/absent in zarr group attrs."""
+
+    def test_pixel_width_stored_in_attrs(self, tmp_path):
+        import zarr
+        sdf, _, _ = _make_sdf(n_scans=2, pixel_width=5)
+        zarr_root = str(tmp_path / "zarr_pw")
+        sdf.to_zarr_local(zarr_root, level=6, pixel_width=5)
+
+        # Every group directory should have pixel_width in its attrs
+        found_any = False
+        for entry in os.listdir(zarr_root):
+            entry_path = os.path.join(zarr_root, entry)
+            if os.path.isdir(entry_path):
+                zg = zarr.open_group(entry_path, mode='r')
+                assert 'pixel_width' in zg.attrs, (
+                    f"pixel_width missing from zarr group attrs in {entry_path}"
+                )
+                assert zg.attrs['pixel_width'] == 5
+                found_any = True
+        assert found_any, "No zarr groups were written"
+
+    def test_pixel_width_absent_when_not_passed(self, tmp_path):
+        import zarr
+        sdf, _, _ = _make_sdf(n_scans=2, pixel_width=5)
+        zarr_root = str(tmp_path / "zarr_no_pw")
+        sdf.to_zarr_local(zarr_root, level=6)  # no pixel_width
+
+        for entry in os.listdir(zarr_root):
+            entry_path = os.path.join(zarr_root, entry)
+            if os.path.isdir(entry_path):
+                zg = zarr.open_group(entry_path, mode='r')
+                assert 'pixel_width' not in zg.attrs, (
+                    f"pixel_width unexpectedly found in {entry_path}"
+                )
+
+    def test_columns_and_row_positions_written(self, tmp_path):
+        """Sanity: all data columns + __row_positions__ appear in each group."""
+        import zarr
+        sdf, _, _ = _make_sdf(n_scans=2, pixel_width=5, n_tc=2)
+        zarr_root = str(tmp_path / "zarr_cols")
+        sdf.to_zarr_local(zarr_root, level=6, pixel_width=5)
+
+        for entry in os.listdir(zarr_root):
+            entry_path = os.path.join(zarr_root, entry)
+            if os.path.isdir(entry_path):
+                zg = zarr.open_group(entry_path, mode='r')
+                keys = set(zg.array_keys())
+                assert '__row_positions__' in keys
+                for col in sdf.columns:
+                    assert col in keys, f"Column '{col}' missing from zarr group"
+
+
+# ---------------------------------------------------------------------------
+# reconstruct_hdf5_from_zarr() return value and data fidelity
+# ---------------------------------------------------------------------------
+
+class TestReconstructReturnAndFidelity:
+    """Return value and that lat/lon round-trip through zarr → HDF5."""
+
+    def _write_local_zarr(self, tmp_path, n_scans=3, pixel_width=5):
+        import pystare
+        N = n_scans * pixel_width
+        lats = np.random.uniform(33, 41, N)
+        lons = np.random.uniform(-124, -116, N)
+        timestamps = []
+        for s in range(n_scans):
+            ts = pd.Timestamp('2020-06-15 12:00:00') + pd.Timedelta(seconds=s)
+            timestamps.extend([ts] * pixel_width)
+        sdf = STAREDataFrame({
+            'lat': lats, 'lon': lons,
+            'sids': pystare.from_latlon(lats, lons, level=6),
+            'Tc1': np.ones(N, dtype=np.float32),
+            'timestamp': timestamps,
+        })
+        sdf._sid_column_name = 'sids'
+        zarr_root = str(tmp_path / "zarr_root")
+        sdf.to_zarr_local(zarr_root, level=6, pixel_width=pixel_width)
+        return zarr_root, sdf, n_scans, pixel_width
+
+    def test_return_value_is_output_path(self, tmp_path):
+        zarr_root, _, _, pw = self._write_local_zarr(tmp_path)
+        out = str(tmp_path / "out.h5")
+        result = reconstruct_hdf5_from_zarr(
+            zarr_root, "GMI_S1", out, bbox=(-124, 33, -116, 41), pixel_width=pw
+        )
+        assert result == out
+
+    def test_lat_lon_values_in_valid_range(self, tmp_path):
+        """Reconstructed lat/lon should stay within the original write range."""
+        import h5py
+        zarr_root, _, _, pw = self._write_local_zarr(tmp_path)
+        out = str(tmp_path / "out.h5")
+        reconstruct_hdf5_from_zarr(
+            zarr_root, "GMI_S1", out, bbox=(-124, 33, -116, 41), pixel_width=pw
+        )
+        with h5py.File(out, 'r') as f:
+            lats = f['S1']['Latitude'][:]
+            lons = f['S1']['Longitude'][:]
+            assert np.all(lats >= 33) and np.all(lats <= 41)
+            assert np.all(lons >= -124) and np.all(lons <= -116)
+
+    def test_tc_values_uniform_ones_preserved(self, tmp_path):
+        """Tc1=1.0 everywhere → all values in reconstructed HDF5 must be 1.0."""
+        import h5py
+        zarr_root, _, _, pw = self._write_local_zarr(tmp_path)
+        out = str(tmp_path / "out.h5")
+        reconstruct_hdf5_from_zarr(
+            zarr_root, "GMI_S1", out, bbox=(-124, 33, -116, 41), pixel_width=pw
+        )
+        with h5py.File(out, 'r') as f:
+            np.testing.assert_allclose(f['S1']['Tc'][:], 1.0, rtol=1e-6)
+
+    def test_output_file_created(self, tmp_path):
+        zarr_root, _, _, pw = self._write_local_zarr(tmp_path)
+        out = str(tmp_path / "created.h5")
+        reconstruct_hdf5_from_zarr(
+            zarr_root, "GMI_S1", out, bbox=(-124, 33, -116, 41), pixel_width=pw
+        )
+        assert os.path.isfile(out)
+
+
+# ---------------------------------------------------------------------------
+# reconstruct_hdf5_from_zarr() scan group name extraction
+# ---------------------------------------------------------------------------
+
+class TestReconstructScanNameExtraction:
+    """Verify the scan group name (S1–S6) is correctly extracted for each instrument."""
+
+    @pytest.mark.parametrize("dataset,expected_scan", [
+        ("GMI_S1",   "S1"),
+        ("GMI_S2",   "S2"),
+        ("SSMIS_S1", "S1"),
+        ("SSMIS_S2", "S2"),
+        ("SSMIS_S3", "S3"),
+        ("SSMIS_S4", "S4"),
+        ("AMSR2_S1", "S1"),
+        ("AMSR2_S5", "S5"),
+        ("AMSR2_S6", "S6"),
+    ])
+    def test_scan_name_extracted(self, tmp_path, dataset, expected_scan):
+        """Write data, reconstruct with given dataset name, verify HDF5 group name."""
+        import h5py, pystare
+
+        pw = SCAN_PIXEL_WIDTHS.get(dataset, 5)
+        N = 3 * pw
+        lats = np.random.uniform(33, 41, N)
+        lons = np.random.uniform(-124, -116, N)
+        timestamps = []
+        for s in range(3):
+            ts = pd.Timestamp('2020-01-01') + pd.Timedelta(seconds=s)
+            timestamps.extend([ts] * pw)
+
+        sdf = STAREDataFrame({
+            'lat': lats, 'lon': lons,
+            'sids': pystare.from_latlon(lats, lons, level=6),
+            'Tc1': np.random.rand(N).astype(np.float32),
+            'timestamp': timestamps,
+        })
+        sdf._sid_column_name = 'sids'
+        zarr_root = str(tmp_path / f"zarr_{dataset}")
+        sdf.to_zarr_local(zarr_root, level=6, pixel_width=pw)
+
+        out = str(tmp_path / f"out_{dataset}.h5")
+        reconstruct_hdf5_from_zarr(
+            zarr_root, dataset, out,
+            bbox=(-124, 33, -116, 41),
+            pixel_width=pw,
+        )
+
+        with h5py.File(out, 'r') as f:
+            assert expected_scan in f, (
+                f"Expected scan group '{expected_scan}' not found in HDF5 "
+                f"for dataset '{dataset}'. Groups present: {list(f.keys())}"
+            )
+
+    def test_nonexistent_local_zarr_path_raises(self, tmp_path):
+        with pytest.raises(ValueError, match="does not exist"):
+            reconstruct_hdf5_from_zarr(
+                str(tmp_path / "nonexistent"), "GMI_S1",
+                str(tmp_path / "out.h5"),
+                bbox=(-124, 33, -116, 41),
+            )

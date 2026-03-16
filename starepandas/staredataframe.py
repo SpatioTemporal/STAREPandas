@@ -19,6 +19,8 @@ import datetime
 import logging
 import time
 import copy
+import re
+import warnings
 
 from pathlib import Path
 
@@ -1745,6 +1747,10 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             # zarr.open_group with mode="w" handles directory creation via S3's implicit model
             zg = zarr.open_group(group_path, mode="w", storage_options=merged_opts)
 
+            # Store pixel_width in group attrs for downstream HDF5 reconstruction
+            if 'pixel_width' in base_meta:
+                zg.attrs['pixel_width'] = int(base_meta['pixel_width'])
+
             # Per-group arrays for each column
             for col in self.columns:
                 values = gdf[col].to_numpy()
@@ -1822,12 +1828,12 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         print(f"✓ Finished writing {num_groups} groups to {s3_path}")
         return s3_path
     
-    def to_zarr_local(self, local_path, level, chunk_size=250000):
+    def to_zarr_local(self, local_path, level, chunk_size=250000, pixel_width=None):
         """
         Partition STAREDataFrame by SIDs at specified level and write to local storage in grouped layout.
-        
+
         Layout: local_path/<grouped_id>/[one array per column + __row_positions__]
-        
+
         Parameters
         ----------
         local_path : str
@@ -1836,7 +1842,10 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             STARE level for partitioning SIDs
         chunk_size : int, optional
             Size of chunks for zarr arrays (default: 250000)
-            
+        pixel_width : int, optional
+            Number of across-track pixels per scanline. Stored in zarr group attrs
+            so that ``reconstruct_hdf5_from_zarr`` can rebuild the 2D HDF5 structure.
+
         Returns
         -------
         str
@@ -1860,6 +1869,10 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             group_dir = os.path.join(local_path, str(group_id))
             zg = zarr.open_group(group_dir, mode="w")
 
+            # Store pixel_width in group attrs for downstream HDF5 reconstruction
+            if pixel_width is not None:
+                zg.attrs['pixel_width'] = int(pixel_width)
+
             for col in self.columns:
                 values = gdf[col].to_numpy()
                 if values.dtype == np.dtype('O'):
@@ -1870,6 +1883,145 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             zg.empty(name="__row_positions__", shape=(len(row_pos),), dtype=row_pos.dtype, chunks=(min(chunk_size, max(1, len(row_pos))),))[:] = row_pos
 
         return local_path
+
+    def to_hdf5(self, file_path, scan, pixel_width,
+                compression='gzip', compression_opts=4):
+        """
+        Write STAREDataFrame to HDF5 in the original satellite granule format.
+
+        Reconstructs the 2D/3D structure expected by downstream HDF5-consuming
+        tools.  The output layout mirrors the original granule exactly::
+
+            file_path
+            └── <scan>/            (e.g. "S1", "S2")
+                ├── Latitude       float64  (N_scans, pixel_width)
+                ├── Longitude      float64  (N_scans, pixel_width)
+                ├── Tc             float32  (N_scans, pixel_width, N_channels)
+                └── ScanTime/
+                    ├── Year       int16  (N_scans,)
+                    ├── Month      int16  (N_scans,)
+                    ├── DayOfMonth int16  (N_scans,)
+                    ├── Hour       int16  (N_scans,)
+                    ├── Minute     int16  (N_scans,)
+                    ├── Second     int16  (N_scans,)
+                    └── MilliSecond int16  (N_scans,)
+
+        Parameters
+        ----------
+        file_path : str
+            Destination HDF5 file path.
+        scan : str
+            HDF5 group name for the scan (e.g. ``"S1"``).  This parameter is
+            **required**; there is no default because the group name is part of
+            the granule contract.
+        pixel_width : int
+            Number of across-track pixels per scanline.  **Required** — without
+            this the 1D flat arrays cannot be reshaped into the original 2D
+            structure.
+        compression : str, optional
+            HDF5 compression filter (default ``'gzip'``).
+        compression_opts : int, optional
+            Compression level (default ``4``).
+
+        Returns
+        -------
+        str
+            ``file_path`` (for chaining / convenience).
+
+        Raises
+        ------
+        ImportError
+            If ``h5py`` is not installed.
+        ValueError
+            If ``pixel_width`` is ``None`` or ``scan`` is ``None``.
+        """
+        import h5py
+
+        if pixel_width is None:
+            raise ValueError(
+                "pixel_width is required to reconstruct the 2D HDF5 structure. "
+                "Pass the number of across-track pixels per scanline."
+            )
+        if scan is None:
+            raise ValueError(
+                "scan group name is required (e.g. 'S1'). "
+                "There is no safe default because the name is part of the granule format."
+            )
+
+        n_rows = len(self)
+        N_scans, remainder = divmod(n_rows, pixel_width)
+        if remainder != 0:
+            warnings.warn(
+                f"len(df)={n_rows} is not divisible by pixel_width={pixel_width}. "
+                f"Trailing {remainder} row(s) will be truncated.",
+                UserWarning,
+                stacklevel=2,
+            )
+
+        n_used = N_scans * pixel_width
+
+        # Collect Tc column names in numeric order
+        tc_cols = sorted(
+            [c for c in self.columns if re.match(r'^Tc\d+$', c)],
+            key=lambda s: int(s[2:]),
+        )
+
+        # Ensure output directory exists
+        out_dir = os.path.dirname(os.path.abspath(file_path))
+        os.makedirs(out_dir, exist_ok=True)
+
+        with h5py.File(file_path, 'w') as f:
+            sg = f.require_group(scan)
+
+            # Latitude / Longitude — float64, 2D
+            sg.create_dataset(
+                'Latitude',
+                data=self['lat'].values[:n_used].reshape(N_scans, pixel_width).astype(np.float64),
+                compression=compression,
+                compression_opts=compression_opts,
+            )
+            sg.create_dataset(
+                'Longitude',
+                data=self['lon'].values[:n_used].reshape(N_scans, pixel_width).astype(np.float64),
+                compression=compression,
+                compression_opts=compression_opts,
+            )
+
+            # Tc — float32, 3D: (N_scans, pixel_width, N_channels)
+            if tc_cols:
+                tc_stack = np.stack(
+                    [self[c].values[:n_used] for c in tc_cols], axis=-1
+                ).reshape(N_scans, pixel_width, len(tc_cols)).astype(np.float32)
+                sg.create_dataset(
+                    'Tc',
+                    data=tc_stack,
+                    compression=compression,
+                    compression_opts=compression_opts,
+                )
+
+            # ScanTime — 1D per scan, derived from timestamp column
+            if 'timestamp' in self.columns:
+                ts_all = pandas.to_datetime(self['timestamp'].values[:n_used])
+                # Take first pixel of each scanline for the scan timestamp
+                ts_per_scan = ts_all.values.reshape(N_scans, pixel_width)[:, 0]
+                ts_per_scan = pandas.DatetimeIndex(ts_per_scan)
+
+                st = sg.require_group('ScanTime')
+                st.create_dataset('Year',        data=ts_per_scan.year.values.astype(np.int16))
+                st.create_dataset('Month',       data=ts_per_scan.month.values.astype(np.int16))
+                st.create_dataset('DayOfMonth',  data=ts_per_scan.day.values.astype(np.int16))
+                st.create_dataset('Hour',        data=ts_per_scan.hour.values.astype(np.int16))
+                st.create_dataset('Minute',      data=ts_per_scan.minute.values.astype(np.int16))
+                st.create_dataset('Second',      data=ts_per_scan.second.values.astype(np.int16))
+                st.create_dataset('MilliSecond',
+                                  data=(ts_per_scan.microsecond.values // 1000).astype(np.int16))
+
+            # Group-level provenance attributes
+            sg.attrs['StarePodsReconstruction'] = True
+            sg.attrs['PixelWidth'] = int(pixel_width)
+            sg.attrs['ReconstructionDate'] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+        return file_path
 
     def generate_zarr_path(self, sid, dataset_name):
         """
