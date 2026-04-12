@@ -1087,11 +1087,35 @@ def reconstruct_hdf5_from_zarr(
     zarr_pixel_width = None  # pixel_width read from zarr attrs
 
     if is_s3:
-        from starepandas.staredataframe import load_zarr_metadata
+        from starepandas.io.granules import load_zarr_metadata
         meta_df = load_zarr_metadata(dataset=dataset)
         if meta_df is not None and not meta_df.empty:
             meta_df['grouped_id'] = meta_df['grouped_id'].astype(np.int64)
-            matching = meta_df[meta_df['grouped_id'].isin(query_group_ids)]
+
+            # Detect the actual STARE level used for grouped_id in this dataset.
+            # It may differ from MAX_PARTITION_LEVEL when data was ingested with a
+            # different partitioning level.  Lower 5 bits of a STARE SID encode level.
+            storage_levels = set(int(gid & 0x1f) for gid in meta_df['grouped_id'].dropna())
+            if storage_levels == {MAX_PARTITION_LEVEL}:
+                effective_query_ids = query_group_ids  # fast path: levels already match
+            else:
+                # Re-coerce the query area to each unique storage level so the
+                # set-membership filter works regardless of how data was ingested.
+                effective_query_ids: set = set()
+                for slevel in storage_levels:
+                    if bbox is not None:
+                        lon_min_q, lat_min_q, lon_max_q, lat_max_q = bbox
+                        lats_q = [lat_min_q, lat_min_q, lat_max_q, lat_max_q]
+                        lons_q = [lon_min_q, lon_max_q, lon_max_q, lon_min_q]
+                        sids_q = pystare.cover_from_hull(lats_q, lons_q, slevel)
+                    else:
+                        sids_q = area_sids
+                    coerced_q = pystare.spatial_coerce_resolution(
+                        np.array(sids_q, dtype=np.int64), slevel
+                    )
+                    effective_query_ids.update(int(s) for s in np.unique(coerced_q))
+
+            matching = meta_df[meta_df['grouped_id'].isin(effective_query_ids)]
             for _, row in matching.iterrows():
                 group_paths.append((row['group_path'], int(row['grouped_id'])))
         else:
