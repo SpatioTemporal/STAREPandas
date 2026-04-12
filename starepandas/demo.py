@@ -398,41 +398,149 @@ class StarePodsDemo:
         sids = pystare.cover_from_hull(lats, lons, level)
         return sids.tolist()
     
+    def reconstruct_hdf5(
+        self,
+        dataset: str,
+        output_hdf5_path: str,
+        bbox: Optional[Tuple[float, float, float, float]] = None,
+        area_sids: Optional[List[int]] = None,
+        s3_zarr_path: Optional[str] = None,
+        pixel_width: Optional[int] = None,
+        compression: str = 'gzip',
+        compression_opts: int = 4,
+    ) -> str:
+        """
+        Reconstruct an HDF5 granule from zarr chunks stored in S3.
+
+        Queries the RDS metadata to find zarr groups whose STARE partition
+        SIDs intersect the requested area, downloads only those groups, and
+        writes an HDF5 file that matches the original granule structure.
+
+        Parameters
+        ----------
+        dataset : str
+            Dataset / scan identifier (e.g. ``"GMI_S1"``, ``"AMSR2_S5"``).
+            Used to query RDS metadata, derive the HDF5 scan group name, and
+            look up ``pixel_width`` when not provided explicitly.
+        output_hdf5_path : str
+            Destination path for the reconstructed HDF5 file.  Parent
+            directories are created automatically.
+        bbox : tuple of float, optional
+            Bounding box ``(lon_min, lat_min, lon_max, lat_max)``.  Exactly
+            one of ``bbox`` or ``area_sids`` must be given.
+        area_sids : list of int, optional
+            STARE SIDs covering the area of interest.  Exactly one of
+            ``bbox`` or ``area_sids`` must be given.
+        s3_zarr_path : str, optional
+            Root S3 path used as a fallback when the RDS metadata does not
+            contain a ``group_path`` for a matching SID
+            (e.g. ``"s3://zarrpods/gmi-demo"``).  When ``None``, the
+            function relies entirely on RDS metadata for path discovery.
+        pixel_width : int, optional
+            Explicit pixel_width override.  When ``None``, the value is read
+            from zarr group attributes or looked up in ``SCAN_PIXEL_WIDTHS``.
+        compression : str, optional
+            HDF5 compression filter (default ``'gzip'``).
+        compression_opts : int, optional
+            Compression level 0–9 (default ``4``).
+
+        Returns
+        -------
+        str
+            ``output_hdf5_path`` — path of the written HDF5 file.
+
+        Raises
+        ------
+        ValueError
+            If neither or both of ``bbox`` / ``area_sids`` are provided, if
+            no matching zarr groups are found, or if ``pixel_width`` cannot
+            be determined.
+
+        Examples
+        --------
+        Reconstruct GMI data over California from S3:
+
+        >>> demo = StarePodsDemo()
+        >>> path = demo.reconstruct_hdf5(
+        ...     dataset='GMI_S1',
+        ...     output_hdf5_path='/tmp/reconstructed_gmi_s1.h5',
+        ...     bbox=(-125, 32, -115, 42),
+        ... )
+        >>> print(path)
+        /tmp/reconstructed_gmi_s1.h5
+        """
+        if (bbox is None) == (area_sids is None):
+            raise ValueError(
+                "Provide exactly one of 'bbox' or 'area_sids', not both or neither."
+            )
+
+        area_desc = f"bbox={bbox}" if bbox is not None else f"{len(area_sids)} area SIDs"
+        logger.info(f"Reconstructing HDF5 for dataset='{dataset}' over {area_desc}")
+
+        zarr_path = s3_zarr_path or "s3://"  # reconstruct_hdf5_from_zarr uses RDS when path is S3
+
+        output_path = starepandas.io.granules.reconstruct_hdf5_from_zarr(
+            zarr_path=zarr_path,
+            dataset=dataset,
+            output_hdf5_path=output_hdf5_path,
+            area_sids=area_sids,
+            bbox=bbox,
+            pixel_width=pixel_width,
+            compression=compression,
+            compression_opts=compression_opts,
+        )
+
+        logger.info(f"✓ Reconstructed HDF5 written to {output_path}")
+        return output_path
+
     def run_full_demo(self, data_root: str, location_bbox: Tuple[float, float, float, float],
-                    location_name: str = "Study Area") -> Dict[str, pd.DataFrame]:
+                    location_name: str = "Study Area",
+                    reconstruct_output_dir: Optional[str] = None,
+                    reconstruct_datasets: Optional[List[str]] = None) -> Dict[str, Any]:
         """
         Run complete STARE-PODS demonstration workflow.
-        
+
         Parameters
         ----------
         data_root : str
-            Root path containing instrument data folders
+            Root path containing instrument data folders.
         location_bbox : Tuple[float, float, float, float]
-            Bounding box (lon_min, lat_min, lon_max, lat_max)
+            Bounding box ``(lon_min, lat_min, lon_max, lat_max)``.
         location_name : str
-            Name of the location for visualization
-            
+            Name of the location for visualization labels.
+        reconstruct_output_dir : str, optional
+            If provided, reconstruct HDF5 files for each dataset into this
+            directory after downloading the intersecting data.  One ``.h5``
+            file is written per dataset (e.g. ``GMI_S1.h5``).  When ``None``
+            the reconstruction step is skipped.
+        reconstruct_datasets : list of str, optional
+            Dataset / scan identifiers to reconstruct
+            (e.g. ``["GMI_S1", "AMSR2_S5"]``).  Defaults to ``["GMI_S1"]``
+            when ``reconstruct_output_dir`` is set but this argument is not.
+
         Returns
         -------
-        Dict[str, pd.DataFrame]
-            Downloaded and analyzed data
+        Dict[str, Any]
+            ``"data"`` → ``Dict[str, STAREDataFrame]`` (downloaded chunks),
+            ``"hdf5_paths"`` → ``Dict[str, str]`` (reconstructed HDF5 paths,
+            only present when ``reconstruct_output_dir`` is given).
         """
         logger.info(f"Starting STARE-PODS demo for {location_name}")
-        
+
         # Step 1: Get location SIDs
         lon_min, lat_min, lon_max, lat_max = location_bbox
         location_sids = self.get_sids_for_bbox(lon_min, lat_min, lon_max, lat_max)
         logger.info(f"Generated {len(location_sids)} SIDs for {location_name}")
-        
+
         # Step 2: Define instruments and data paths
         instruments = ['GMI', 'AMSR2', 'SSMIS', 'ATMS']
         data_paths = {
             'GMI': f"{data_root}/GPM",
-            'AMSR2': f"{data_root}/AMSR2", 
+            'AMSR2': f"{data_root}/AMSR2",
             'SSMIS': f"{data_root}/SSMIS",
             'ATMS': f"{data_root}/ATMS"
         }
-        
+
         # Step 3: Ingest granules (only if not already done)
         logger.info("Starting granule ingestion...")
         for instrument in instruments:
@@ -442,26 +550,52 @@ class StarePodsDemo:
                 self.ingest_granules(data_path, instrument, s3_prefix)
             else:
                 logger.warning(f"Data path not found: {data_path}")
-        
+
         # Step 4: Find intersecting data
         logger.info("Finding intersecting data...")
         intersecting_metadata = self.find_intersecting_data(location_sids, instruments)
-        
+
         if intersecting_metadata.empty:
             logger.warning("No intersecting data found")
-            return {}
-        
+            return {"data": {}}
+
         # Step 5: Download and analyze
         logger.info("Downloading intersecting chunks...")
         data_dict = self.download_and_analyze(intersecting_metadata, instruments)
-        
+
         # Step 6: Plot comparison
         if data_dict:
             logger.info("Creating comparison plots...")
             self.plot_comparison(data_dict, location_name)
-        
+
+        result: Dict[str, Any] = {"data": data_dict}
+
+        # Step 7 (optional): Reconstruct HDF5 files from S3 zarr
+        if reconstruct_output_dir is not None:
+            os.makedirs(reconstruct_output_dir, exist_ok=True)
+            datasets_to_reconstruct = reconstruct_datasets or ["GMI_S1"]
+            hdf5_paths: Dict[str, str] = {}
+
+            logger.info(
+                f"Reconstructing HDF5 for {datasets_to_reconstruct} → {reconstruct_output_dir}"
+            )
+            for ds in datasets_to_reconstruct:
+                out_path = os.path.join(reconstruct_output_dir, f"{ds}.h5")
+                try:
+                    self.reconstruct_hdf5(
+                        dataset=ds,
+                        output_hdf5_path=out_path,
+                        bbox=location_bbox,
+                    )
+                    hdf5_paths[ds] = out_path
+                except Exception as e:
+                    logger.error(f"✗ HDF5 reconstruction failed for {ds}: {e}")
+
+            result["hdf5_paths"] = hdf5_paths
+            logger.info(f"✓ Reconstructed {len(hdf5_paths)} HDF5 file(s)")
+
         logger.info(f"✓ STARE-PODS demo completed for {location_name}")
-        return data_dict
+        return result
 
 
 # Convenience functions for easier usage
@@ -496,20 +630,44 @@ def get_sids_for_region(region_name: str, level: int = 10) -> List[int]:
 
 
 if __name__ == "__main__":
-    # Example usage
-    demo = StarePodsDemo()
-    
-    # Example: California coast
-    data_root = "/Users/tonhai/workspace/Bayesics/L1C_Data_Samples"
-    ca_bbox = (-125, 32, -115, 42)
-    
-    print("=== STARE-PODS Demo ===")
-    print("Demonstrating workflow with sample data...")
-    print("This will:")
-    print("1. Ingest granules into S3 zarr storage")
-    print("2. Find intersections using STARE spatial indexing") 
-    print("3. Download only intersecting chunks")
-    print("4. Compare instruments at same location")
+    import h5py
+
+    CONFIG_PATH = "/Users/tonhai/workspace/Bayesics/StarePandas_par/stare_demo/starepandas/.config"
+    demo = StarePodsDemo(aws_config_path=CONFIG_PATH)
+    # GMI_S1 data in S3 covers Australia/southern Indian Ocean.
+    # Small bbox over SE Australia (Sydney area) for a quick test — ~5-10 groups.
+    aus_bbox = (148, -36, 153, -32)  # lon_min, lat_min, lon_max, lat_max
+    output_path = "/tmp/gmi_s1_australia.h5"
+
+    print("=== STARE-PODS: HDF5 Reconstruction Test ===")
+    print(f"Dataset : GMI_S1")
+    print(f"BBox    : {aus_bbox}  (SE Australia / Sydney area)")
+    print(f"Output  : {output_path}")
     print()
-    
-    data = demo.run_full_demo(data_root, ca_bbox, "California Coast")
+
+    # --- Steps 1–4 commented out for this focused test ---
+    # result = demo.run_full_demo(...)
+
+    # Step 5 only: reconstruct HDF5 from S3 zarr
+    path = demo.reconstruct_hdf5(
+        dataset='GMI_S1',
+        output_hdf5_path=output_path,
+        bbox=aus_bbox,
+    )
+
+    print(f"\nReconstructed HDF5 written to: {path}")
+
+    # Quick sanity check on the output file
+    with h5py.File(path, 'r') as f:
+        scan_group = list(f.keys())[0]
+        sg = f[scan_group]
+        print(f"\nHDF5 structure:")
+        print(f"  Scan group : {scan_group}")
+        print(f"  Datasets   : {list(sg.keys())}")
+        print(f"  Latitude   : shape={sg['Latitude'].shape}, dtype={sg['Latitude'].dtype}")
+        print(f"  Longitude  : shape={sg['Longitude'].shape}, dtype={sg['Longitude'].dtype}")
+        if 'Tc' in sg:
+            print(f"  Tc         : shape={sg['Tc'].shape}, dtype={sg['Tc'].dtype}")
+        if 'ScanTime' in sg:
+            print(f"  ScanTime   : {list(sg['ScanTime'].keys())}")
+        print(f"  Attrs      : {dict(sg.attrs)}")
