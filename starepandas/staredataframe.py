@@ -2006,15 +2006,84 @@ class STAREDataFrame(geopandas.GeoDataFrame):
                 ts_per_scan = ts_all.values.reshape(N_scans, pixel_width)[:, 0]
                 ts_per_scan = pandas.DatetimeIndex(ts_per_scan)
 
+                # NaT timestamps (missing scan times) produce invalid casts to int16.
+                # Fill NaT-derived NaN integer values with 0 before casting.
+                def _ts_field(arr):
+                    return pandas.array(arr, dtype='Int32').fillna(0).to_numpy(dtype=np.int16)
+
                 st = sg.require_group('ScanTime')
-                st.create_dataset('Year',        data=ts_per_scan.year.values.astype(np.int16))
-                st.create_dataset('Month',       data=ts_per_scan.month.values.astype(np.int16))
-                st.create_dataset('DayOfMonth',  data=ts_per_scan.day.values.astype(np.int16))
-                st.create_dataset('Hour',        data=ts_per_scan.hour.values.astype(np.int16))
-                st.create_dataset('Minute',      data=ts_per_scan.minute.values.astype(np.int16))
-                st.create_dataset('Second',      data=ts_per_scan.second.values.astype(np.int16))
+                st.create_dataset('Year',        data=_ts_field(ts_per_scan.year))
+                st.create_dataset('Month',       data=_ts_field(ts_per_scan.month))
+                st.create_dataset('DayOfMonth',  data=_ts_field(ts_per_scan.day))
+                st.create_dataset('Hour',        data=_ts_field(ts_per_scan.hour))
+                st.create_dataset('Minute',      data=_ts_field(ts_per_scan.minute))
+                st.create_dataset('Second',      data=_ts_field(ts_per_scan.second))
                 st.create_dataset('MilliSecond',
-                                  data=(ts_per_scan.microsecond.values // 1000).astype(np.int16))
+                                  data=_ts_field(ts_per_scan.microsecond // 1000))
+                # Derived fields present in the original GMI format
+                day_of_year = pandas.array(ts_per_scan.day_of_year, dtype='Int32').fillna(0).to_numpy(dtype=np.int16)
+                st.create_dataset('DayOfYear', data=day_of_year)
+                seconds_of_day = (
+                    ts_per_scan.hour * 3600
+                    + ts_per_scan.minute * 60
+                    + ts_per_scan.second
+                )
+                st.create_dataset('SecondOfDay',
+                                  data=pandas.array(seconds_of_day, dtype='Int32').fillna(0).to_numpy(dtype=np.int16))
+
+            # ── Extra fields stored in zarr by the instrument reader ──────────
+            # Columns already written above (handled explicitly)
+            _written = (
+                {'lat', 'lon', 'timestamp', 'sids', self._sid_column_name}
+                | set(tc_cols)
+            )
+
+            # Columns matching SCstatus_* go into a SCstatus subgroup as 1D (N_scans,)
+            scstatus_cols = [c for c in self.columns if c.startswith('SCstatus_') and c not in _written]
+            if scstatus_cols:
+                sc_grp = sg.require_group('SCstatus')
+                for col in scstatus_cols:
+                    field_name = col[len('SCstatus_'):]   # strip prefix
+                    # Each value is repeated pixel_width times per scan — take first
+                    values = self[col].values[:n_used].reshape(N_scans, pixel_width)[:, 0]
+                    sc_grp.create_dataset(field_name, data=values,
+                                          compression=compression, compression_opts=compression_opts)
+                _written.update(scstatus_cols)
+
+            # incidenceAngleIndex{1..N} columns → (N_scans, N_ch) 2D array
+            idx_cols = sorted(
+                [c for c in self.columns if re.match(r'^incidenceAngleIndex\d+$', c) and c not in _written],
+                key=lambda s: int(re.search(r'\d+$', s).group()),
+            )
+            if idx_cols:
+                # Each column is the same value repeated pixel_width times — take first pixel
+                idx_stack = np.stack(
+                    [self[c].values[:n_used].reshape(N_scans, pixel_width)[:, 0] for c in idx_cols],
+                    axis=-1,
+                )   # (N_scans, N_ch)
+                sg.create_dataset('incidenceAngleIndex', data=idx_stack,
+                                  compression=compression, compression_opts=compression_opts)
+                _written.update(idx_cols)
+
+            # Per-pixel fields that need a trailing size-1 channel dimension restored:
+            # incidenceAngle, sunGlintAngle → original shape (N_scans, pixel_width, 1)
+            for col in ('incidenceAngle', 'sunGlintAngle'):
+                if col in self.columns and col not in _written:
+                    arr = self[col].values[:n_used].reshape(N_scans, pixel_width, 1)
+                    sg.create_dataset(col, data=arr,
+                                      compression=compression, compression_opts=compression_opts)
+                    _written.add(col)
+
+            # Remaining per-pixel 2D columns (e.g. Quality, sunLocalTime)
+            for col in self.columns:
+                if col in _written:
+                    continue
+                try:
+                    arr = self[col].values[:n_used].reshape(N_scans, pixel_width)
+                    sg.create_dataset(col, data=arr,
+                                      compression=compression, compression_opts=compression_opts)
+                except (ValueError, TypeError):
+                    pass  # skip columns that can't be reshaped (e.g. object dtype)
 
             # Group-level provenance attributes
             sg.attrs['StarePodsReconstruction'] = True
