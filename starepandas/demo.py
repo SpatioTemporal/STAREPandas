@@ -173,11 +173,17 @@ class StarePodsDemo:
             try:
                 logger.info(f"Searching {instrument} metadata...")
 
-                # Query metadata using existing function
+                # Query metadata — try exact match first, then LIKE for scan-based
+                # datasets stored as e.g. "GMI_S1", "GMI_S2" when queried as "GMI".
                 metadata = starepandas.io.granules.load_zarr_metadata(
                     dataset=instrument,
                     **kwargs
                 )
+                if metadata.empty:
+                    metadata = starepandas.io.granules.load_zarr_metadata(
+                        dataset_prefix=instrument,
+                        **kwargs
+                    )
 
                 if metadata.empty:
                     logger.warning(f"No metadata found for {instrument}")
@@ -400,11 +406,12 @@ class StarePodsDemo:
     
     def reconstruct_hdf5(
         self,
-        dataset: str,
+        dataset,
         output_hdf5_path: str,
         bbox: Optional[Tuple[float, float, float, float]] = None,
         area_sids: Optional[List[int]] = None,
         s3_zarr_path: Optional[str] = None,
+        s3_prefix: Optional[str] = None,
         pixel_width: Optional[int] = None,
         compression: str = 'gzip',
         compression_opts: int = 4,
@@ -418,10 +425,11 @@ class StarePodsDemo:
 
         Parameters
         ----------
-        dataset : str
-            Dataset / scan identifier (e.g. ``"GMI_S1"``, ``"AMSR2_S5"``).
-            Used to query RDS metadata, derive the HDF5 scan group name, and
-            look up ``pixel_width`` when not provided explicitly.
+        dataset : str or list of str
+            Dataset / scan identifier(s) (e.g. ``"GMI_S1"`` or
+            ``["GMI_S1", "GMI_S2"]``).  When a list is given, all scans are
+            written into the same output HDF5 file as separate top-level
+            groups (e.g. ``/S1``, ``/S2``).
         output_hdf5_path : str
             Destination path for the reconstructed HDF5 file.  Parent
             directories are created automatically.
@@ -433,12 +441,13 @@ class StarePodsDemo:
             ``bbox`` or ``area_sids`` must be given.
         s3_zarr_path : str, optional
             Root S3 path used as a fallback when the RDS metadata does not
-            contain a ``group_path`` for a matching SID
-            (e.g. ``"s3://zarrpods/gmi-demo"``).  When ``None``, the
-            function relies entirely on RDS metadata for path discovery.
+            contain a ``group_path`` for a matching SID.
+        s3_prefix : str, optional
+            Filter RDS metadata to group_paths starting with this prefix
+            (e.g. a single granule's S3 path) to avoid mixing data from
+            different ingestion runs.
         pixel_width : int, optional
-            Explicit pixel_width override.  When ``None``, the value is read
-            from zarr group attributes or looked up in ``SCAN_PIXEL_WIDTHS``.
+            Explicit pixel_width override.
         compression : str, optional
             HDF5 compression filter (default ``'gzip'``).
         compression_opts : int, optional
@@ -448,50 +457,37 @@ class StarePodsDemo:
         -------
         str
             ``output_hdf5_path`` — path of the written HDF5 file.
-
-        Raises
-        ------
-        ValueError
-            If neither or both of ``bbox`` / ``area_sids`` are provided, if
-            no matching zarr groups are found, or if ``pixel_width`` cannot
-            be determined.
-
-        Examples
-        --------
-        Reconstruct GMI data over California from S3:
-
-        >>> demo = StarePodsDemo()
-        >>> path = demo.reconstruct_hdf5(
-        ...     dataset='GMI_S1',
-        ...     output_hdf5_path='/tmp/reconstructed_gmi_s1.h5',
-        ...     bbox=(-125, 32, -115, 42),
-        ... )
-        >>> print(path)
-        /tmp/reconstructed_gmi_s1.h5
         """
         if (bbox is None) == (area_sids is None):
             raise ValueError(
                 "Provide exactly one of 'bbox' or 'area_sids', not both or neither."
             )
 
-        area_desc = f"bbox={bbox}" if bbox is not None else f"{len(area_sids)} area SIDs"
-        logger.info(f"Reconstructing HDF5 for dataset='{dataset}' over {area_desc}")
+        datasets = [dataset] if isinstance(dataset, str) else list(dataset)
+        zarr_path = s3_zarr_path or "s3://"
 
-        zarr_path = s3_zarr_path or "s3://"  # reconstruct_hdf5_from_zarr uses RDS when path is S3
+        for i, ds in enumerate(datasets):
+            area_desc = f"bbox={bbox}" if bbox is not None else f"{len(area_sids)} area SIDs"
+            logger.info(f"Reconstructing HDF5 for dataset='{ds}' over {area_desc}")
 
-        output_path = starepandas.io.granules.reconstruct_hdf5_from_zarr(
-            zarr_path=zarr_path,
-            dataset=dataset,
-            output_hdf5_path=output_hdf5_path,
-            area_sids=area_sids,
-            bbox=bbox,
-            pixel_width=pixel_width,
-            compression=compression,
-            compression_opts=compression_opts,
-        )
+            # First scan creates the file ('w'), subsequent scans append ('a')
+            hdf5_mode = 'w' if i == 0 else 'a'
 
-        logger.info(f"✓ Reconstructed HDF5 written to {output_path}")
-        return output_path
+            starepandas.io.granules.reconstruct_hdf5_from_zarr(
+                zarr_path=zarr_path,
+                dataset=ds,
+                output_hdf5_path=output_hdf5_path,
+                area_sids=area_sids,
+                bbox=bbox,
+                s3_prefix=s3_prefix,
+                pixel_width=pixel_width,
+                compression=compression,
+                compression_opts=compression_opts,
+                mode=hdf5_mode,
+            )
+
+        logger.info(f"✓ Reconstructed HDF5 written to {output_hdf5_path}")
+        return output_hdf5_path
 
     def run_full_demo(self, data_root: str, location_bbox: Tuple[float, float, float, float],
                     location_name: str = "Study Area",
@@ -633,41 +629,79 @@ if __name__ == "__main__":
     import h5py
 
     CONFIG_PATH = "/Users/tonhai/workspace/Bayesics/StarePandas_par/stare_demo/starepandas/.config"
-    demo = StarePodsDemo(aws_config_path=CONFIG_PATH)
-    # GMI_S1 data in S3 covers Australia/southern Indian Ocean.
-    # Small bbox over SE Australia (Sydney area) for a quick test — ~5-10 groups.
-    aus_bbox = (148, -36, 153, -32)  # lon_min, lat_min, lon_max, lat_max
-    output_path = "/tmp/gmi_s1_australia.h5"
+    GRANULE_FILE = (
+        "/Users/tonhai/workspace/Bayesics/L1C_Data_Samples/GPM/2025/Jan_1_2/"
+        "1C.GPM.GMI.XCAL2016-C.20250101-S034347-E051659.061567.V07B.HDF5"
+    )
+    S3_PREFIX    = "s3://zarrpods/gmi-demo"
+    BBOX         = (115, -30, 120, -25)   # SW Australia / Perth area (lon_min, lat_min, lon_max, lat_max)
+    OUTPUT_HDF5  = "/tmp/gmi_s1_australia.h5"
+    ORIGINAL_HDF5 = GRANULE_FILE
 
-    print("=== STARE-PODS: HDF5 Reconstruction Test ===")
-    print(f"Dataset : GMI_S1")
-    print(f"BBox    : {aus_bbox}  (SE Australia / Sydney area)")
-    print(f"Output  : {output_path}")
+    demo = StarePodsDemo(aws_config_path=CONFIG_PATH)
+
+    print("=" * 60)
+    print("STARE-PODS Full Demo")
+    print("=" * 60)
+    print(f"Granule : {os.path.basename(GRANULE_FILE)}")
+    print(f"BBox    : {BBOX}  (SE Australia)")
+    print(f"S3      : {S3_PREFIX}")
     print()
 
-    # --- Steps 1–4 commented out for this focused test ---
-    # result = demo.run_full_demo(...)
-
-    # Step 5 only: reconstruct HDF5 from S3 zarr
-    path = demo.reconstruct_hdf5(
-        dataset='GMI_S1',
-        output_hdf5_path=output_path,
-        bbox=aus_bbox,
+    # ── Step 1: Ingest the single granule into S3 zarr ──────────────────
+    print("Step 1: Ingesting granule into S3 zarr ...")
+    s3_paths = demo.ingest_granules(
+        data_path=GRANULE_FILE,
+        instrument='GMI',
+        s3_prefix=S3_PREFIX,
     )
+    print(f"  Stored {len(s3_paths)} zarr dataset(s) to S3")
+    print()
 
-    print(f"\nReconstructed HDF5 written to: {path}")
+    # ── Step 2: Find intersecting data via STARE SIDs ───────────────────
+    print("Step 2: Finding intersecting data ...")
+    location_sids = demo.get_sids_for_bbox(*BBOX, level=10)
+    print(f"  Generated {len(location_sids)} SIDs for bbox")
+    intersecting = demo.find_intersecting_data(location_sids, instruments=['GMI'])
+    print(f"  Found {len(intersecting)} intersecting zarr group(s)")
+    print()
 
-    # Quick sanity check on the output file
-    with h5py.File(path, 'r') as f:
-        scan_group = list(f.keys())[0]
-        sg = f[scan_group]
-        print(f"\nHDF5 structure:")
-        print(f"  Scan group : {scan_group}")
-        print(f"  Datasets   : {list(sg.keys())}")
-        print(f"  Latitude   : shape={sg['Latitude'].shape}, dtype={sg['Latitude'].dtype}")
-        print(f"  Longitude  : shape={sg['Longitude'].shape}, dtype={sg['Longitude'].dtype}")
-        if 'Tc' in sg:
-            print(f"  Tc         : shape={sg['Tc'].shape}, dtype={sg['Tc'].dtype}")
-        if 'ScanTime' in sg:
-            print(f"  ScanTime   : {list(sg['ScanTime'].keys())}")
-        print(f"  Attrs      : {dict(sg.attrs)}")
+    # ── Step 3: Download intersecting chunks ────────────────────────────
+    print("Step 3: Downloading intersecting chunks ...")
+    data_dict = demo.download_and_analyze(intersecting, instruments=['GMI'])
+    for inst, df in data_dict.items():
+        print(f"  {inst}: {len(df)} rows, columns: {list(df.columns)}")
+    print()
+
+    # ── Step 4: Reconstruct HDF5 from the freshly ingested zarr ─────────
+    # Derive the granule's S3 prefix from the ingested paths so reconstruction
+    # reads only data from this specific granule (not older ingestions).
+    granule_basename = os.path.splitext(os.path.basename(GRANULE_FILE))[0]
+    granule_s3_prefix = f"{S3_PREFIX}/{granule_basename}"
+    print("Step 4: Reconstructing HDF5 from S3 zarr ...")
+    recon_path = demo.reconstruct_hdf5(
+        dataset='GMI_S1',
+        output_hdf5_path=OUTPUT_HDF5,
+        bbox=BBOX,
+        s3_prefix=granule_s3_prefix,
+    )
+    print(f"  Written to: {recon_path}")
+    print()
+
+    # ── Step 5: Structure comparison ─────────────────────────────────────
+    print("=" * 60)
+    print("Structure comparison")
+    print("=" * 60)
+
+    def dump_structure(path, label):
+        print(f"\n--- {label} ---")
+        with h5py.File(path, 'r') as f:
+            def visit(name, obj):
+                if isinstance(obj, h5py.Dataset):
+                    print(f"  /{name:50s} {str(obj.shape):20s} {obj.dtype}")
+                elif isinstance(obj, h5py.Group) and name != '/':
+                    print(f"  /{name:50s} Group")
+            f.visititems(visit)
+
+    dump_structure(OUTPUT_HDF5,  f"RECONSTRUCTED  ({os.path.basename(OUTPUT_HDF5)})")
+    dump_structure(ORIGINAL_HDF5, f"ORIGINAL       ({os.path.basename(ORIGINAL_HDF5)})")
