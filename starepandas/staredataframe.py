@@ -1885,7 +1885,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         return local_path
 
     def to_hdf5(self, file_path, scan, pixel_width,
-                compression='gzip', compression_opts=4):
+                compression='gzip', compression_opts=4, mode='w'):
         """
         Write STAREDataFrame to HDF5 in the original satellite granule format.
 
@@ -1970,19 +1970,19 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         out_dir = os.path.dirname(os.path.abspath(file_path))
         os.makedirs(out_dir, exist_ok=True)
 
-        with h5py.File(file_path, 'w') as f:
+        with h5py.File(file_path, mode) as f:
             sg = f.require_group(scan)
 
-            # Latitude / Longitude — float64, 2D
+            # Latitude / Longitude — float32, 2D (matches original granule dtype)
             sg.create_dataset(
                 'Latitude',
-                data=self['lat'].values[:n_used].reshape(N_scans, pixel_width).astype(np.float64),
+                data=self['lat'].values[:n_used].reshape(N_scans, pixel_width).astype(np.float32),
                 compression=compression,
                 compression_opts=compression_opts,
             )
             sg.create_dataset(
                 'Longitude',
-                data=self['lon'].values[:n_used].reshape(N_scans, pixel_width).astype(np.float64),
+                data=self['lon'].values[:n_used].reshape(N_scans, pixel_width).astype(np.float32),
                 compression=compression,
                 compression_opts=compression_opts,
             )
@@ -2006,30 +2006,32 @@ class STAREDataFrame(geopandas.GeoDataFrame):
                 ts_per_scan = ts_all.values.reshape(N_scans, pixel_width)[:, 0]
                 ts_per_scan = pandas.DatetimeIndex(ts_per_scan)
 
-                # NaT timestamps (missing scan times) produce invalid casts to int16.
-                # Fill NaT-derived NaN integer values with 0 before casting.
-                def _ts_field(arr):
+                # NaT timestamps produce NaN for integer fields — fill with 0.
+                def _ts_int8(arr):
+                    return pandas.array(arr, dtype='Int32').fillna(0).to_numpy(dtype=np.int8)
+                def _ts_int16(arr):
                     return pandas.array(arr, dtype='Int32').fillna(0).to_numpy(dtype=np.int16)
 
                 st = sg.require_group('ScanTime')
-                st.create_dataset('Year',        data=_ts_field(ts_per_scan.year))
-                st.create_dataset('Month',       data=_ts_field(ts_per_scan.month))
-                st.create_dataset('DayOfMonth',  data=_ts_field(ts_per_scan.day))
-                st.create_dataset('Hour',        data=_ts_field(ts_per_scan.hour))
-                st.create_dataset('Minute',      data=_ts_field(ts_per_scan.minute))
-                st.create_dataset('Second',      data=_ts_field(ts_per_scan.second))
+                st.create_dataset('Year',        data=_ts_int16(ts_per_scan.year))
+                st.create_dataset('Month',       data=_ts_int8(ts_per_scan.month))
+                st.create_dataset('DayOfMonth',  data=_ts_int8(ts_per_scan.day))
+                st.create_dataset('Hour',        data=_ts_int8(ts_per_scan.hour))
+                st.create_dataset('Minute',      data=_ts_int8(ts_per_scan.minute))
+                st.create_dataset('Second',      data=_ts_int8(ts_per_scan.second))
                 st.create_dataset('MilliSecond',
-                                  data=_ts_field(ts_per_scan.microsecond // 1000))
+                                  data=_ts_int16(ts_per_scan.microsecond // 1000))
                 # Derived fields present in the original GMI format
                 day_of_year = pandas.array(ts_per_scan.day_of_year, dtype='Int32').fillna(0).to_numpy(dtype=np.int16)
                 st.create_dataset('DayOfYear', data=day_of_year)
+                # SecondOfDay is float64 in the original granule
                 seconds_of_day = (
-                    ts_per_scan.hour * 3600
-                    + ts_per_scan.minute * 60
-                    + ts_per_scan.second
+                    ts_per_scan.hour.astype(np.float64) * 3600.0
+                    + ts_per_scan.minute.astype(np.float64) * 60.0
+                    + ts_per_scan.second.astype(np.float64)
                 )
                 st.create_dataset('SecondOfDay',
-                                  data=pandas.array(seconds_of_day, dtype='Int32').fillna(0).to_numpy(dtype=np.int16))
+                                  data=np.where(np.isnan(seconds_of_day.astype(float)), 0.0, seconds_of_day).astype(np.float64))
 
             # ── Extra fields stored in zarr by the instrument reader ──────────
             # Columns already written above (handled explicitly)
@@ -2039,6 +2041,14 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             )
 
             # Columns matching SCstatus_* go into a SCstatus subgroup as 1D (N_scans,)
+            # Known dtypes match the original GMI granule.
+            _scstatus_dtypes = {
+                'FractionalGranuleNumber': np.float64,
+                'SCaltitude':  np.float32,
+                'SClatitude':  np.float32,
+                'SClongitude': np.float32,
+                'SCorientation': np.int16,
+            }
             scstatus_cols = [c for c in self.columns if c.startswith('SCstatus_') and c not in _written]
             if scstatus_cols:
                 sc_grp = sg.require_group('SCstatus')
@@ -2046,40 +2056,55 @@ class STAREDataFrame(geopandas.GeoDataFrame):
                     field_name = col[len('SCstatus_'):]   # strip prefix
                     # Each value is repeated pixel_width times per scan — take first
                     values = self[col].values[:n_used].reshape(N_scans, pixel_width)[:, 0]
+                    dtype = _scstatus_dtypes.get(field_name)
+                    if dtype is not None:
+                        values = np.nan_to_num(values, nan=0).astype(dtype)
                     sc_grp.create_dataset(field_name, data=values,
                                           compression=compression, compression_opts=compression_opts)
                 _written.update(scstatus_cols)
 
-            # incidenceAngleIndex{1..N} columns → (N_scans, N_ch) 2D array
+            # incidenceAngleIndex{1..N} columns → (N_scans, N_ch) 2D array, int8
             idx_cols = sorted(
                 [c for c in self.columns if re.match(r'^incidenceAngleIndex\d+$', c) and c not in _written],
                 key=lambda s: int(re.search(r'\d+$', s).group()),
             )
             if idx_cols:
                 # Each column is the same value repeated pixel_width times — take first pixel
-                idx_stack = np.stack(
+                raw = np.stack(
                     [self[c].values[:n_used].reshape(N_scans, pixel_width)[:, 0] for c in idx_cols],
                     axis=-1,
-                )   # (N_scans, N_ch)
+                )
+                idx_stack = np.nan_to_num(raw, nan=0).astype(np.int8)   # (N_scans, N_ch)
                 sg.create_dataset('incidenceAngleIndex', data=idx_stack,
                                   compression=compression, compression_opts=compression_opts)
                 _written.update(idx_cols)
 
             # Per-pixel fields that need a trailing size-1 channel dimension restored:
-            # incidenceAngle, sunGlintAngle → original shape (N_scans, pixel_width, 1)
-            for col in ('incidenceAngle', 'sunGlintAngle'):
+            # incidenceAngle → float32 (N_scans, pixel_width, 1)
+            # sunGlintAngle  → int8    (N_scans, pixel_width, 1)
+            _3d_field_dtypes = {'incidenceAngle': np.float32, 'sunGlintAngle': np.int8}
+            for col, dtype in _3d_field_dtypes.items():
                 if col in self.columns and col not in _written:
-                    arr = self[col].values[:n_used].reshape(N_scans, pixel_width, 1)
+                    raw = self[col].values[:n_used].reshape(N_scans, pixel_width, 1)
+                    arr = np.nan_to_num(raw, nan=0).astype(dtype)
                     sg.create_dataset(col, data=arr,
                                       compression=compression, compression_opts=compression_opts)
                     _written.add(col)
 
             # Remaining per-pixel 2D columns (e.g. Quality, sunLocalTime)
+            # Known dtypes for fields that zarr stores as float64 but originals differ.
+            _pixel_field_dtypes = {
+                'Quality':      np.int8,
+                'sunLocalTime': np.float32,
+            }
             for col in self.columns:
                 if col in _written:
                     continue
                 try:
                     arr = self[col].values[:n_used].reshape(N_scans, pixel_width)
+                    dtype = _pixel_field_dtypes.get(col)
+                    if dtype is not None:
+                        arr = np.nan_to_num(arr, nan=0).astype(dtype)
                     sg.create_dataset(col, data=arr,
                                       compression=compression, compression_opts=compression_opts)
                 except (ValueError, TypeError):
