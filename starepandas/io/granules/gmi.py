@@ -214,25 +214,56 @@ class GMI(Granule):
             ts = ts.reshape(ts_len, 221)
             self.timestamps['S2'] = ts
 
+    def _read_scan_group(self, scan):
+        """Return the HDF5/NetCDF4 group object for a given scan name."""
+        if self.file_type == 'hdf5':
+            return self.dataset[scan]
+        else:
+            return self.dataset.groups[scan]
+
     def read_data(self):
         # GMI specific data reading based on channel configuration
-        if 'S1' in self.scans:
-            if self.file_type == 'hdf5':
-                # S1 has 9 channels
-                for i in range(9):
-                    self.data['S1'][f'Tc{i+1}'] = self.dataset['S1']['Tc'][:, :, i]
-            else:  # netcdf4
-                for i in range(9):
-                    self.data['S1'][f'Tc{i+1}'] = self.dataset.groups['S1']['Tc'][:, :, i]
+        n_tc = {'S1': 9, 'S2': 4}
+        for scan in self.scans:
+            sg = self._read_scan_group(scan)
+            pixel_width = self.lat[scan].shape[1] if self.lat is not None else None
 
-        if 'S2' in self.scans:
-            if self.file_type == 'hdf5':
-                # S2 has 4 channels
-                for i in range(4):
-                    self.data['S2'][f'Tc{i+1}'] = self.dataset['S2']['Tc'][:, :, i]
-            else:  # netcdf4
-                for i in range(4):
-                    self.data['S2'][f'Tc{i+1}'] = self.dataset.groups['S2']['Tc'][:, :, i]
+            # ── Brightness temperatures ───────────────────────────────────────
+            for i in range(n_tc.get(scan, 0)):
+                self.data[scan][f'Tc{i+1}'] = sg['Tc'][:, :, i]
+
+            # ── Quality flag (N_scans, pixel_width) ──────────────────────────
+            if 'Quality' in sg:
+                self.data[scan]['Quality'] = sg['Quality'][:, :]
+
+            # ── Per-pixel angle fields (N_scans, pixel_width[, 1]) ───────────
+            for field in ('incidenceAngle', 'sunGlintAngle'):
+                if field in sg:
+                    arr = sg[field][:]
+                    # Original shape is (N_scans, pixel_width, 1) — squeeze last dim
+                    self.data[scan][field] = arr[:, :, 0] if arr.ndim == 3 else arr
+
+            # ── sunLocalTime (N_scans, pixel_width) ──────────────────────────
+            if 'sunLocalTime' in sg:
+                self.data[scan]['sunLocalTime'] = sg['sunLocalTime'][:, :]
+
+            # ── incidenceAngleIndex (N_scans, N_ch) — one per scan, per channel
+            # Expand to (N_scans, pixel_width) by repeating so it aligns with other columns.
+            if 'incidenceAngleIndex' in sg and pixel_width is not None:
+                idx = sg['incidenceAngleIndex'][:]        # (N_scans, N_ch)
+                for ch_i in range(idx.shape[1]):
+                    col = idx[:, ch_i : ch_i + 1].repeat(pixel_width, axis=1)  # (N_scans, pixel_width)
+                    self.data[scan][f'incidenceAngleIndex{ch_i + 1}'] = col
+
+            # ── SCstatus subgroup (1D per scan) ──────────────────────────────
+            sc_key = 'SCstatus' if 'SCstatus' in sg else None
+            if sc_key is not None and pixel_width is not None:
+                for field_name in sg[sc_key]:
+                    values = sg[sc_key][field_name][:]    # (N_scans,)
+                    # Expand to (N_scans, pixel_width) so to_df() can flatten uniformly
+                    self.data[scan][f'SCstatus_{field_name}'] = (
+                        values[:, numpy.newaxis].repeat(pixel_width, axis=1)
+                    )
 
     def add_sids(self, adapt_resolution=True):
         if self.lat is None:
