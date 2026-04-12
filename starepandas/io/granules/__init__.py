@@ -446,7 +446,7 @@ def to_zarr_s3(file_path, s3_path, level, chunk_size=250000, storage_options=Non
             pass
 
 
-def load_zarr_metadata(dataset=None, data_level=None, s3_bucket=None, 
+def load_zarr_metadata(dataset=None, dataset_prefix=None, data_level=None, s3_bucket=None,
                       resolution_level=None, start_date=None, end_date=None,
                       grouped_id=None, limit=None, order_by=None):
     """
@@ -535,7 +535,11 @@ def load_zarr_metadata(dataset=None, data_level=None, s3_bucket=None,
         if dataset is not None:
             conditions.append('"Dataset" = %s')
             params.append(dataset)
-            
+
+        if dataset_prefix is not None:
+            conditions.append('"Dataset" LIKE %s')
+            params.append(f"{dataset_prefix}_%")
+
         if data_level is not None:
             conditions.append('"DataLevel" = %s')
             params.append(data_level)
@@ -1000,8 +1004,10 @@ def parse_zarr_path(zarr_path):
 def reconstruct_hdf5_from_zarr(
     zarr_path, dataset, output_hdf5_path,
     area_sids=None, bbox=None,
+    s3_prefix=None,
     storage_options=None, pixel_width=None,
     compression='gzip', compression_opts=4,
+    mode='w',
 ):
     """
     Reconstruct an HDF5 granule from zarr chunks stored on S3 or local disk.
@@ -1091,6 +1097,9 @@ def reconstruct_hdf5_from_zarr(
         meta_df = load_zarr_metadata(dataset=dataset)
         if meta_df is not None and not meta_df.empty:
             meta_df['grouped_id'] = meta_df['grouped_id'].astype(np.int64)
+            # Filter to a specific S3 prefix when provided (e.g. a single granule path)
+            if s3_prefix is not None:
+                meta_df = meta_df[meta_df['group_path'].str.startswith(s3_prefix)]
 
             # Detect the actual STARE level used for grouped_id in this dataset.
             # It may differ from MAX_PARTITION_LEVEL when data was ingested with a
@@ -1223,5 +1232,6 @@ def reconstruct_hdf5_from_zarr(
         pixel_width=resolved_pw,
         compression=compression,
         compression_opts=compression_opts,
+        mode=mode,
     )
     return output_hdf5_path
