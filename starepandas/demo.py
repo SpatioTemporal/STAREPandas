@@ -102,6 +102,7 @@ class StarePodsDemo:
                 base_name = os.path.splitext(os.path.basename(granule_file))[0]
                 s3_path = f"{s3_prefix}/{base_name}"
                 
+                kwargs.setdefault('read_timestamp', True)
                 s3_result = starepandas.io.granules.to_zarr_s3(
                     file_path=granule_file,
                     s3_path=s3_path,
@@ -592,6 +593,342 @@ class StarePodsDemo:
 
         logger.info(f"✓ STARE-PODS demo completed for {location_name}")
         return result
+
+
+class LocalStarePodsDemo:
+    """
+    Local STARE-PODS pipeline — no AWS or RDS required.
+
+    Mirrors :class:`StarePodsDemo` but writes zarr groups to the local
+    filesystem and stores metadata in a SQLite database.  Useful for
+    development, offline work, or environments without cloud access.
+
+    Directory layout::
+
+        <local_root>/
+        ├── metadata.db              # SQLite — PodsMetadata table
+        └── <granule_basename>/      # one directory per granule
+            ├── <grouped_id_0>/      # flat zarr group dirs
+            │   ├── lat/
+            │   ├── lon/
+            │   ├── Tc1/ …
+            │   └── __row_positions__/
+            └── <grouped_id_N>/
+
+    Parameters
+    ----------
+    local_root : str
+        Root directory for zarr storage and the SQLite database file.
+        Created automatically if it does not exist.
+    """
+
+    def __init__(self, local_root: str = "/tmp/stare_pods_local"):
+        self.local_root = os.path.abspath(local_root)
+        self.db_path = os.path.join(self.local_root, "metadata.db")
+        os.makedirs(self.local_root, exist_ok=True)
+
+    # ── Ingestion ─────────────────────────────────────────────────────────────
+
+    def ingest_granules(
+        self,
+        data_path: str,
+        instrument: str,
+        scan: Optional[str] = None,
+        level: int = 10,
+        **kwargs,
+    ) -> List[str]:
+        """
+        Ingest granule files into local zarr storage and record metadata.
+
+        Parameters
+        ----------
+        data_path : str
+            Path to a single granule file, a directory, or a glob pattern.
+        instrument : str
+            Instrument / dataset name (e.g. ``"GMI"``).
+        scan : str, optional
+            Specific scan to process (e.g. ``"S1"``); ``None`` processes all.
+        level : int, optional
+            STARE partitioning level (default 10).
+        **kwargs
+            Forwarded to :func:`~starepandas.io.granules.to_zarr_local_meta`.
+
+        Returns
+        -------
+        list of str
+            Local paths written for each processed granule.
+        """
+        import glob
+
+        if os.path.isdir(data_path):
+            granule_files = glob.glob(f"{data_path}/**/*.HDF5", recursive=True)
+        elif '*' in data_path or '?' in data_path:
+            granule_files = glob.glob(data_path)
+        else:
+            granule_files = [data_path] if os.path.exists(data_path) else []
+
+        if not granule_files:
+            logger.warning(f"No granule files found in {data_path}")
+            return []
+
+        logger.info(f"Found {len(granule_files)} {instrument} file(s)")
+        local_paths = []
+
+        for granule_file in granule_files:
+            try:
+                logger.info(f"Processing {os.path.basename(granule_file)}")
+                base_name = os.path.splitext(os.path.basename(granule_file))[0]
+                granule_local_path = os.path.join(self.local_root, base_name)
+
+                kwargs.setdefault('read_timestamp', True)
+                result = starepandas.io.granules.to_zarr_local_meta(
+                    file_path=granule_file,
+                    local_path=granule_local_path,
+                    level=level,
+                    db_path=self.db_path,
+                    dataset=instrument,
+                    scan=scan,
+                    **kwargs,
+                )
+
+                if isinstance(result, list):
+                    local_paths.extend(result)
+                else:
+                    local_paths.append(result)
+
+                logger.info(f"✓ Stored {os.path.basename(granule_file)} → {granule_local_path}")
+
+            except Exception as e:
+                logger.error(f"✗ Failed to process {granule_file}: {e}")
+                continue
+
+        logger.info(f"Ingested {len(local_paths)} zarr dataset(s)")
+        return local_paths
+
+    # ── Spatial query ─────────────────────────────────────────────────────────
+
+    def get_sids_for_bbox(
+        self,
+        lon_min: float,
+        lat_min: float,
+        lon_max: float,
+        lat_max: float,
+        level: int = 10,
+    ) -> List[int]:
+        """Convert a bounding box to STARE SIDs (identical to StarePodsDemo)."""
+        lats = [lat_min, lat_min, lat_max, lat_max]
+        lons = [lon_min, lon_max, lon_max, lon_min]
+        sids = pystare.cover_from_hull(lats, lons, level)
+        return sids.tolist()
+
+    def find_intersecting_data(
+        self,
+        location_sids: List[int],
+        instruments: List[str],
+        **kwargs,
+    ) -> pd.DataFrame:
+        """
+        Find metadata rows whose STARE partition SIDs intersect ``location_sids``.
+
+        Parameters
+        ----------
+        location_sids : list of int
+            STARE SIDs for the area of interest.
+        instruments : list of str
+            Instrument / dataset names to search (e.g. ``["GMI"]``).
+        **kwargs
+            Forwarded to :func:`load_local_zarr_metadata`.
+
+        Returns
+        -------
+        pandas.DataFrame
+            Matching metadata rows.
+        """
+        from starepandas.staredataframe import MAX_PARTITION_LEVEL
+
+        sids_array = np.array(location_sids, dtype=np.int64)
+        coerced = pystare.spatial_coerce_resolution(sids_array, MAX_PARTITION_LEVEL)
+        coerced = pystare.spatial_clear_to_resolution(coerced)
+        query_ids = set(int(s) for s in coerced)
+
+        logger.info(
+            f"Coerced {len(location_sids)} query SIDs → {len(query_ids)} partition-level IDs"
+        )
+
+        all_results = []
+        for instrument in instruments:
+            try:
+                meta = starepandas.io.granules.load_local_zarr_metadata(
+                    self.db_path, dataset=instrument, **kwargs
+                )
+                if meta.empty:
+                    meta = starepandas.io.granules.load_local_zarr_metadata(
+                        self.db_path, dataset_prefix=instrument, **kwargs
+                    )
+
+                if meta.empty:
+                    logger.warning(f"No metadata found for {instrument}")
+                    continue
+
+                for _, row in meta.iterrows():
+                    gid = row.get('grouped_id')
+                    if pd.isna(gid):
+                        continue
+                    try:
+                        if int(gid) in query_ids:
+                            all_results.append(row)
+                    except (ValueError, TypeError):
+                        continue
+
+                logger.info(
+                    f"Found {sum(1 for r in all_results if r.get('Dataset', '').startswith(instrument))} "
+                    f"intersecting chunks for {instrument}"
+                )
+
+            except Exception as e:
+                logger.error(f"Error searching {instrument} metadata: {e}")
+                continue
+
+        if not all_results:
+            logger.warning("No intersecting data found")
+            return pd.DataFrame()
+
+        return pd.DataFrame(all_results)
+
+    # ── Download / analyse ────────────────────────────────────────────────────
+
+    def download_and_analyze(
+        self,
+        intersecting_metadata: pd.DataFrame,
+        instruments: Optional[List[str]] = None,
+    ) -> Dict[str, pd.DataFrame]:
+        """
+        Load intersecting zarr chunks from local disk into STAREDataFrames.
+
+        Parameters
+        ----------
+        intersecting_metadata : pandas.DataFrame
+            Output of :meth:`find_intersecting_data`.
+        instruments : list of str, optional
+            Restrict to these datasets.  ``None`` uses all found in metadata.
+
+        Returns
+        -------
+        dict
+            Mapping ``dataset_name → STAREDataFrame``.
+        """
+        import zarr as _zarr
+
+        if intersecting_metadata.empty:
+            logger.warning("No metadata to load")
+            return {}
+
+        if instruments is None:
+            instruments = intersecting_metadata['Dataset'].unique().tolist()
+
+        data_results = {}
+        for instrument in instruments:
+            rows = intersecting_metadata[intersecting_metadata['Dataset'] == instrument]
+            if rows.empty:
+                logger.warning(f"No data found for {instrument}")
+                continue
+
+            frames = []
+            for _, chunk in rows.iterrows():
+                gpath = chunk.get('group_path', '')
+                if not gpath or not os.path.isdir(gpath):
+                    continue
+                try:
+                    zg = _zarr.open_group(gpath, mode='r')
+                    col_data = {k: zg[k][:] for k in zg.array_keys() if k != '__row_positions__'}
+                    if not col_data:
+                        continue
+                    df_chunk = pd.DataFrame(col_data)
+                    if '__row_positions__' in zg:
+                        df_chunk['__row_positions__'] = zg['__row_positions__'][:]
+                    frames.append(df_chunk)
+                    logger.info(f"✓ Loaded {len(df_chunk)} rows from {gpath}")
+                except Exception as e:
+                    logger.error(f"Error loading {gpath}: {e}")
+
+            if frames:
+                combined = pd.concat(frames, ignore_index=True)
+                if '__row_positions__' in combined.columns:
+                    combined = combined.sort_values('__row_positions__').drop(
+                        columns=['__row_positions__']
+                    ).reset_index(drop=True)
+                data_results[instrument] = starepandas.STAREDataFrame(combined)
+                logger.info(f"✓ Combined {len(combined)} rows for {instrument}")
+
+        return data_results
+
+    # ── HDF5 reconstruction ───────────────────────────────────────────────────
+
+    def reconstruct_hdf5(
+        self,
+        dataset,
+        output_hdf5_path: str,
+        bbox: Optional[Tuple[float, float, float, float]] = None,
+        area_sids: Optional[List[int]] = None,
+        local_prefix: Optional[str] = None,
+        pixel_width: Optional[int] = None,
+        compression: str = 'gzip',
+        compression_opts: int = 4,
+    ) -> str:
+        """
+        Reconstruct an HDF5 granule from local zarr chunks.
+
+        Parameters
+        ----------
+        dataset : str or list of str
+            Dataset / scan identifier(s) (e.g. ``"GMI_S1"`` or
+            ``["GMI_S1", "GMI_S2"]``).
+        output_hdf5_path : str
+            Destination HDF5 file path.
+        bbox : tuple of float, optional
+            ``(lon_min, lat_min, lon_max, lat_max)``.  Exactly one of ``bbox``
+            or ``area_sids`` must be given.
+        area_sids : list of int, optional
+            STARE SIDs for the area of interest.
+        local_prefix : str, optional
+            Filter metadata to group_paths starting with this prefix (e.g. the
+            granule directory) to avoid mixing data from multiple ingestions.
+        pixel_width : int, optional
+            Explicit pixel_width override.
+        compression : str, optional
+            HDF5 compression filter (default ``'gzip'``).
+        compression_opts : int, optional
+            Compression level (default ``4``).
+
+        Returns
+        -------
+        str
+            ``output_hdf5_path``
+        """
+        if (bbox is None) == (area_sids is None):
+            raise ValueError("Provide exactly one of 'bbox' or 'area_sids', not both or neither.")
+
+        datasets = [dataset] if isinstance(dataset, str) else list(dataset)
+
+        for i, ds in enumerate(datasets):
+            logger.info(f"Reconstructing HDF5 for dataset='{ds}' over bbox={bbox}")
+            hdf5_mode = 'w' if i == 0 else 'a'
+
+            starepandas.io.granules.reconstruct_hdf5_from_local_zarr(
+                db_path=self.db_path,
+                dataset=ds,
+                output_hdf5_path=output_hdf5_path,
+                area_sids=area_sids,
+                bbox=bbox,
+                local_prefix=local_prefix,
+                pixel_width=pixel_width,
+                compression=compression,
+                compression_opts=compression_opts,
+                mode=hdf5_mode,
+            )
+
+        logger.info(f"✓ Reconstructed HDF5 written to {output_hdf5_path}")
+        return output_hdf5_path
 
 
 # Convenience functions for easier usage

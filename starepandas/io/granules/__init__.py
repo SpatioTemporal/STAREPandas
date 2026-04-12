@@ -1235,3 +1235,439 @@ def reconstruct_hdf5_from_zarr(
         mode=mode,
     )
     return output_hdf5_path
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Local (filesystem + SQLite) pipeline
+# ─────────────────────────────────────────────────────────────────────────────
+
+def to_zarr_local_meta(
+    file_path, local_path, level, db_path,
+    chunk_size=250000, dataset=None, data_level=None,
+    raw_collected_time=None, metadata=None,
+    sidecar_path=None, add_sids=True, adapt_resolution=True,
+    read_timestamp=False, keep_na_sids=False, nom_res=None, scan=None,
+    **kwargs
+):
+    """
+    Convert a granule file to zarr on the **local filesystem** and record
+    metadata to a SQLite database.
+
+    This is the local-storage mirror of :func:`to_zarr_s3`.  The calling
+    interface is identical except that ``local_path`` is a filesystem directory
+    instead of an S3 URI, ``db_path`` is a SQLite ``.db`` file instead of a
+    PostgreSQL connection, and no ``storage_options`` are required.
+
+    Parameters
+    ----------
+    file_path : str
+        Path to the granule HDF5 file.
+    local_path : str
+        Root directory where zarr groups will be written.  Sub-directories are
+        created automatically.
+    level : int
+        STARE level for spatial partitioning.
+    db_path : str
+        Path to the SQLite metadata database.  Created automatically if it
+        does not exist.
+    chunk_size : int, optional
+        Zarr chunk size (default: 250 000).
+    dataset : str, optional
+        Dataset name stored in metadata (e.g. ``"GMI"``).
+    data_level : str, optional
+        Data level string (e.g. ``"L1C"``).
+    raw_collected_time : datetime, optional
+        Override timestamp for the metadata row.
+    metadata : dict, optional
+        Extra key/value pairs merged into ``MetadataJson``.
+    sidecar_path : str, optional
+        Path to pre-computed STARE sidecar file.
+    add_sids : bool, optional
+        Compute STARE SIDs if not present (default True).
+    adapt_resolution : bool, optional
+        Adapt SID resolution to nominal instrument resolution (default True).
+    read_timestamp : bool, optional
+        Read time-stamp data from granule (default False).
+    keep_na_sids : bool, optional
+        Retain rows whose SIDs are NaN (default False).
+    nom_res : str, optional
+        Nominal resolution selector for multi-resolution products.
+    scan : str, optional
+        Specific scan to process (e.g. ``"S1"``); ``None`` means all scans.
+    **kwargs
+        Forwarded to :func:`read_granule`.
+
+    Returns
+    -------
+    str or list of str
+        The local path(s) where data was written.
+    """
+    result = read_granule(
+        file_path=file_path,
+        sidecar_path=sidecar_path,
+        add_sids=add_sids,
+        adapt_resolution=adapt_resolution,
+        read_timestamp=read_timestamp,
+        keep_na_sids=keep_na_sids,
+        nom_res=nom_res,
+        **kwargs
+    )
+
+    if isinstance(result, dict):
+        # Multi-scan granule (e.g. SSMIS)
+        if scan is not None:
+            if scan not in result:
+                raise ValueError(f"Scan '{scan}' not found. Available: {list(result.keys())}")
+            df = result[scan]
+            scan_dataset = f"{dataset}_{scan}" if dataset else f"data_{scan}"
+            single_meta = (metadata or {}).copy()
+            single_meta.update({"scan": scan})
+            pw = SCAN_PIXEL_WIDTHS.get(scan_dataset)
+            if pw is not None:
+                single_meta['pixel_width'] = pw
+            return df.to_zarr_local(
+                local_path=local_path,
+                level=level,
+                chunk_size=chunk_size,
+                pixel_width=pw,
+                db_path=db_path,
+                dataset=scan_dataset,
+                data_level=data_level,
+            )
+        else:
+            local_paths = []
+            for scan_name, df in result.items():
+                scan_dataset = f"{dataset}_{scan_name}" if dataset else f"data_{scan_name}"
+                scan_meta = (metadata or {}).copy()
+                scan_meta.update({"scan": scan_name})
+                pw = SCAN_PIXEL_WIDTHS.get(scan_dataset)
+                if pw is not None:
+                    scan_meta['pixel_width'] = pw
+                path_out = df.to_zarr_local(
+                    local_path=local_path,
+                    level=level,
+                    chunk_size=chunk_size,
+                    pixel_width=pw,
+                    db_path=db_path,
+                    dataset=scan_dataset,
+                    data_level=data_level,
+                )
+                local_paths.append(path_out)
+            return local_paths
+    else:
+        # Single DataFrame
+        return result.to_zarr_local(
+            local_path=local_path,
+            level=level,
+            chunk_size=chunk_size,
+            pixel_width=None,
+            db_path=db_path,
+            dataset=dataset,
+            data_level=data_level,
+        )
+
+
+def load_local_zarr_metadata(
+    db_path,
+    dataset=None,
+    dataset_prefix=None,
+    resolution_level=None,
+    start_date=None,
+    end_date=None,
+    grouped_id=None,
+    limit=None,
+    order_by=None,
+):
+    """
+    Load metadata from the local SQLite database for zarr data on disk.
+
+    Local equivalent of :func:`load_zarr_metadata`.  Returns a
+    ``pandas.DataFrame`` with the same column structure so that downstream
+    code (e.g. :func:`reconstruct_hdf5_from_local_zarr`) can be written once
+    and work for both S3 and local backends.
+
+    Parameters
+    ----------
+    db_path : str
+        Path to the SQLite database file.
+    dataset : str, optional
+        Exact dataset name filter.
+    dataset_prefix : str, optional
+        LIKE filter — matches datasets whose names start with
+        ``"<dataset_prefix>_"``.
+    resolution_level : int, optional
+        Filter by STARE resolution level.
+    start_date : str, optional
+        ISO-8601 lower-bound for ``"RawData Collected Time"`` (inclusive).
+    end_date : str, optional
+        ISO-8601 upper-bound for ``"RawData Collected Time"`` (inclusive).
+    grouped_id : int, optional
+        Filter by exact grouped_id.
+    limit : int, optional
+        Maximum rows to return.
+    order_by : str, optional
+        Column name to order by (default: ``"RawData Collected Time"`` DESC).
+
+    Returns
+    -------
+    pandas.DataFrame
+        Metadata rows with ``MetadataJson`` expanded into individual columns
+        (``group_path``, ``num_rows``, ``columns``, ``pixel_width``, …).
+    """
+    import sqlite3
+
+    from starepandas.staredataframe import _ensure_sqlite_db_and_table
+
+    conn = _ensure_sqlite_db_and_table(db_path)
+    try:
+        query = 'SELECT * FROM "PodsMetadata"'
+        conditions = []
+        params = []
+
+        if dataset is not None:
+            conditions.append('"Dataset" = ?')
+            params.append(dataset)
+
+        if dataset_prefix is not None:
+            conditions.append('"Dataset" LIKE ?')
+            params.append(f"{dataset_prefix}_%")
+
+        if resolution_level is not None:
+            conditions.append('"Resolution level" = ?')
+            params.append(resolution_level)
+
+        if grouped_id is not None:
+            conditions.append('grouped_id = ?')
+            params.append(int(grouped_id))
+
+        if start_date is not None:
+            conditions.append('"RawData Collected Time" >= ?')
+            params.append(str(start_date))
+
+        if end_date is not None:
+            conditions.append('"RawData Collected Time" <= ?')
+            params.append(str(end_date))
+
+        if conditions:
+            query += ' WHERE ' + ' AND '.join(conditions)
+
+        if order_by is not None:
+            query += f' ORDER BY "{order_by}"'
+        else:
+            query += ' ORDER BY "RawData Collected Time" DESC'
+
+        if limit is not None:
+            query += f' LIMIT {int(limit)}'
+
+        cur = conn.execute(query, params)
+        columns = [desc[0] for desc in cur.description]
+        rows = cur.fetchall()
+    finally:
+        conn.close()
+
+    df = pd.DataFrame(rows, columns=columns)
+
+    # Expand MetadataJson into individual columns (same pattern as load_zarr_metadata)
+    if not df.empty and 'MetadataJson' in df.columns:
+        meta_list = []
+        for json_str in df['MetadataJson']:
+            if json_str:
+                try:
+                    meta_list.append(json.loads(json_str) if isinstance(json_str, str) else json_str)
+                except (json.JSONDecodeError, TypeError):
+                    meta_list.append({})
+            else:
+                meta_list.append({})
+        meta_df = pd.DataFrame(meta_list)
+        for col in meta_df.columns:
+            if col not in df.columns:
+                df[col] = meta_df[col]
+
+    return df
+
+
+def reconstruct_hdf5_from_local_zarr(
+    db_path,
+    dataset,
+    output_hdf5_path,
+    area_sids=None,
+    bbox=None,
+    local_prefix=None,
+    pixel_width=None,
+    compression='gzip',
+    compression_opts=4,
+    mode='w',
+):
+    """
+    Reconstruct an HDF5 granule from zarr chunks stored on the local filesystem.
+
+    Local equivalent of :func:`reconstruct_hdf5_from_zarr`.  Instead of
+    querying S3 + RDS it queries the SQLite database written by
+    :func:`to_zarr_local_meta` and opens zarr groups on local disk.
+
+    Parameters
+    ----------
+    db_path : str
+        Path to the SQLite metadata database.
+    dataset : str
+        Dataset / scan identifier (e.g. ``"GMI_S1"``).
+    output_hdf5_path : str
+        Destination HDF5 file path.
+    area_sids : array-like of int, optional
+        STARE SIDs covering the area of interest.
+    bbox : tuple of float, optional
+        Bounding box ``(lon_min, lat_min, lon_max, lat_max)``.  Exactly one of
+        ``area_sids`` or ``bbox`` must be given.
+    local_prefix : str, optional
+        Filter metadata to ``group_path`` entries that start with this prefix
+        (e.g. the path written for a specific granule) to avoid mixing data
+        from multiple ingestion runs.
+    pixel_width : int, optional
+        Explicit pixel_width override.
+    compression : str, optional
+        HDF5 compression filter (default ``'gzip'``).
+    compression_opts : int, optional
+        Compression level (default ``4``).
+    mode : str, optional
+        h5py file open mode.  Use ``'w'`` to create/overwrite, ``'a'`` to
+        append additional scan groups into an existing file (default ``'w'``).
+
+    Returns
+    -------
+    str
+        ``output_hdf5_path``
+    """
+    import zarr
+    import pystare
+    from starepandas import STAREDataFrame
+    from starepandas.staredataframe import MAX_PARTITION_LEVEL
+
+    if (area_sids is None) == (bbox is None):
+        raise ValueError("Provide exactly one of 'area_sids' or 'bbox', not both or neither.")
+
+    # Build query SIDs
+    if bbox is not None:
+        lon_min, lat_min, lon_max, lat_max = bbox
+        lats = [lat_min, lat_min, lat_max, lat_max]
+        lons = [lon_min, lon_max, lon_max, lon_min]
+        area_sids = pystare.cover_from_hull(lats, lons, MAX_PARTITION_LEVEL)
+
+    coerced = pystare.spatial_coerce_resolution(
+        np.array(area_sids, dtype=np.int64), MAX_PARTITION_LEVEL
+    )
+    query_group_ids = set(int(s) for s in np.unique(coerced))
+
+    # Load metadata from SQLite
+    meta_df = load_local_zarr_metadata(db_path, dataset=dataset)
+    if meta_df is None or meta_df.empty:
+        raise ValueError(
+            f"No metadata found for dataset '{dataset}' in SQLite database '{db_path}'."
+        )
+
+    meta_df['grouped_id'] = meta_df['grouped_id'].astype(np.int64)
+
+    # Filter to a specific local prefix (e.g. one granule's directory)
+    if local_prefix is not None:
+        abs_prefix = os.path.abspath(local_prefix)
+        meta_df = meta_df[meta_df['group_path'].str.startswith(abs_prefix)]
+
+    # Adaptive STARE level detection (mirrors reconstruct_hdf5_from_zarr)
+    storage_levels = set(int(gid & 0x1f) for gid in meta_df['grouped_id'].dropna())
+    if storage_levels == {MAX_PARTITION_LEVEL}:
+        effective_query_ids = query_group_ids
+    else:
+        effective_query_ids: set = set()
+        for slevel in storage_levels:
+            if bbox is not None:
+                lon_min_q, lat_min_q, lon_max_q, lat_max_q = bbox
+                lats_q = [lat_min_q, lat_min_q, lat_max_q, lat_max_q]
+                lons_q = [lon_min_q, lon_max_q, lon_max_q, lon_min_q]
+                sids_q = pystare.cover_from_hull(lats_q, lons_q, int(slevel))
+            else:
+                sids_q = area_sids
+            coerced_q = pystare.spatial_coerce_resolution(
+                np.array(sids_q, dtype=np.int64), int(slevel)
+            )
+            effective_query_ids.update(int(s) for s in np.unique(coerced_q))
+
+    matching = meta_df[meta_df['grouped_id'].isin(effective_query_ids)]
+
+    if matching.empty:
+        raise ValueError(
+            f"No zarr groups found for dataset '{dataset}' intersecting the "
+            f"requested area.  Queried {len(query_group_ids)} partition SIDs."
+        )
+
+    # Read matching groups from local disk
+    frames = []
+    zarr_pixel_width = None
+    for _, row in matching.iterrows():
+        gpath = row['group_path']
+        try:
+            zg = zarr.open_group(gpath, mode='r')
+        except Exception as e:
+            logging.warning("Skipping zarr group %s — could not open: %s", gpath, e)
+            continue
+
+        if zarr_pixel_width is None and 'pixel_width' in zg.attrs:
+            zarr_pixel_width = int(zg.attrs['pixel_width'])
+
+        col_data = {}
+        for key in zg.array_keys():
+            if key == '__row_positions__':
+                continue
+            col_data[key] = zg[key][:]
+
+        if not col_data:
+            continue
+
+        row_positions = zg['__row_positions__'][:] if '__row_positions__' in zg else None
+        df_chunk = pd.DataFrame(col_data)
+        if row_positions is not None:
+            df_chunk['__row_positions__'] = row_positions
+        frames.append(df_chunk)
+
+    if not frames:
+        raise ValueError(f"All matched zarr groups were empty for dataset '{dataset}'.")
+
+    combined = pd.concat(frames, ignore_index=True)
+    if '__row_positions__' in combined.columns:
+        combined = combined.sort_values('__row_positions__').drop(
+            columns=['__row_positions__']
+        ).reset_index(drop=True)
+
+    sdf = STAREDataFrame(combined)
+
+    # Resolve pixel_width
+    if pixel_width is not None:
+        resolved_pw = pixel_width
+    elif zarr_pixel_width is not None:
+        resolved_pw = zarr_pixel_width
+    else:
+        resolved_pw = SCAN_PIXEL_WIDTHS.get(dataset)
+
+    if resolved_pw is None:
+        raise ValueError(
+            f"Cannot determine pixel_width for dataset '{dataset}'. "
+            "Pass pixel_width explicitly or ensure it was stored in zarr group attrs."
+        )
+
+    # Derive HDF5 scan group name from dataset string
+    m = re.search(r'_(S\d+)$', dataset)
+    scan = m.group(1) if m else None
+    if scan is None:
+        raise ValueError(
+            f"Cannot derive scan group name from dataset '{dataset}'. "
+            "Expected a suffix like '_S1'.  Use 'INSTRUMENT_Sn' format."
+        )
+
+    os.makedirs(os.path.dirname(os.path.abspath(output_hdf5_path)), exist_ok=True)
+    sdf.to_hdf5(
+        output_hdf5_path,
+        scan=scan,
+        pixel_width=resolved_pw,
+        compression=compression,
+        compression_opts=compression_opts,
+        mode=mode,
+    )
+    return output_hdf5_path

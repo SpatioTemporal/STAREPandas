@@ -270,6 +270,47 @@ def _ensure_rds_db_and_table(target_dbname='StarePodsMetadata'):
         conn.commit()
     return conn
 
+def _ensure_sqlite_db_and_table(db_path: str):
+    """
+    Open (creating if needed) a SQLite DB with the PodsMetadata table.
+
+    This is the local-storage equivalent of ``_ensure_rds_db_and_table``.
+    Uses the stdlib ``sqlite3`` module — no extra dependencies required.
+
+    Parameters
+    ----------
+    db_path : str
+        Path to the SQLite database file.  Parent directories are created
+        automatically.
+
+    Returns
+    -------
+    sqlite3.Connection
+        Open connection with WAL journal mode enabled.  Caller is responsible
+        for closing it.
+    """
+    import sqlite3
+    os.makedirs(os.path.dirname(os.path.abspath(db_path)), exist_ok=True)
+    conn = sqlite3.connect(db_path)
+    # WAL mode: allows concurrent readers while a writer is active
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS "PodsMetadata" (
+            "Dataset"               TEXT,
+            "DataLevel"             TEXT,
+            "RawData Collected Time" TEXT,
+            grouped_id              INTEGER,
+            "LocalPath"             TEXT,
+            "Resolution level"      INTEGER,
+            "MetadataJson"          TEXT
+        )
+    """)
+    conn.execute('CREATE INDEX IF NOT EXISTS idx_pods_dataset ON "PodsMetadata" ("Dataset")')
+    conn.execute('CREATE INDEX IF NOT EXISTS idx_pods_grouped ON "PodsMetadata" (grouped_id)')
+    conn.commit()
+    return conn
+
+
 def _parse_s3_bucket(s3_path: str) -> str:
     if not s3_path.startswith('s3://'):
         return ''
@@ -1828,11 +1869,16 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         print(f"✓ Finished writing {num_groups} groups to {s3_path}")
         return s3_path
     
-    def to_zarr_local(self, local_path, level, chunk_size=250000, pixel_width=None):
+    def to_zarr_local(self, local_path, level, chunk_size=250000, pixel_width=None,
+                      db_path=None, dataset=None, data_level=None):
         """
         Partition STAREDataFrame by SIDs at specified level and write to local storage in grouped layout.
 
         Layout: local_path/<grouped_id>/[one array per column + __row_positions__]
+
+        When ``db_path`` is provided the function also records one metadata row
+        per zarr group into a SQLite ``PodsMetadata`` table (same schema as the
+        S3/RDS version but using ``LocalPath`` instead of ``S3 bucket``).
 
         Parameters
         ----------
@@ -1845,6 +1891,13 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         pixel_width : int, optional
             Number of across-track pixels per scanline. Stored in zarr group attrs
             so that ``reconstruct_hdf5_from_zarr`` can rebuild the 2D HDF5 structure.
+        db_path : str, optional
+            Path to the SQLite database file.  When provided, metadata rows are
+            inserted after all zarr groups are written.
+        dataset : str, optional
+            Dataset name recorded in the SQLite metadata (e.g. ``"GMI_S1"``).
+        data_level : str, optional
+            Data level string recorded in the SQLite metadata (e.g. ``"L1C"``).
 
         Returns
         -------
@@ -1854,19 +1907,41 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         # Ensure root directory exists
         os.makedirs(local_path, exist_ok=True)
 
-        # Group by SIDs at the specified level, preserving encounter order
-        coerced = self.to_sids_level(level=level, clear_to_level=True)
-        grouped = self.groupby(coerced[self._sid_column_name], sort=False)
+        # Cap partition level to avoid extreme fragmentation (mirrors to_zarr_s3 behaviour)
+        partition_level = min(level, MAX_PARTITION_LEVEL)
+        if partition_level < level:
+            logging.debug(
+                "to_zarr_local: partition level capped from %d to %d; "
+                "SID data retains full resolution %d.",
+                level, partition_level, level,
+            )
+
+        # Group by SIDs at the partition level, preserving encounter order
+        sids_array = self[self._sid_column_name].to_numpy().astype(np.int64, copy=False)
+        coerced_sids = pystare.spatial_coerce_resolution(sids_array, partition_level)
+        coerced_sids = pystare.spatial_clear_to_resolution(coerced_sids)
+        grouped = self.groupby(coerced_sids, sort=False)
 
         # Record original row order
         original_positions = pandas.Series(np.arange(len(self), dtype=np.int64), index=self.index)
 
-        # Write each group to its own zarr group under local_path/<group_id>
+        metadata_rows = []
+        ts_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+        # Write each group to its own zarr group.
+        # When a dataset name is given, include it as an intermediate directory so
+        # that two scans (e.g. GMI_S1, GMI_S2) written to the same local_path root
+        # never collide on the same group_id.
+        #   With dataset  : local_path/<dataset>/<group_id>/
+        #   Without dataset: local_path/<group_id>/          (backwards-compat)
         for group_id, gdf in grouped:
             if isinstance(group_id, (int, np.integer)) and group_id < 0:
                 continue
 
-            group_dir = os.path.join(local_path, str(group_id))
+            if dataset is not None:
+                group_dir = os.path.join(local_path, dataset, str(group_id))
+            else:
+                group_dir = os.path.join(local_path, str(group_id))
             zg = zarr.open_group(group_dir, mode="w")
 
             # Store pixel_width in group attrs for downstream HDF5 reconstruction
@@ -1881,6 +1956,40 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
             row_pos = original_positions.loc[gdf.index].to_numpy(dtype=np.int64)
             zg.empty(name="__row_positions__", shape=(len(row_pos),), dtype=row_pos.dtype, chunks=(min(chunk_size, max(1, len(row_pos))),))[:] = row_pos
+
+            # Collect metadata row for SQLite insertion
+            if db_path is not None:
+                meta_blob = json.dumps({
+                    "grouped_id_full": int(group_id),
+                    "group_path": os.path.abspath(group_dir),
+                    "num_rows": len(gdf),
+                    "columns": list(self.columns),
+                    "pixel_width": int(pixel_width) if pixel_width is not None else None,
+                })
+                metadata_rows.append((
+                    dataset,
+                    data_level,
+                    ts_iso,
+                    int(group_id),
+                    os.path.abspath(local_path),
+                    partition_level,
+                    meta_blob,
+                ))
+
+        # Batch-insert metadata into SQLite
+        if db_path is not None and metadata_rows:
+            conn = _ensure_sqlite_db_and_table(db_path)
+            try:
+                conn.executemany(
+                    'INSERT INTO "PodsMetadata" '
+                    '("Dataset", "DataLevel", "RawData Collected Time", grouped_id, '
+                    '"LocalPath", "Resolution level", "MetadataJson") '
+                    'VALUES (?, ?, ?, ?, ?, ?, ?)',
+                    metadata_rows,
+                )
+                conn.commit()
+            finally:
+                conn.close()
 
         return local_path
 
