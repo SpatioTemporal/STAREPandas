@@ -31,8 +31,9 @@ GRANULE_FILE = (
     "1C.GPM.GMI.XCAL2016-C.20250101-S034347-E051659.061567.V07B.HDF5"
 )
 
-# SW Australia / Perth — densest coverage for this particular granule
-BBOX = (115, -30, 120, -25)   # (lon_min, lat_min, lon_max, lat_max)
+# Bounding box filter — set to None to reconstruct the full granule,
+# or e.g. (115, -30, 120, -25) to restrict to SW Australia / Perth.
+BBOX = None   # (lon_min, lat_min, lon_max, lat_max) or None
 
 DATASETS = ["GMI_S1", "GMI_S2"]
 
@@ -76,8 +77,12 @@ def main():
     print("=" * 60)
     print("Step 2: Find intersecting data via STARE SIDs")
     print("=" * 60)
-    location_sids = demo.get_sids_for_bbox(*BBOX, level=10)
-    print(f"Generated {len(location_sids)} SIDs for bbox {BBOX}")
+    if BBOX is not None:
+        location_sids = demo.get_sids_for_bbox(*BBOX, level=10)
+        print(f"Generated {len(location_sids)} SIDs for bbox {BBOX}")
+    else:
+        location_sids = None
+        print("No bbox filter — all groups will be loaded (full granule reconstruction)")
 
     intersecting = demo.find_intersecting_data(location_sids, instruments=['GMI'])
     print(f"Found {len(intersecting)} intersecting metadata row(s).")

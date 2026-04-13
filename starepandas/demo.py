@@ -744,6 +744,27 @@ class LocalStarePodsDemo:
         pandas.DataFrame
             Matching metadata rows.
         """
+        # No spatial filter — return all groups for the requested instruments
+        if location_sids is None:
+            all_meta = []
+            for instrument in instruments:
+                try:
+                    meta = starepandas.io.granules.load_local_zarr_metadata(
+                        self.db_path, dataset=instrument, **kwargs
+                    )
+                    if meta is None or meta.empty:
+                        meta = starepandas.io.granules.load_local_zarr_metadata(
+                            self.db_path, dataset_prefix=instrument, **kwargs
+                        )
+                    if meta is not None and not meta.empty:
+                        logger.info(f"Loaded all {len(meta)} groups for {instrument}")
+                        all_meta.append(meta)
+                    else:
+                        logger.warning(f"No metadata found for {instrument}")
+                except Exception as e:
+                    logger.error(f"Error loading {instrument} metadata: {e}")
+            return pd.concat(all_meta, ignore_index=True) if all_meta else pd.DataFrame()
+
         from starepandas.staredataframe import MAX_PARTITION_LEVEL
 
         sids_array = np.array(location_sids, dtype=np.int64)
@@ -905,8 +926,8 @@ class LocalStarePodsDemo:
         str
             ``output_hdf5_path``
         """
-        if (bbox is None) == (area_sids is None):
-            raise ValueError("Provide exactly one of 'bbox' or 'area_sids', not both or neither.")
+        if bbox is not None and area_sids is not None:
+            raise ValueError("Provide at most one of 'bbox' or 'area_sids', not both.")
 
         datasets = [dataset] if isinstance(dataset, str) else list(dataset)
 

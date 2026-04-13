@@ -1542,20 +1542,24 @@ def reconstruct_hdf5_from_local_zarr(
     from starepandas import STAREDataFrame
     from starepandas.staredataframe import MAX_PARTITION_LEVEL
 
-    if (area_sids is None) == (bbox is None):
-        raise ValueError("Provide exactly one of 'area_sids' or 'bbox', not both or neither.")
+    if area_sids is not None and bbox is not None:
+        raise ValueError("Provide at most one of 'area_sids' or 'bbox', not both.")
+    # When both are None → no spatial filter; all groups (filtered by local_prefix) are used.
 
-    # Build query SIDs
-    if bbox is not None:
-        lon_min, lat_min, lon_max, lat_max = bbox
-        lats = [lat_min, lat_min, lat_max, lat_max]
-        lons = [lon_min, lon_max, lon_max, lon_min]
-        area_sids = pystare.cover_from_hull(lats, lons, MAX_PARTITION_LEVEL)
+    no_spatial_filter = area_sids is None and bbox is None
 
-    coerced = pystare.spatial_coerce_resolution(
-        np.array(area_sids, dtype=np.int64), MAX_PARTITION_LEVEL
-    )
-    query_group_ids = set(int(s) for s in np.unique(coerced))
+    # Build query SIDs when a spatial filter is requested
+    if not no_spatial_filter:
+        if bbox is not None:
+            lon_min, lat_min, lon_max, lat_max = bbox
+            lats = [lat_min, lat_min, lat_max, lat_max]
+            lons = [lon_min, lon_max, lon_max, lon_min]
+            area_sids = pystare.cover_from_hull(lats, lons, MAX_PARTITION_LEVEL)
+
+        coerced = pystare.spatial_coerce_resolution(
+            np.array(area_sids, dtype=np.int64), MAX_PARTITION_LEVEL
+        )
+        query_group_ids = set(int(s) for s in np.unique(coerced))
 
     # Load metadata from SQLite
     meta_df = load_local_zarr_metadata(db_path, dataset=dataset)
@@ -1571,31 +1575,35 @@ def reconstruct_hdf5_from_local_zarr(
         abs_prefix = os.path.abspath(local_prefix)
         meta_df = meta_df[meta_df['group_path'].str.startswith(abs_prefix)]
 
-    # Adaptive STARE level detection (mirrors reconstruct_hdf5_from_zarr)
-    storage_levels = set(int(gid & 0x1f) for gid in meta_df['grouped_id'].dropna())
-    if storage_levels == {MAX_PARTITION_LEVEL}:
-        effective_query_ids = query_group_ids
+    if no_spatial_filter:
+        # No spatial filter — use all groups from local_prefix
+        matching = meta_df
     else:
-        effective_query_ids: set = set()
-        for slevel in storage_levels:
-            if bbox is not None:
-                lon_min_q, lat_min_q, lon_max_q, lat_max_q = bbox
-                lats_q = [lat_min_q, lat_min_q, lat_max_q, lat_max_q]
-                lons_q = [lon_min_q, lon_max_q, lon_max_q, lon_min_q]
-                sids_q = pystare.cover_from_hull(lats_q, lons_q, int(slevel))
-            else:
-                sids_q = area_sids
-            coerced_q = pystare.spatial_coerce_resolution(
-                np.array(sids_q, dtype=np.int64), int(slevel)
-            )
-            effective_query_ids.update(int(s) for s in np.unique(coerced_q))
+        # Adaptive STARE level detection (mirrors reconstruct_hdf5_from_zarr)
+        storage_levels = set(int(gid & 0x1f) for gid in meta_df['grouped_id'].dropna())
+        if storage_levels == {MAX_PARTITION_LEVEL}:
+            effective_query_ids = query_group_ids
+        else:
+            effective_query_ids: set = set()
+            for slevel in storage_levels:
+                if bbox is not None:
+                    lon_min_q, lat_min_q, lon_max_q, lat_max_q = bbox
+                    lats_q = [lat_min_q, lat_min_q, lat_max_q, lat_max_q]
+                    lons_q = [lon_min_q, lon_max_q, lon_max_q, lon_min_q]
+                    sids_q = pystare.cover_from_hull(lats_q, lons_q, int(slevel))
+                else:
+                    sids_q = area_sids
+                coerced_q = pystare.spatial_coerce_resolution(
+                    np.array(sids_q, dtype=np.int64), int(slevel)
+                )
+                effective_query_ids.update(int(s) for s in np.unique(coerced_q))
 
-    matching = meta_df[meta_df['grouped_id'].isin(effective_query_ids)]
+        matching = meta_df[meta_df['grouped_id'].isin(effective_query_ids)]
 
     if matching.empty:
         raise ValueError(
-            f"No zarr groups found for dataset '{dataset}' intersecting the "
-            f"requested area.  Queried {len(query_group_ids)} partition SIDs."
+            f"No zarr groups found for dataset '{dataset}'"
+            + (" intersecting the requested area." if not no_spatial_filter else " in the database.")
         )
 
     # Read matching groups from local disk
