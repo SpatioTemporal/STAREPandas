@@ -38,6 +38,12 @@ BBOX = None   # (lon_min, lat_min, lon_max, lat_max) or None
 DATASETS = ["GMI_S1", "GMI_S2"]
 
 OUTPUT_HDF5 = "/tmp/gmi_local_reconstructed.h5"
+
+# Set to True to wipe LOCAL_ROOT before each run.
+# IMPORTANT: re-running without cleaning causes duplicate SQLite entries,
+# which inflates the reconstructed HDF5 (e.g. 3× the expected scan count).
+# Keep True unless you intentionally want to append more granules.
+CLEAN_BEFORE_RUN = True
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -62,6 +68,13 @@ def main():
     print(f"BBox      : {BBOX}  (lon_min, lat_min, lon_max, lat_max)")
     print(f"Local root: {LOCAL_ROOT}")
     print()
+
+    # ── Clean up previous run ─────────────────────────────────────────────────
+    if CLEAN_BEFORE_RUN and os.path.exists(LOCAL_ROOT):
+        import shutil
+        print(f"Cleaning up {LOCAL_ROOT} (CLEAN_BEFORE_RUN=True) ...")
+        shutil.rmtree(LOCAL_ROOT)
+        print()
 
     demo = LocalStarePodsDemo(local_root=LOCAL_ROOT)
 
