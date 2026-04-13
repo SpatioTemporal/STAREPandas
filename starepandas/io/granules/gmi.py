@@ -189,11 +189,12 @@ class GMI(Granule):
         for d in zip(year, month, day, hour, minute, second, millisecond):
             if d[5] == 60:
                 # Someone made the decision to have minutes begin at 00:001 and end at 60:00 so we need to catch this.
-                ts = datetime.datetime(d[0], d[1], d[2], d[3], d[4], 0, d[6])
+                ts = datetime.datetime(d[0], d[1], d[2], d[3], d[4], 0, int(d[6]) * 1000)
                 ts += datetime.timedelta(minutes=1)
                 timestamps.append(ts)
             else:
-                timestamps.append(datetime.datetime(*d))
+                # d[6] is MilliSecond (0-999 ms); cast to int before ×1000 to avoid int16 overflow
+                timestamps.append(datetime.datetime(d[0], d[1], d[2], d[3], d[4], d[5], int(d[6]) * 1000))
         return numpy.array(timestamps)
 
     def read_timestamps(self):

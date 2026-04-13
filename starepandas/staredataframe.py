@@ -2133,11 +2133,12 @@ class STAREDataFrame(geopandas.GeoDataFrame):
                 # Derived fields present in the original GMI format
                 day_of_year = pandas.array(ts_per_scan.day_of_year, dtype='Int32').fillna(0).to_numpy(dtype=np.int16)
                 st.create_dataset('DayOfYear', data=day_of_year)
-                # SecondOfDay is float64 in the original granule
+                # SecondOfDay is float64 in the original granule, including sub-second precision
                 seconds_of_day = (
                     ts_per_scan.hour.astype(np.float64) * 3600.0
                     + ts_per_scan.minute.astype(np.float64) * 60.0
                     + ts_per_scan.second.astype(np.float64)
+                    + ts_per_scan.microsecond.astype(np.float64) / 1e6
                 )
                 st.create_dataset('SecondOfDay',
                                   data=np.where(np.isnan(seconds_of_day.astype(float)), 0.0, seconds_of_day).astype(np.float64))
