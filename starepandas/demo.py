@@ -257,10 +257,11 @@ class StarePodsDemo:
                 logger.warning(f"No data found for {instrument}")
                 continue
             
-            logger.info(f"Processing {len(instrument_data)} chunks for {instrument}")
-            
+            total_chunks = len(instrument_data)
+            logger.info(f"Processing {total_chunks} chunks for {instrument}")
+
             dfs_by_chunk = []
-            for _, chunk_meta in instrument_data.iterrows():
+            for chunk_i, (_, chunk_meta) in enumerate(instrument_data.iterrows()):
                 try:
                     # Extract S3 path and chunk information
                     s3_bucket = chunk_meta['S3 bucket']
@@ -273,8 +274,8 @@ class StarePodsDemo:
                     # Construct full S3 path
                     s3_path = f"s3://{s3_bucket}/{group_path}"
                     
-                    logger.info(f"Downloading chunk {grouped_id} from {s3_path}")
-                    
+                    logger.debug(f"Downloading chunk {grouped_id} from {s3_path}")
+
                     # Use existing function to download specific groups
                     if grouped_id:
                         df = starepandas.io.granules.from_zarr_s3_chunked_groups(
@@ -284,10 +285,12 @@ class StarePodsDemo:
                     else:
                         # Fallback to full chunked reading
                         df = starepandas.io.granules.from_zarr_s3_chunked(s3_path)
-                    
+
                     if not df.empty:
                         dfs_by_chunk.append(df)
-                        logger.info(f"✓ Downloaded {len(df)} rows for chunk {grouped_id}")
+                        logger.debug(f"✓ Downloaded {len(df)} rows for chunk {grouped_id}")
+                        if (chunk_i + 1) % 500 == 0:
+                            logger.info(f"  {instrument}: downloaded {chunk_i + 1}/{total_chunks} chunks ...")
                     else:
                         logger.warning(f"Empty result for chunk {grouped_id}")
                         
@@ -855,7 +858,8 @@ class LocalStarePodsDemo:
                 continue
 
             frames = []
-            for _, chunk in rows.iterrows():
+            total = len(rows)
+            for i, (_, chunk) in enumerate(rows.iterrows()):
                 gpath = chunk.get('group_path', '')
                 if not gpath or not os.path.isdir(gpath):
                     continue
@@ -868,7 +872,9 @@ class LocalStarePodsDemo:
                     if '__row_positions__' in zg:
                         df_chunk['__row_positions__'] = zg['__row_positions__'][:]
                     frames.append(df_chunk)
-                    logger.info(f"✓ Loaded {len(df_chunk)} rows from {gpath}")
+                    logger.debug(f"✓ Loaded {len(df_chunk)} rows from {gpath}")
+                    if (i + 1) % 500 == 0:
+                        logger.info(f"  {instrument}: loaded {i + 1}/{total} groups ...")
                 except Exception as e:
                     logger.error(f"Error loading {gpath}: {e}")
 
