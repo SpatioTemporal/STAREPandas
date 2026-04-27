@@ -2,7 +2,7 @@
 """
 Demo: Local STARE-PODS pipeline — no AWS or RDS required.
 
-This script mirrors demo_reconstruct_hdf5_from_s3.py but uses the local
+This script mirrors demo_reconstitute_hdf5_from_s3.py but uses the local
 filesystem for zarr storage and SQLite for metadata.  No cloud credentials
 are needed.
 
@@ -11,8 +11,8 @@ Workflow
 1. Ingest a GMI granule → zarr groups on local disk + SQLite metadata
 2. Find intersecting data for a bounding box via STARE SIDs + SQLite
 3. Load intersecting zarr chunks from disk
-4. Reconstruct an HDF5 file (both S1 and S2 scans)
-5. Compare the reconstructed structure with the original granule
+4. Reconstitute an HDF5 file (both S1 and S2 scans)
+5. Compare the reconstituted structure with the original granule
 
 Usage
 -----
@@ -27,21 +27,21 @@ from starepandas.demo import LocalStarePodsDemo
 LOCAL_ROOT = "/tmp/stare_pods_local"   # zarr store + SQLite DB live here
 
 GRANULE_FILE = (
-    "/Users/tonhai/workspace/Bayesics/L1C_Data_Samples/GPM/2025/Jan_1_2/"
+    "/Users/thatdaihaiton/Workspace/STARE/L1C_Data_Samples/GPM/2025/Jan_1_2/"
     "1C.GPM.GMI.XCAL2016-C.20250101-S034347-E051659.061567.V07B.HDF5"
 )
 
-# Bounding box filter — set to None to reconstruct the full granule,
+# Bounding box filter — set to None to reconstitute the full granule,
 # or e.g. (115, -30, 120, -25) to restrict to SW Australia / Perth.
 BBOX = None   # (lon_min, lat_min, lon_max, lat_max) or None
 
 DATASETS = ["GMI_S1", "GMI_S2"]
 
-OUTPUT_HDF5 = "/tmp/gmi_local_reconstructed.h5"
+OUTPUT_HDF5 = "/tmp/gmi_local_reconstituted.h5"
 
 # Set to True to wipe LOCAL_ROOT before each run.
 # IMPORTANT: re-running without cleaning causes duplicate SQLite entries,
-# which inflates the reconstructed HDF5 (e.g. 3× the expected scan count).
+# which inflates the reconstituted HDF5 (e.g. 3× the expected scan count).
 # Keep True unless you intentionally want to append more granules.
 CLEAN_BEFORE_RUN = True
 # ─────────────────────────────────────────────────────────────────────────────
@@ -95,7 +95,7 @@ def main():
         print(f"Generated {len(location_sids)} SIDs for bbox {BBOX}")
     else:
         location_sids = None
-        print("No bbox filter — all groups will be loaded (full granule reconstruction)")
+        print("No bbox filter — all groups will be loaded (full granule reconstitution)")
 
     intersecting = demo.find_intersecting_data(location_sids, instruments=['GMI'])
     print(f"Found {len(intersecting)} intersecting metadata row(s).")
@@ -116,15 +116,15 @@ def main():
         data_dict = {}
     print()
 
-    # ── Step 4: Reconstruct HDF5 ──────────────────────────────────────────────
+    # ── Step 4: Reconstitute HDF5 ─────────────────────────────────────────────
     print("=" * 60)
-    print("Step 4: Reconstruct HDF5 (S1 + S2)")
+    print("Step 4: Reconstitute HDF5 (S1 + S2)")
     print("=" * 60)
 
     granule_basename = os.path.splitext(os.path.basename(GRANULE_FILE))[0]
     granule_local_prefix = os.path.join(LOCAL_ROOT, granule_basename)
 
-    recon_path = demo.reconstruct_hdf5(
+    recon_path = demo.reconstitute_hdf5(
         dataset=DATASETS,
         output_hdf5_path=OUTPUT_HDF5,
         bbox=BBOX,
@@ -137,7 +137,7 @@ def main():
     print("=" * 60)
     print("Step 5: Structure comparison")
     print("=" * 60)
-    dump_structure(recon_path, f"RECONSTRUCTED  ({os.path.basename(recon_path)})")
+    dump_structure(recon_path, f"RECONSTITUTED  ({os.path.basename(recon_path)})")
     dump_structure(GRANULE_FILE, f"ORIGINAL       ({os.path.basename(GRANULE_FILE)})")
 
     # ── Step 6: SQLite verification ───────────────────────────────────────────

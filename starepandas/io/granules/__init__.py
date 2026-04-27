@@ -1001,7 +1001,7 @@ def parse_zarr_path(zarr_path):
     return sdf.parse_zarr_path(zarr_path)
 
 
-def reconstruct_hdf5_from_zarr(
+def reconstitute_hdf5_from_zarr(
     zarr_path, dataset, output_hdf5_path,
     area_sids=None, bbox=None,
     s3_prefix=None,
@@ -1010,7 +1010,7 @@ def reconstruct_hdf5_from_zarr(
     mode='w',
 ):
     """
-    Reconstruct an HDF5 granule from zarr chunks stored on S3 or local disk.
+    Reconstitute an HDF5 granule from zarr chunks stored on S3 or local disk.
 
     Reads only the zarr groups whose STARE partition SIDs intersect the
     requested area, concatenates them into a STAREDataFrame, then calls
@@ -1383,7 +1383,7 @@ def load_local_zarr_metadata(
 
     Local equivalent of :func:`load_zarr_metadata`.  Returns a
     ``pandas.DataFrame`` with the same column structure so that downstream
-    code (e.g. :func:`reconstruct_hdf5_from_local_zarr`) can be written once
+    code (e.g. :func:`reconstitute_hdf5_from_local_zarr`) can be written once
     and work for both S3 and local backends.
 
     Parameters
@@ -1486,7 +1486,7 @@ def load_local_zarr_metadata(
     return df
 
 
-def reconstruct_hdf5_from_local_zarr(
+def reconstitute_hdf5_from_local_zarr(
     db_path,
     dataset,
     output_hdf5_path,
@@ -1499,9 +1499,9 @@ def reconstruct_hdf5_from_local_zarr(
     mode='w',
 ):
     """
-    Reconstruct an HDF5 granule from zarr chunks stored on the local filesystem.
+    Reconstitute an HDF5 granule from zarr chunks stored on the local filesystem.
 
-    Local equivalent of :func:`reconstruct_hdf5_from_zarr`.  Instead of
+    Local equivalent of :func:`reconstitute_hdf5_from_zarr`.  Instead of
     querying S3 + RDS it queries the SQLite database written by
     :func:`to_zarr_local_meta` and opens zarr groups on local disk.
 
@@ -1579,7 +1579,7 @@ def reconstruct_hdf5_from_local_zarr(
         # No spatial filter — use all groups from local_prefix
         matching = meta_df
     else:
-        # Adaptive STARE level detection (mirrors reconstruct_hdf5_from_zarr)
+        # Adaptive STARE level detection (mirrors reconstitute_hdf5_from_zarr)
         storage_levels = set(int(gid & 0x1f) for gid in meta_df['grouped_id'].dropna())
         if storage_levels == {MAX_PARTITION_LEVEL}:
             effective_query_ids = query_group_ids

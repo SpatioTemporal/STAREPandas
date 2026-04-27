@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-Demo: Reconstruct HDF5 from S3 zarr chunks.
+Demo: Reconstitute HDF5 from S3 zarr chunks.
 
 Reads zarr groups for a specific GMI granule from S3, filters to a geographic
 bbox, and writes a valid HDF5 file whose structure matches the original granule.
 
 Usage
 -----
-    conda run -n starepandas_3.12_v3 python starepandas/demo_reconstruct_hdf5_from_s3.py
+    conda run -n starepandas_3.12_v3 python starepandas/demo_reconstitute_hdf5_from_s3.py
 
 Requirements
 ------------
@@ -31,7 +31,7 @@ GRANULE_FILE = (
 # S3 root where zarr data lives
 S3_PREFIX = "s3://zarrpods/gmi-demo"
 
-# Dataset / scan(s) to reconstruct — list writes all into the same HDF5 file
+# Dataset / scan(s) to reconstitute — list writes all into the same HDF5 file
 DATASET = ["GMI_S1", "GMI_S2"]
 
 # Bounding box (lon_min, lat_min, lon_max, lat_max) within the granule's coverage.
@@ -39,7 +39,7 @@ DATASET = ["GMI_S1", "GMI_S2"]
 BBOX = (115, -30, 120, -25)   # SW Australia / Perth area
 
 # Output HDF5 path
-OUTPUT_HDF5 = "/tmp/gmi_s1_reconstructed.h5"
+OUTPUT_HDF5 = "/tmp/gmi_s1_reconstituted.h5"
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -57,7 +57,7 @@ def dump_structure(path, label):
 
 def main():
     print("=" * 60)
-    print("HDF5 Reconstruction from S3 zarr Demo")
+    print("HDF5 Reconstitution from S3 zarr Demo")
     print("=" * 60)
     print(f"Granule : {os.path.basename(GRANULE_FILE)}")
     print(f"Datasets: {DATASET}")
@@ -65,7 +65,7 @@ def main():
     print(f"S3 root : {S3_PREFIX}")
     print()
 
-    # Derive the granule-specific S3 prefix so the reconstruction reads only
+    # Derive the granule-specific S3 prefix so the reconstitution reads only
     # zarr groups belonging to this granule (not older ingestions in S3).
     granule_basename = os.path.splitext(os.path.basename(GRANULE_FILE))[0]
     granule_s3_prefix = f"{S3_PREFIX}/{granule_basename}"
@@ -75,10 +75,10 @@ def main():
     # Initialise demo with explicit config path
     demo = StarePodsDemo(aws_config_path=CONFIG_PATH)
 
-    # ── Reconstruct ───────────────────────────────────────────────────────────
+    # ── Reconstitute ──────────────────────────────────────────────────────────
     datasets_str = ", ".join(DATASET) if isinstance(DATASET, list) else DATASET
-    print(f"Reconstructing {datasets_str} over bbox {BBOX} ...")
-    recon_path = demo.reconstruct_hdf5(
+    print(f"Reconstituting {datasets_str} over bbox {BBOX} ...")
+    recon_path = demo.reconstitute_hdf5(
         dataset=DATASET,
         output_hdf5_path=OUTPUT_HDF5,
         bbox=BBOX,
@@ -91,7 +91,7 @@ def main():
     print("=" * 60)
     print("Structure comparison")
     print("=" * 60)
-    dump_structure(recon_path, f"RECONSTRUCTED  ({os.path.basename(recon_path)})")
+    dump_structure(recon_path, f"RECONSTITUTED  ({os.path.basename(recon_path)})")
     dump_structure(GRANULE_FILE, f"ORIGINAL       ({os.path.basename(GRANULE_FILE)})")
     print()
     print("Done.")

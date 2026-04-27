@@ -1788,7 +1788,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             # zarr.open_group with mode="w" handles directory creation via S3's implicit model
             zg = zarr.open_group(group_path, mode="w", storage_options=merged_opts)
 
-            # Store pixel_width in group attrs for downstream HDF5 reconstruction
+            # Store pixel_width in group attrs for downstream HDF5 reconstitution
             if 'pixel_width' in base_meta:
                 zg.attrs['pixel_width'] = int(base_meta['pixel_width'])
 
@@ -1890,7 +1890,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             Size of chunks for zarr arrays (default: 250000)
         pixel_width : int, optional
             Number of across-track pixels per scanline. Stored in zarr group attrs
-            so that ``reconstruct_hdf5_from_zarr`` can rebuild the 2D HDF5 structure.
+            so that ``reconstitute_hdf5_from_zarr`` can rebuild the 2D HDF5 structure.
         db_path : str, optional
             Path to the SQLite database file.  When provided, metadata rows are
             inserted after all zarr groups are written.
@@ -1941,7 +1941,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             os.makedirs(group_dir, exist_ok=True)
             zg = zarr.open_group(group_dir, mode="w")
 
-            # Store pixel_width in group attrs for downstream HDF5 reconstruction
+            # Store pixel_width in group attrs for downstream HDF5 reconstitution
             if pixel_width is not None:
                 zg.attrs['pixel_width'] = int(pixel_width)
 
@@ -1995,7 +1995,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         """
         Write STAREDataFrame to HDF5 in the original satellite granule format.
 
-        Reconstructs the 2D/3D structure expected by downstream HDF5-consuming
+        Reconstitutes the 2D/3D structure expected by downstream HDF5-consuming
         tools.  The output layout mirrors the original granule exactly::
 
             file_path
@@ -2045,7 +2045,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
         if pixel_width is None:
             raise ValueError(
-                "pixel_width is required to reconstruct the 2D HDF5 structure. "
+                "pixel_width is required to reconstitute the 2D HDF5 structure. "
                 "Pass the number of across-track pixels per scanline."
             )
         if scan is None:
@@ -2218,9 +2218,9 @@ class STAREDataFrame(geopandas.GeoDataFrame):
                     pass  # skip columns that can't be reshaped (e.g. object dtype)
 
             # Group-level provenance attributes
-            sg.attrs['StarePodsReconstruction'] = True
+            sg.attrs['StarePodsReconstitution'] = True
             sg.attrs['PixelWidth'] = int(pixel_width)
-            sg.attrs['ReconstructionDate'] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            sg.attrs['ReconstitutionDate'] = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
         return file_path
 

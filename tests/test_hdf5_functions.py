@@ -1,8 +1,8 @@
 """
-Tests for STAREDataFrame.to_hdf5() and reconstruct_hdf5_from_zarr().
+Tests for STAREDataFrame.to_hdf5() and reconstitute_hdf5_from_zarr().
 
-These tests exercise the zarr → HDF5 reconstruction pipeline introduced in
-plan.md ("Reconstruct HDF5 from Zarr").
+These tests exercise the zarr → HDF5 reconstitution pipeline introduced in
+plan.md ("Reconstitute HDF5 from Zarr").
 
 Test inventory
 --------------
@@ -12,9 +12,9 @@ TestToHdf5ScanTime           — 7 int16 1D fields; values correct
 TestToHdf5EdgeCases          — missing params, truncation, no Tc, no timestamp
 TestToHdf5OutputDirectory    — auto-creates parent directory
 TestToZarrLocalPixelWidth    — pixel_width stored/absent in zarr group attrs
-TestReconstructFromZarr      — full integration round-trips (area_sids & bbox),
+TestReconstituteFromZarr     — full integration round-trips (area_sids & bbox),
                                pixel_width resolution chain, error cases
-TestReconstructScanNameExtraction — dataset → scan group name for each instrument
+TestReconstituteScanNameExtraction — dataset → scan group name for each instrument
 TestScanPixelWidths          — SCAN_PIXEL_WIDTHS constant values
 """
 import os
@@ -27,7 +27,7 @@ import pandas as pd
 import pytest
 
 import starepandas
-from starepandas import STAREDataFrame, reconstruct_hdf5_from_zarr
+from starepandas import STAREDataFrame, reconstitute_hdf5_from_zarr
 from starepandas.io.granules import SCAN_PIXEL_WIDTHS
 
 
@@ -131,7 +131,7 @@ class TestToHdf5Structure:
 
         with h5py.File(out, 'r') as f:
             attrs = dict(f['S1'].attrs)
-            assert attrs.get('StarePodsReconstruction')  # h5py may return numpy.bool_
+            assert attrs.get('StarePodsReconstitution')  # h5py may return numpy.bool_
             assert attrs.get('PixelWidth') == pw
 
 
@@ -262,15 +262,15 @@ class TestToHdf5EdgeCases:
 
 
 # ---------------------------------------------------------------------------
-# reconstruct_hdf5_from_zarr() — integration tests (local zarr only)
+# reconstitute_hdf5_from_zarr() — integration tests (local zarr only)
 # ---------------------------------------------------------------------------
 
-class TestReconstructFromZarr:
-    """Integration: write zarr locally, reconstruct HDF5, verify structure.
+class TestReconstituteFromZarr:
+    """Integration: write zarr locally, reconstitute HDF5, verify structure.
 
     Note: many tests in this class produce a UserWarning about truncation.
     This is expected: STARE level-6 partitioning splits rows across groups, so
-    the spatial subset recovered by ``reconstruct_hdf5_from_zarr`` is rarely an
+    the spatial subset recovered by ``reconstitute_hdf5_from_zarr`` is rarely an
     exact multiple of ``pixel_width``.  The truncation warning fires inside
     ``to_hdf5()`` and is correct behaviour; it does not indicate a test failure.
     """
@@ -301,7 +301,7 @@ class TestReconstructFromZarr:
         sdf.to_zarr_local(zarr_root, level=6, pixel_width=pixel_width)
         return zarr_root, sdf, n_scans, pixel_width
 
-    def test_reconstruct_with_area_sids(self, tmp_path):
+    def test_reconstitute_with_area_sids(self, tmp_path):
         import h5py, pystare
         zarr_root, _, n_scans, pw = self._write_local_zarr(tmp_path)
         out_hdf5 = str(tmp_path / "out.h5")
@@ -310,7 +310,7 @@ class TestReconstructFromZarr:
         area_sids = pystare.cover_from_hull(
             [33, 33, 41, 41], [-124, -116, -116, -124], 6
         )
-        reconstruct_hdf5_from_zarr(
+        reconstitute_hdf5_from_zarr(
             zarr_path=zarr_root,
             dataset="GMI_S1",
             output_hdf5_path=out_hdf5,
@@ -323,12 +323,12 @@ class TestReconstructFromZarr:
             assert 'Latitude' in f['S1']
             assert 'Longitude' in f['S1']
 
-    def test_reconstruct_with_bbox(self, tmp_path):
+    def test_reconstitute_with_bbox(self, tmp_path):
         import h5py
         zarr_root, _, n_scans, pw = self._write_local_zarr(tmp_path)
         out_hdf5 = str(tmp_path / "out_bbox.h5")
 
-        reconstruct_hdf5_from_zarr(
+        reconstitute_hdf5_from_zarr(
             zarr_path=zarr_root,
             dataset="GMI_S1",
             output_hdf5_path=out_hdf5,
@@ -339,12 +339,12 @@ class TestReconstructFromZarr:
         with h5py.File(out_hdf5, 'r') as f:
             assert 'S1' in f
 
-    def test_reconstruct_scantime_structure(self, tmp_path):
+    def test_reconstitute_scantime_structure(self, tmp_path):
         import h5py
         zarr_root, _, n_scans, pw = self._write_local_zarr(tmp_path)
         out_hdf5 = str(tmp_path / "out_st.h5")
 
-        reconstruct_hdf5_from_zarr(
+        reconstitute_hdf5_from_zarr(
             zarr_root, "GMI_S1", out_hdf5,
             bbox=(-124, 33, -116, 41),
             pixel_width=pw,
@@ -355,13 +355,13 @@ class TestReconstructFromZarr:
                 assert field in st
                 assert st[field].dtype == np.int16
 
-    def test_reconstruct_tc_3d(self, tmp_path):
+    def test_reconstitute_tc_3d(self, tmp_path):
         import h5py
         n_tc = 2
         zarr_root, _, n_scans, pw = self._write_local_zarr(tmp_path, n_tc=n_tc)
         out_hdf5 = str(tmp_path / "out_tc.h5")
 
-        reconstruct_hdf5_from_zarr(
+        reconstitute_hdf5_from_zarr(
             zarr_root, "GMI_S1", out_hdf5,
             bbox=(-124, 33, -116, 41),
             pixel_width=pw,
@@ -378,7 +378,7 @@ class TestReconstructFromZarr:
         out_hdf5 = str(tmp_path / "out_pw.h5")
 
         # Do NOT pass pixel_width — should be read from zarr attrs
-        reconstruct_hdf5_from_zarr(
+        reconstitute_hdf5_from_zarr(
             zarr_root, "GMI_S1", out_hdf5,
             bbox=(-124, 33, -116, 41),
         )
@@ -409,43 +409,43 @@ class TestReconstructFromZarr:
 
         out_hdf5 = str(tmp_path / "out_fallback.h5")
         # SCAN_PIXEL_WIDTHS["GMI_S1"] == 221 → used as fallback
-        reconstruct_hdf5_from_zarr(
+        reconstitute_hdf5_from_zarr(
             zarr_root, "GMI_S1", out_hdf5,
             bbox=(-124, 33, -116, 41),
         )
         with h5py.File(out_hdf5, 'r') as f:
             assert f['S1']['Latitude'].ndim == 2
 
-    def test_reconstruct_no_area_sids_or_bbox_raises(self, tmp_path):
+    def test_reconstitute_no_area_sids_or_bbox_raises(self, tmp_path):
         with pytest.raises(ValueError, match="exactly one"):
-            reconstruct_hdf5_from_zarr(
+            reconstitute_hdf5_from_zarr(
                 str(tmp_path), "GMI_S1", str(tmp_path / "out.h5"),
             )
 
-    def test_reconstruct_both_area_sids_and_bbox_raises(self, tmp_path):
+    def test_reconstitute_both_area_sids_and_bbox_raises(self, tmp_path):
         import pystare
         area_sids = pystare.cover_from_hull([33, 33, 41, 41], [-124, -116, -116, -124], 6)
         with pytest.raises(ValueError, match="exactly one"):
-            reconstruct_hdf5_from_zarr(
+            reconstitute_hdf5_from_zarr(
                 str(tmp_path), "GMI_S1", str(tmp_path / "out.h5"),
                 area_sids=area_sids, bbox=(-124, 33, -116, 41),
             )
 
-    def test_reconstruct_no_matching_data_raises(self, tmp_path):
+    def test_reconstitute_no_matching_data_raises(self, tmp_path):
         import pystare
         zarr_root, _, _, pw = self._write_local_zarr(tmp_path)
         # Query an area far from the data (South Pacific)
         with pytest.raises(ValueError):
-            reconstruct_hdf5_from_zarr(
+            reconstitute_hdf5_from_zarr(
                 zarr_root, "GMI_S1", str(tmp_path / "out.h5"),
                 bbox=(170, -50, 180, -40),
                 pixel_width=pw,
             )
 
-    def test_reconstruct_bad_dataset_name_no_scan_suffix_raises(self, tmp_path):
+    def test_reconstitute_bad_dataset_name_no_scan_suffix_raises(self, tmp_path):
         zarr_root, _, _, pw = self._write_local_zarr(tmp_path)
         with pytest.raises(ValueError, match="scan group name"):
-            reconstruct_hdf5_from_zarr(
+            reconstitute_hdf5_from_zarr(
                 zarr_root, "GMI",  # no _S1 suffix
                 str(tmp_path / "out.h5"),
                 bbox=(-124, 33, -116, 41),
@@ -627,10 +627,10 @@ class TestToZarrLocalPixelWidth:
 
 
 # ---------------------------------------------------------------------------
-# reconstruct_hdf5_from_zarr() return value and data fidelity
+# reconstitute_hdf5_from_zarr() return value and data fidelity
 # ---------------------------------------------------------------------------
 
-class TestReconstructReturnAndFidelity:
+class TestReconstituteReturnAndFidelity:
     """Return value and that lat/lon round-trip through zarr → HDF5."""
 
     def _write_local_zarr(self, tmp_path, n_scans=3, pixel_width=5):
@@ -656,17 +656,17 @@ class TestReconstructReturnAndFidelity:
     def test_return_value_is_output_path(self, tmp_path):
         zarr_root, _, _, pw = self._write_local_zarr(tmp_path)
         out = str(tmp_path / "out.h5")
-        result = reconstruct_hdf5_from_zarr(
+        result = reconstitute_hdf5_from_zarr(
             zarr_root, "GMI_S1", out, bbox=(-124, 33, -116, 41), pixel_width=pw
         )
         assert result == out
 
     def test_lat_lon_values_in_valid_range(self, tmp_path):
-        """Reconstructed lat/lon should stay within the original write range."""
+        """Reconstituted lat/lon should stay within the original write range."""
         import h5py
         zarr_root, _, _, pw = self._write_local_zarr(tmp_path)
         out = str(tmp_path / "out.h5")
-        reconstruct_hdf5_from_zarr(
+        reconstitute_hdf5_from_zarr(
             zarr_root, "GMI_S1", out, bbox=(-124, 33, -116, 41), pixel_width=pw
         )
         with h5py.File(out, 'r') as f:
@@ -676,11 +676,11 @@ class TestReconstructReturnAndFidelity:
             assert np.all(lons >= -124) and np.all(lons <= -116)
 
     def test_tc_values_uniform_ones_preserved(self, tmp_path):
-        """Tc1=1.0 everywhere → all values in reconstructed HDF5 must be 1.0."""
+        """Tc1=1.0 everywhere → all values in reconstituted HDF5 must be 1.0."""
         import h5py
         zarr_root, _, _, pw = self._write_local_zarr(tmp_path)
         out = str(tmp_path / "out.h5")
-        reconstruct_hdf5_from_zarr(
+        reconstitute_hdf5_from_zarr(
             zarr_root, "GMI_S1", out, bbox=(-124, 33, -116, 41), pixel_width=pw
         )
         with h5py.File(out, 'r') as f:
@@ -689,17 +689,17 @@ class TestReconstructReturnAndFidelity:
     def test_output_file_created(self, tmp_path):
         zarr_root, _, _, pw = self._write_local_zarr(tmp_path)
         out = str(tmp_path / "created.h5")
-        reconstruct_hdf5_from_zarr(
+        reconstitute_hdf5_from_zarr(
             zarr_root, "GMI_S1", out, bbox=(-124, 33, -116, 41), pixel_width=pw
         )
         assert os.path.isfile(out)
 
 
 # ---------------------------------------------------------------------------
-# reconstruct_hdf5_from_zarr() scan group name extraction
+# reconstitute_hdf5_from_zarr() scan group name extraction
 # ---------------------------------------------------------------------------
 
-class TestReconstructScanNameExtraction:
+class TestReconstituteScanNameExtraction:
     """Verify the scan group name (S1–S6) is correctly extracted for each instrument."""
 
     @pytest.mark.parametrize("dataset,expected_scan", [
@@ -714,7 +714,7 @@ class TestReconstructScanNameExtraction:
         ("AMSR2_S6", "S6"),
     ])
     def test_scan_name_extracted(self, tmp_path, dataset, expected_scan):
-        """Write data, reconstruct with given dataset name, verify HDF5 group name."""
+        """Write data, reconstitute with given dataset name, verify HDF5 group name."""
         import h5py, pystare
 
         pw = SCAN_PIXEL_WIDTHS.get(dataset, 5)
@@ -737,7 +737,7 @@ class TestReconstructScanNameExtraction:
         sdf.to_zarr_local(zarr_root, level=6, pixel_width=pw)
 
         out = str(tmp_path / f"out_{dataset}.h5")
-        reconstruct_hdf5_from_zarr(
+        reconstitute_hdf5_from_zarr(
             zarr_root, dataset, out,
             bbox=(-124, 33, -116, 41),
             pixel_width=pw,
@@ -751,7 +751,7 @@ class TestReconstructScanNameExtraction:
 
     def test_nonexistent_local_zarr_path_raises(self, tmp_path):
         with pytest.raises(ValueError, match="does not exist"):
-            reconstruct_hdf5_from_zarr(
+            reconstitute_hdf5_from_zarr(
                 str(tmp_path / "nonexistent"), "GMI_S1",
                 str(tmp_path / "out.h5"),
                 bbox=(-124, 33, -116, 41),

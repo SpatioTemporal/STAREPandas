@@ -408,7 +408,7 @@ class StarePodsDemo:
         sids = pystare.cover_from_hull(lats, lons, level)
         return sids.tolist()
     
-    def reconstruct_hdf5(
+    def reconstitute_hdf5(
         self,
         dataset,
         output_hdf5_path: str,
@@ -421,7 +421,7 @@ class StarePodsDemo:
         compression_opts: int = 4,
     ) -> str:
         """
-        Reconstruct an HDF5 granule from zarr chunks stored in S3.
+        Reconstitute an HDF5 granule from zarr chunks stored in S3.
 
         Queries the RDS metadata to find zarr groups whose STARE partition
         SIDs intersect the requested area, downloads only those groups, and
@@ -435,7 +435,7 @@ class StarePodsDemo:
             written into the same output HDF5 file as separate top-level
             groups (e.g. ``/S1``, ``/S2``).
         output_hdf5_path : str
-            Destination path for the reconstructed HDF5 file.  Parent
+            Destination path for the reconstituted HDF5 file.  Parent
             directories are created automatically.
         bbox : tuple of float, optional
             Bounding box ``(lon_min, lat_min, lon_max, lat_max)``.  Exactly
@@ -472,12 +472,12 @@ class StarePodsDemo:
 
         for i, ds in enumerate(datasets):
             area_desc = f"bbox={bbox}" if bbox is not None else f"{len(area_sids)} area SIDs"
-            logger.info(f"Reconstructing HDF5 for dataset='{ds}' over {area_desc}")
+            logger.info(f"Reconstituting HDF5 for dataset='{ds}' over {area_desc}")
 
             # First scan creates the file ('w'), subsequent scans append ('a')
             hdf5_mode = 'w' if i == 0 else 'a'
 
-            starepandas.io.granules.reconstruct_hdf5_from_zarr(
+            starepandas.io.granules.reconstitute_hdf5_from_zarr(
                 zarr_path=zarr_path,
                 dataset=ds,
                 output_hdf5_path=output_hdf5_path,
@@ -490,13 +490,13 @@ class StarePodsDemo:
                 mode=hdf5_mode,
             )
 
-        logger.info(f"✓ Reconstructed HDF5 written to {output_hdf5_path}")
+        logger.info(f"✓ Reconstituted HDF5 written to {output_hdf5_path}")
         return output_hdf5_path
 
     def run_full_demo(self, data_root: str, location_bbox: Tuple[float, float, float, float],
                     location_name: str = "Study Area",
-                    reconstruct_output_dir: Optional[str] = None,
-                    reconstruct_datasets: Optional[List[str]] = None) -> Dict[str, Any]:
+                    reconstitute_output_dir: Optional[str] = None,
+                    reconstitute_datasets: Optional[List[str]] = None) -> Dict[str, Any]:
         """
         Run complete STARE-PODS demonstration workflow.
 
@@ -508,22 +508,22 @@ class StarePodsDemo:
             Bounding box ``(lon_min, lat_min, lon_max, lat_max)``.
         location_name : str
             Name of the location for visualization labels.
-        reconstruct_output_dir : str, optional
-            If provided, reconstruct HDF5 files for each dataset into this
+        reconstitute_output_dir : str, optional
+            If provided, reconstitute HDF5 files for each dataset into this
             directory after downloading the intersecting data.  One ``.h5``
             file is written per dataset (e.g. ``GMI_S1.h5``).  When ``None``
-            the reconstruction step is skipped.
-        reconstruct_datasets : list of str, optional
-            Dataset / scan identifiers to reconstruct
+            the reconstitution step is skipped.
+        reconstitute_datasets : list of str, optional
+            Dataset / scan identifiers to reconstitute
             (e.g. ``["GMI_S1", "AMSR2_S5"]``).  Defaults to ``["GMI_S1"]``
-            when ``reconstruct_output_dir`` is set but this argument is not.
+            when ``reconstitute_output_dir`` is set but this argument is not.
 
         Returns
         -------
         Dict[str, Any]
             ``"data"`` → ``Dict[str, STAREDataFrame]`` (downloaded chunks),
-            ``"hdf5_paths"`` → ``Dict[str, str]`` (reconstructed HDF5 paths,
-            only present when ``reconstruct_output_dir`` is given).
+            ``"hdf5_paths"`` → ``Dict[str, str]`` (reconstituted HDF5 paths,
+            only present when ``reconstitute_output_dir`` is given).
         """
         logger.info(f"Starting STARE-PODS demo for {location_name}")
 
@@ -570,29 +570,29 @@ class StarePodsDemo:
 
         result: Dict[str, Any] = {"data": data_dict}
 
-        # Step 7 (optional): Reconstruct HDF5 files from S3 zarr
-        if reconstruct_output_dir is not None:
-            os.makedirs(reconstruct_output_dir, exist_ok=True)
-            datasets_to_reconstruct = reconstruct_datasets or ["GMI_S1"]
+        # Step 7 (optional): Reconstitute HDF5 files from S3 zarr
+        if reconstitute_output_dir is not None:
+            os.makedirs(reconstitute_output_dir, exist_ok=True)
+            datasets_to_reconstitute = reconstitute_datasets or ["GMI_S1"]
             hdf5_paths: Dict[str, str] = {}
 
             logger.info(
-                f"Reconstructing HDF5 for {datasets_to_reconstruct} → {reconstruct_output_dir}"
+                f"Reconstituting HDF5 for {datasets_to_reconstitute} → {reconstitute_output_dir}"
             )
-            for ds in datasets_to_reconstruct:
-                out_path = os.path.join(reconstruct_output_dir, f"{ds}.h5")
+            for ds in datasets_to_reconstitute:
+                out_path = os.path.join(reconstitute_output_dir, f"{ds}.h5")
                 try:
-                    self.reconstruct_hdf5(
+                    self.reconstitute_hdf5(
                         dataset=ds,
                         output_hdf5_path=out_path,
                         bbox=location_bbox,
                     )
                     hdf5_paths[ds] = out_path
                 except Exception as e:
-                    logger.error(f"✗ HDF5 reconstruction failed for {ds}: {e}")
+                    logger.error(f"✗ HDF5 reconstitution failed for {ds}: {e}")
 
             result["hdf5_paths"] = hdf5_paths
-            logger.info(f"✓ Reconstructed {len(hdf5_paths)} HDF5 file(s)")
+            logger.info(f"✓ Reconstituted {len(hdf5_paths)} HDF5 file(s)")
 
         logger.info(f"✓ STARE-PODS demo completed for {location_name}")
         return result
@@ -889,9 +889,9 @@ class LocalStarePodsDemo:
 
         return data_results
 
-    # ── HDF5 reconstruction ───────────────────────────────────────────────────
+    # ── HDF5 reconstitution ───────────────────────────────────────────────────
 
-    def reconstruct_hdf5(
+    def reconstitute_hdf5(
         self,
         dataset,
         output_hdf5_path: str,
@@ -903,7 +903,7 @@ class LocalStarePodsDemo:
         compression_opts: int = 4,
     ) -> str:
         """
-        Reconstruct an HDF5 granule from local zarr chunks.
+        Reconstitute an HDF5 granule from local zarr chunks.
 
         Parameters
         ----------
@@ -938,10 +938,10 @@ class LocalStarePodsDemo:
         datasets = [dataset] if isinstance(dataset, str) else list(dataset)
 
         for i, ds in enumerate(datasets):
-            logger.info(f"Reconstructing HDF5 for dataset='{ds}' over bbox={bbox}")
+            logger.info(f"Reconstituting HDF5 for dataset='{ds}' over bbox={bbox}")
             hdf5_mode = 'w' if i == 0 else 'a'
 
-            starepandas.io.granules.reconstruct_hdf5_from_local_zarr(
+            starepandas.io.granules.reconstitute_hdf5_from_local_zarr(
                 db_path=self.db_path,
                 dataset=ds,
                 output_hdf5_path=output_hdf5_path,
@@ -954,7 +954,7 @@ class LocalStarePodsDemo:
                 mode=hdf5_mode,
             )
 
-        logger.info(f"✓ Reconstructed HDF5 written to {output_hdf5_path}")
+        logger.info(f"✓ Reconstituted HDF5 written to {output_hdf5_path}")
         return output_hdf5_path
 
 
@@ -1037,13 +1037,13 @@ if __name__ == "__main__":
         print(f"  {inst}: {len(df)} rows, columns: {list(df.columns)}")
     print()
 
-    # ── Step 4: Reconstruct HDF5 from the freshly ingested zarr ─────────
-    # Derive the granule's S3 prefix from the ingested paths so reconstruction
+    # ── Step 4: Reconstitute HDF5 from the freshly ingested zarr ─────────
+    # Derive the granule's S3 prefix from the ingested paths so reconstitution
     # reads only data from this specific granule (not older ingestions).
     granule_basename = os.path.splitext(os.path.basename(GRANULE_FILE))[0]
     granule_s3_prefix = f"{S3_PREFIX}/{granule_basename}"
-    print("Step 4: Reconstructing HDF5 from S3 zarr ...")
-    recon_path = demo.reconstruct_hdf5(
+    print("Step 4: Reconstituting HDF5 from S3 zarr ...")
+    recon_path = demo.reconstitute_hdf5(
         dataset='GMI_S1',
         output_hdf5_path=OUTPUT_HDF5,
         bbox=BBOX,
@@ -1067,5 +1067,5 @@ if __name__ == "__main__":
                     print(f"  /{name:50s} Group")
             f.visititems(visit)
 
-    dump_structure(OUTPUT_HDF5,  f"RECONSTRUCTED  ({os.path.basename(OUTPUT_HDF5)})")
+    dump_structure(OUTPUT_HDF5,  f"RECONSTITUTED  ({os.path.basename(OUTPUT_HDF5)})")
     dump_structure(ORIGINAL_HDF5, f"ORIGINAL       ({os.path.basename(ORIGINAL_HDF5)})")
