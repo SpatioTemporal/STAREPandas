@@ -1928,20 +1928,17 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         metadata_rows = []
         ts_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
-        # Write each group to its own zarr group.
-        # When a dataset name is given, include it as an intermediate directory so
-        # that two scans (e.g. GMI_S1, GMI_S2) written to the same local_path root
-        # never collide on the same group_id.
-        #   With dataset  : local_path/<dataset>/<group_id>/
-        #   Without dataset: local_path/<group_id>/          (backwards-compat)
+        # Write each group to its own zarr group using the same hierarchical
+        # HTM-subtree layout as to_zarr_s3, so local and S3 stores share shape:
+        #   local_path/Q00_X/Q01_Y/.../QN_M/<dataset_name>/[arrays]
+        dataset_name = dataset if dataset is not None else "data"
         for group_id, gdf in grouped:
             if isinstance(group_id, (int, np.integer)) and group_id < 0:
                 continue
 
-            if dataset is not None:
-                group_dir = os.path.join(local_path, dataset, str(group_id))
-            else:
-                group_dir = os.path.join(local_path, str(group_id))
+            hierarchical_path = self.generate_zarr_path(group_id, dataset_name)
+            group_dir = os.path.join(local_path, *hierarchical_path.split('/'))
+            os.makedirs(group_dir, exist_ok=True)
             zg = zarr.open_group(group_dir, mode="w")
 
             # Store pixel_width in group attrs for downstream HDF5 reconstruction
@@ -2522,12 +2519,36 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             # Nothing to read
             return cls()
 
-        # Discover child directories that contain a .zgroup file
-        group_dirs = []
-        for name in os.listdir(local_path):
-            candidate = os.path.join(local_path, name)
-            if os.path.isdir(candidate) and os.path.exists(os.path.join(candidate, '.zgroup')):
-                group_dirs.append(candidate)
+        # Recursively discover zarr groups produced by to_zarr_local. A directory
+        # is one of our groups iff it contains a `__row_positions__` child (the
+        # row-order helper this writer always emits). This is zarr-version
+        # agnostic (works for both v2 `.zgroup` and v3 `zarr.json` stores) and
+        # handles both the new HTM-subtree layout and any pre-existing flat
+        # layout transparently.
+        def find_zarr_groups(base_path, max_depth=32):
+            zarr_groups = []
+
+            def _recursive_search(current_path, depth):
+                if depth > max_depth:
+                    return
+                try:
+                    entries = os.listdir(current_path)
+                except OSError:
+                    return
+                if '__row_positions__' in entries and os.path.isdir(
+                    os.path.join(current_path, '__row_positions__')
+                ):
+                    zarr_groups.append(current_path)
+                    return
+                for name in entries:
+                    candidate = os.path.join(current_path, name)
+                    if os.path.isdir(candidate):
+                        _recursive_search(candidate, depth + 1)
+
+            _recursive_search(base_path, 0)
+            return zarr_groups
+
+        group_dirs = find_zarr_groups(local_path)
 
         frames = []
         for gdir in group_dirs:
@@ -2550,6 +2571,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         df = pandas.concat(frames, ignore_index=True)
         df.sort_values("__row_pos__", inplace=True)
         df.drop(columns=["__row_pos__"], inplace=True)
+        df.reset_index(drop=True, inplace=True)
 
         return cls(df)
 

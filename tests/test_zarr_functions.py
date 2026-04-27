@@ -55,7 +55,18 @@ def test_zarr_local_functions():
         for col in sdf.columns:
             if col != 'geometry':
                 assert sdf[col].equals(sdf_read[col]), f"Column {col} data mismatch"
-        
+
+        # Verify the HTM-subtree layout was actually created on disk
+        # (guards against silent regressions back to the flat layout).
+        from pathlib import Path
+        q00_dirs = list(Path(local_path).rglob("Q00_*"))
+        assert q00_dirs, f"Expected hierarchical Q00_* directories under {local_path}"
+        # Default fallback dataset_name="data" since this test passes no dataset.
+        # Each leaf "data/" group has a `__row_positions__` child written by to_zarr_local.
+        assert any((leaf / "__row_positions__").is_dir()
+                   for leaf in Path(local_path).rglob("data")), \
+            "Expected at least one zarr group at the dataset leaf"
+
         print("✅ Local zarr functions test passed!")
 
 def test_zarr_s3_functions():
