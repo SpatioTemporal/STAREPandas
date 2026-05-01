@@ -1247,6 +1247,7 @@ def to_zarr_local_meta(
     raw_collected_time=None, metadata=None,
     sidecar_path=None, add_sids=True, adapt_resolution=True,
     read_timestamp=False, keep_na_sids=False, nom_res=None, scan=None,
+    granule_name=None,
     **kwargs
 ):
     """
@@ -1264,7 +1265,9 @@ def to_zarr_local_meta(
         Path to the granule HDF5 file.
     local_path : str
         Root directory where zarr groups will be written.  Sub-directories are
-        created automatically.
+        created automatically.  The granule basename is inserted *inside* the
+        directory tree (between the HTM-subtree leaf and the dataset segment),
+        not appended to ``local_path``.
     level : int
         STARE level for spatial partitioning.
     db_path : str
@@ -1294,6 +1297,11 @@ def to_zarr_local_meta(
         Nominal resolution selector for multi-resolution products.
     scan : str, optional
         Specific scan to process (e.g. ``"S1"``); ``None`` means all scans.
+    granule_name : str, optional
+        Granule identifier inserted into the on-disk path between the HTM
+        leaf and the dataset segment, and recorded in ``MetadataJson`` so
+        :func:`reconstitute_hdf5_from_local_zarr` can filter by granule.
+        Defaults to the basename of ``file_path`` without extension.
     **kwargs
         Forwarded to :func:`read_granule`.
 
@@ -1302,6 +1310,9 @@ def to_zarr_local_meta(
     str or list of str
         The local path(s) where data was written.
     """
+    if granule_name is None:
+        granule_name = os.path.splitext(os.path.basename(file_path))[0]
+
     result = read_granule(
         file_path=file_path,
         sidecar_path=sidecar_path,
@@ -1333,6 +1344,7 @@ def to_zarr_local_meta(
                 db_path=db_path,
                 dataset=scan_dataset,
                 data_level=data_level,
+                granule_name=granule_name,
             )
         else:
             local_paths = []
@@ -1351,6 +1363,7 @@ def to_zarr_local_meta(
                     db_path=db_path,
                     dataset=scan_dataset,
                     data_level=data_level,
+                    granule_name=granule_name,
                 )
                 local_paths.append(path_out)
             return local_paths
@@ -1364,6 +1377,7 @@ def to_zarr_local_meta(
             db_path=db_path,
             dataset=dataset,
             data_level=data_level,
+            granule_name=granule_name,
         )
 
 
@@ -1493,6 +1507,7 @@ def reconstitute_hdf5_from_local_zarr(
     area_sids=None,
     bbox=None,
     local_prefix=None,
+    granule_name=None,
     pixel_width=None,
     compression='gzip',
     compression_opts=4,
@@ -1519,9 +1534,14 @@ def reconstitute_hdf5_from_local_zarr(
         Bounding box ``(lon_min, lat_min, lon_max, lat_max)``.  Exactly one of
         ``area_sids`` or ``bbox`` must be given.
     local_prefix : str, optional
-        Filter metadata to ``group_path`` entries that start with this prefix
-        (e.g. the path written for a specific granule) to avoid mixing data
-        from multiple ingestion runs.
+        Filter metadata to ``group_path`` entries that start with this prefix.
+        Useful for scoping to a particular ``local_root``.  Note: under the
+        current HTM-first layout the granule basename sits *inside* the path
+        (between the HTM leaf and the dataset segment), so ``local_prefix``
+        no longer scopes to a single granule — use ``granule_name`` for that.
+    granule_name : str, optional
+        Filter metadata to rows whose recorded ``granule_name`` matches.  This
+        is the preferred per-granule filter under the HTM-first layout.
     pixel_width : int, optional
         Explicit pixel_width override.
     compression : str, optional
@@ -1570,10 +1590,20 @@ def reconstitute_hdf5_from_local_zarr(
 
     meta_df['grouped_id'] = meta_df['grouped_id'].astype(np.int64)
 
-    # Filter to a specific local prefix (e.g. one granule's directory)
+    # Filter to a specific local prefix (e.g. one local_root)
     if local_prefix is not None:
         abs_prefix = os.path.abspath(local_prefix)
         meta_df = meta_df[meta_df['group_path'].str.startswith(abs_prefix)]
+
+    # Filter by granule_name (preferred per-granule scoping under HTM-first layout)
+    if granule_name is not None:
+        if 'granule_name' not in meta_df.columns:
+            raise ValueError(
+                "granule_name filter requested but metadata lacks a 'granule_name' "
+                "column. This metadata predates the granule_name field; re-ingest "
+                "to use this filter."
+            )
+        meta_df = meta_df[meta_df['granule_name'] == granule_name]
 
     if no_spatial_filter:
         # No spatial filter — use all groups from local_prefix

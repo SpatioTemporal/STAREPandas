@@ -681,16 +681,16 @@ class LocalStarePodsDemo:
             try:
                 logger.info(f"Processing {os.path.basename(granule_file)}")
                 base_name = os.path.splitext(os.path.basename(granule_file))[0]
-                granule_local_path = os.path.join(self.local_root, base_name)
 
                 kwargs.setdefault('read_timestamp', True)
                 result = starepandas.io.granules.to_zarr_local_meta(
                     file_path=granule_file,
-                    local_path=granule_local_path,
+                    local_path=self.local_root,
                     level=level,
                     db_path=self.db_path,
                     dataset=instrument,
                     scan=scan,
+                    granule_name=base_name,
                     **kwargs,
                 )
 
@@ -699,7 +699,7 @@ class LocalStarePodsDemo:
                 else:
                     local_paths.append(result)
 
-                logger.info(f"✓ Stored {os.path.basename(granule_file)} → {granule_local_path}")
+                logger.info(f"✓ Stored {os.path.basename(granule_file)} (granule={base_name}) → {self.local_root}")
 
             except Exception as e:
                 logger.error(f"✗ Failed to process {granule_file}: {e}")
@@ -898,6 +898,7 @@ class LocalStarePodsDemo:
         bbox: Optional[Tuple[float, float, float, float]] = None,
         area_sids: Optional[List[int]] = None,
         local_prefix: Optional[str] = None,
+        granule_name: Optional[str] = None,
         pixel_width: Optional[int] = None,
         compression: str = 'gzip',
         compression_opts: int = 4,
@@ -918,8 +919,13 @@ class LocalStarePodsDemo:
         area_sids : list of int, optional
             STARE SIDs for the area of interest.
         local_prefix : str, optional
-            Filter metadata to group_paths starting with this prefix (e.g. the
-            granule directory) to avoid mixing data from multiple ingestions.
+            Filter metadata to group_paths starting with this prefix (scopes to
+            a particular ``local_root``).  Note: under the HTM-first layout the
+            granule basename is mid-path, so this no longer scopes to a single
+            granule — use ``granule_name`` for that.
+        granule_name : str, optional
+            Filter to rows whose recorded granule_name matches.  Preferred
+            per-granule filter under the HTM-first layout.
         pixel_width : int, optional
             Explicit pixel_width override.
         compression : str, optional
@@ -948,6 +954,7 @@ class LocalStarePodsDemo:
                 area_sids=area_sids,
                 bbox=bbox,
                 local_prefix=local_prefix,
+                granule_name=granule_name,
                 pixel_width=pixel_width,
                 compression=compression,
                 compression_opts=compression_opts,

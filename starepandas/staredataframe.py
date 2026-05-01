@@ -1870,7 +1870,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         return s3_path
     
     def to_zarr_local(self, local_path, level, chunk_size=250000, pixel_width=None,
-                      db_path=None, dataset=None, data_level=None):
+                      db_path=None, dataset=None, data_level=None, granule_name=None):
         """
         Partition STAREDataFrame by SIDs at specified level and write to local storage in grouped layout.
 
@@ -1928,16 +1928,27 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         metadata_rows = []
         ts_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
-        # Write each group to its own zarr group using the same hierarchical
-        # HTM-subtree layout as to_zarr_s3, so local and S3 stores share shape:
-        #   local_path/Q00_X/Q01_Y/.../QN_M/<dataset_name>/[arrays]
+        # Layout (S3-parity HTM-subtree, with optional granule segment):
+        #   local_path/Q00_X/Q01_Y/.../QN_M/[<granule_name>/]<dataset_name>/[arrays]
+        # When granule_name is provided, multiple granules' contributions to the
+        # same HTM partition coexist as siblings under the partition leaf.
+        if granule_name is not None and '/' in granule_name:
+            raise ValueError(f"granule_name must not contain '/': {granule_name!r}")
         dataset_name = dataset if dataset is not None else "data"
         for group_id, gdf in grouped:
             if isinstance(group_id, (int, np.integer)) and group_id < 0:
                 continue
 
-            hierarchical_path = self.generate_zarr_path(group_id, dataset_name)
-            group_dir = os.path.join(local_path, *hierarchical_path.split('/'))
+            # generate_zarr_path appends the dataset segment; pass an empty
+            # dataset_name and strip the trailing empty segment so we have just
+            # the HTM segments and can splice the optional granule segment in.
+            htm_path = self.generate_zarr_path(group_id, dataset_name="")
+            htm_segments = [seg for seg in htm_path.split('/') if seg]
+            if granule_name is not None:
+                leaf_segments = [granule_name, dataset_name]
+            else:
+                leaf_segments = [dataset_name]
+            group_dir = os.path.join(local_path, *htm_segments, *leaf_segments)
             os.makedirs(group_dir, exist_ok=True)
             zg = zarr.open_group(group_dir, mode="w")
 
@@ -1962,6 +1973,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
                     "num_rows": len(gdf),
                     "columns": list(self.columns),
                     "pixel_width": int(pixel_width) if pixel_width is not None else None,
+                    "granule_name": granule_name,
                 })
                 metadata_rows.append((
                     dataset,

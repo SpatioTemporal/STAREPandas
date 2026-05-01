@@ -69,6 +69,39 @@ def test_zarr_local_functions():
 
         print("✅ Local zarr functions test passed!")
 
+def test_zarr_local_with_granule_name():
+    """to_zarr_local inserts <granule_name>/<dataset>/ as the leaf when granule_name is provided."""
+    data = {'lat': [0, 1, 2, 3], 'lon': [0, 1, 2, 3], 'data': [1, 2, 3, 4]}
+    sdf = sp.STAREDataFrame(data)
+    sdf['geometry'] = [Point(lon, lat) for lon, lat in zip(sdf['lon'], sdf['lat'])]
+    sdf = sdf.set_geometry('geometry')
+    sdf['sids'] = sdf.make_sids(level=10)
+
+    granule = "MOD05_L2.A2019336.0000"
+    dataset_name = "GMI_S1"
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        local_path = os.path.join(temp_dir, "multi_granule.zarr")
+        sdf.to_zarr_local(local_path, level=10, dataset=dataset_name,
+                          granule_name=granule)
+
+        from pathlib import Path
+        # No granule directory directly under root — Q-tree comes first
+        top_level = [p.name for p in Path(local_path).iterdir() if p.is_dir()]
+        assert top_level, f"Nothing written under {local_path}"
+        assert all(name.startswith("Q") for name in top_level), \
+            f"Expected only Q* dirs at root, got {top_level}"
+
+        # Each leaf is <granule>/<dataset>/__row_positions__/
+        leaf_groups = list(Path(local_path).rglob(f"{granule}/{dataset_name}"))
+        assert leaf_groups, f"Expected <granule>/<dataset>/ leaves under the HTM tree"
+        assert all((leaf / "__row_positions__").is_dir() for leaf in leaf_groups)
+
+        # Round-trip should still work (from_zarr_local is layout-agnostic)
+        sdf_read = sp.STAREDataFrame.from_zarr_local(local_path)
+        assert sdf.shape == sdf_read.shape
+
+
 def test_zarr_s3_functions():
     """Test zarr S3 storage functions (requires S3 credentials)"""
     

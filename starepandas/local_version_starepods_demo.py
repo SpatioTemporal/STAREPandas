@@ -122,13 +122,12 @@ def main():
     print("=" * 60)
 
     granule_basename = os.path.splitext(os.path.basename(GRANULE_FILE))[0]
-    granule_local_prefix = os.path.join(LOCAL_ROOT, granule_basename)
 
     recon_path = demo.reconstitute_hdf5(
         dataset=DATASETS,
         output_hdf5_path=OUTPUT_HDF5,
         bbox=BBOX,
-        local_prefix=granule_local_prefix,
+        granule_name=granule_basename,
     )
     print(f"Written to: {recon_path}")
     print()
