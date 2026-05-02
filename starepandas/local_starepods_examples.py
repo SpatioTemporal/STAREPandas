@@ -16,7 +16,7 @@ Workflow
 
 Usage
 -----
-    conda run -n starepandas_3.12_v3 python starepandas/local_version_starepods_demo.py
+    conda run -n starepandas_3.12_v3 python starepandas/local_starepods_examples.py
 """
 
 import os
@@ -152,7 +152,7 @@ def main():
     conn.close()
     print(f"SQLite DB: {demo.db_path}")
     for dataset_name, cnt in rows:
-        print(f"  {dataset_name}: {cnt} group(s)")
+        print(f"  {dataset_name}: {cnt} partition(s)")
 
     print()
     print("Done.")
