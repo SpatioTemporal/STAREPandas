@@ -49,8 +49,85 @@ class StarePodsDemo:
         # Load AWS configuration
         starepandas.staredataframe._load_config_from_default_locations()
         
+    def clean_s3_prefix(self, s3_prefix: str) -> Dict[str, int]:
+        """
+        Remove every S3 object under ``s3_prefix`` and every RDS
+        ``PodsMetadata`` row whose ``MetadataJson.group_path`` starts with it.
+
+        Mirrors the local pipeline's ``CLEAN_BEFORE_RUN`` behaviour for the
+        S3+RDS path, so re-ingesting the same granule does not accumulate
+        duplicate metadata rows.
+
+        Parameters
+        ----------
+        s3_prefix : str
+            S3 URI prefix to clean (e.g. ``"s3://zarrpods/gmi-demo-parquet"``).
+            Matched as a string prefix against ``group_path`` values, so
+            granule subkeys under it are also removed.
+
+        Returns
+        -------
+        dict
+            ``{'rds_rows_deleted': int, 's3_objects_deleted': int}``
+        """
+        import s3fs
+        from starepandas.staredataframe import (
+            _AWS_S3_STORAGE_OPTIONS, _ensure_rds_db_and_table,
+            _load_config_from_default_locations,
+        )
+
+        merged_opts = dict(_AWS_S3_STORAGE_OPTIONS)
+        if not merged_opts:
+            _load_config_from_default_locations()
+            merged_opts = dict(starepandas.staredataframe._AWS_S3_STORAGE_OPTIONS)
+
+        normalized_prefix = s3_prefix.rstrip('/')
+        like_pattern = f"{normalized_prefix}/%"
+
+        # 1) RDS cleanup — delete metadata rows whose group_path is under the prefix.
+        rds_deleted = 0
+        conn = _ensure_rds_db_and_table('StarePodsMetadata')
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    'DELETE FROM "PodsMetadata" '
+                    'WHERE "MetadataJson"->>%s LIKE %s',
+                    ('group_path', like_pattern),
+                )
+                rds_deleted = cur.rowcount or 0
+            conn.commit()
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+        # 2) S3 cleanup — recursively remove objects under the prefix.
+        s3_deleted = 0
+        try:
+            fs = s3fs.S3FileSystem(**merged_opts) if merged_opts else s3fs.S3FileSystem()
+            bare = normalized_prefix[len('s3://'):] if normalized_prefix.startswith('s3://') else normalized_prefix
+            if fs.exists(bare):
+                # Count first so we can report a number; rm(recursive=True) is the cleanup.
+                try:
+                    s3_deleted = sum(1 for _ in fs.find(bare))
+                except Exception:
+                    s3_deleted = -1
+                fs.rm(bare, recursive=True)
+        except FileNotFoundError:
+            pass
+        except Exception as e:
+            logger.warning(f"S3 cleanup of {s3_prefix} encountered: {e}")
+
+        logger.info(
+            f"clean_s3_prefix({s3_prefix}): "
+            f"deleted {rds_deleted} RDS row(s), {s3_deleted} S3 object(s)"
+        )
+        return {'rds_rows_deleted': rds_deleted, 's3_objects_deleted': s3_deleted}
+
     def ingest_granules(self, data_path: str, instrument: str, s3_prefix: str,
-                     scan: Optional[str] = None, level: int = 10, **kwargs) -> List[str]:
+                     scan: Optional[str] = None, level: int = 10,
+                     clean_before_run: bool = False, **kwargs) -> List[str]:
         """
         Partition granules into Parquet files and store in S3.
 
@@ -64,6 +141,11 @@ class StarePodsDemo:
             S3 prefix for storage (e.g., "s3://zarrpods/instrument-data")
         scan : str, optional
             Specific scan to process (e.g., "S1", "S2")
+        clean_before_run : bool, optional
+            If True, call :meth:`clean_s3_prefix` on ``s3_prefix`` before
+            ingesting. Mirrors the local pipeline's ``CLEAN_BEFORE_RUN``
+            flag — prevents duplicate RDS metadata rows when re-running.
+            Default False.
         **kwargs
             Additional arguments for to_zarr_s3()
 
@@ -72,6 +154,10 @@ class StarePodsDemo:
         List[str]
             List of S3 paths where data was stored
         """
+        if clean_before_run:
+            logger.info(f"clean_before_run=True → wiping {s3_prefix} on S3 + RDS first")
+            self.clean_s3_prefix(s3_prefix)
+
         logger.info(f"Ingesting {instrument} granules from {data_path}")
         
         # Find granule files
@@ -204,7 +290,7 @@ class StarePodsDemo:
                     except (ValueError, TypeError):
                         continue
 
-                logger.info(f"Found {len(intersecting_results)} intersecting chunks for {instrument}")
+                logger.info(f"Found {len(intersecting_results)} intersecting partitions for {instrument}")
                 all_results.extend(intersecting_results)
 
             except Exception as e:
@@ -216,7 +302,7 @@ class StarePodsDemo:
             return pd.DataFrame()
 
         result_df = pd.DataFrame(all_results)
-        logger.info(f"Found {len(result_df)} total intersecting chunks")
+        logger.info(f"Found {len(result_df)} total intersecting partitions")
         return result_df
     
     def download_and_analyze(self, intersecting_metadata: pd.DataFrame,
@@ -557,7 +643,7 @@ class StarePodsDemo:
             return {"data": {}}
 
         # Step 5: Download and analyze
-        logger.info("Downloading intersecting chunks...")
+        logger.info("Downloading intersecting partitions...")
         data_dict = self.download_and_analyze(intersecting_metadata, instruments)
 
         # Step 6: Plot comparison
@@ -567,7 +653,7 @@ class StarePodsDemo:
 
         result: Dict[str, Any] = {"data": data_dict}
 
-        # Step 7 (optional): Reconstitute HDF5 files from S3 zarr
+        # Step 7 (optional): Reconstitute HDF5 files from S3 Parquet
         if reconstitute_output_dir is not None:
             os.makedirs(reconstitute_output_dir, exist_ok=True)
             datasets_to_reconstitute = reconstitute_datasets or ["GMI_S1"]
@@ -634,7 +720,7 @@ class LocalStarePodsDemo:
         **kwargs,
     ) -> List[str]:
         """
-        Ingest granule files into local zarr storage and record metadata.
+        Ingest granule files into local Parquet storage and record metadata.
 
         Parameters
         ----------
