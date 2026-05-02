@@ -21,7 +21,7 @@ Usage
 
 import os
 import h5py
-from starepandas.demo import LocalStarePodsDemo
+from starepandas.demo_lib import LocalStarePodsDemo
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 LOCAL_ROOT = "/tmp/stare_pods_local"   # Parquet store + SQLite DB live here

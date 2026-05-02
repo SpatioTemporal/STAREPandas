@@ -29,7 +29,7 @@ Usage
 import os
 import time
 import h5py
-from starepandas.demo import StarePodsDemo
+from starepandas.demo_lib import StarePodsDemo
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 # AWS + RDS credentials. Resolved relative to this file so it works from any cwd.

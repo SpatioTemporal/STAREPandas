@@ -18,7 +18,7 @@ Requirements
 
 import os
 import h5py
-from starepandas.demo import StarePodsDemo
+from starepandas.demo_lib import StarePodsDemo
 
 # ── Configuration ────────────────────────────────────────────────────────────
 # AWS + RDS credentials live in starepandas/.config next to this script.

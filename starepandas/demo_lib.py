@@ -1040,114 +1040,15 @@ class LocalStarePodsDemo:
         return output_hdf5_path
 
 
-# Convenience functions for easier usage
-def get_sids_for_point(lon: float, lat: float, level: int = 10, radius_km: float = 10) -> List[int]:
-    """Get STARE SIDs for a point with radius."""
-    from shapely.geometry import Point
-    point = Point(lon, lat)
-    
-    # Create circular area (approximate with buffer)
-    point_buffered = point.buffer(radius_km/111)  # Rough km to degrees
-    
-    sids = pystare.sid_from_polygon(point_buffered, level)
-    return sids.tolist()
-
-
 def get_sids_for_region(region_name: str, level: int = 10) -> List[int]:
     """Get STARE SIDs for a predefined region."""
-    # Example regions - could be expanded
     regions = {
         'california': (-125, 32, -115, 42),
         'europe': (-10, 35, 30, 70),
         'asia': (60, 5, 150, 50),
-        'global': (-180, -90, 180, 90)
+        'global': (-180, -90, 180, 90),
     }
-    
-    if region_name.lower() in regions:
-        bbox = regions[region_name.lower()]
-        demo = StarePodsDemo()
-        return demo.get_sids_for_bbox(*bbox, level)
-    else:
+    if region_name.lower() not in regions:
         raise ValueError(f"Unknown region: {region_name}")
-
-
-if __name__ == "__main__":
-    import h5py
-
-    CONFIG_PATH = "/Users/tonhai/workspace/Bayesics/StarePandas_par/stare_demo/starepandas/.config"
-    GRANULE_FILE = (
-        "/Users/tonhai/workspace/Bayesics/L1C_Data_Samples/GPM/2025/Jan_1_2/"
-        "1C.GPM.GMI.XCAL2016-C.20250101-S034347-E051659.061567.V07B.HDF5"
-    )
-    S3_PREFIX    = "s3://zarrpods/gmi-demo"
-    BBOX         = (115, -30, 120, -25)   # SW Australia / Perth area (lon_min, lat_min, lon_max, lat_max)
-    OUTPUT_HDF5  = "/tmp/gmi_s1_australia.h5"
-    ORIGINAL_HDF5 = GRANULE_FILE
-
-    demo = StarePodsDemo(aws_config_path=CONFIG_PATH)
-
-    print("=" * 60)
-    print("STARE-PODS Full Demo")
-    print("=" * 60)
-    print(f"Granule : {os.path.basename(GRANULE_FILE)}")
-    print(f"BBox    : {BBOX}  (SE Australia)")
-    print(f"S3      : {S3_PREFIX}")
-    print()
-
-    # ── Step 1: Ingest the single granule into S3 Parquet ────────────────
-    print("Step 1: Ingesting granule into S3 Parquet partitions ...")
-    s3_paths = demo.ingest_granules(
-        data_path=GRANULE_FILE,
-        instrument='GMI',
-        s3_prefix=S3_PREFIX,
-    )
-    print(f"  Stored {len(s3_paths)} Parquet dataset(s) to S3")
-    print()
-
-    # ── Step 2: Find intersecting data via STARE SIDs ───────────────────
-    print("Step 2: Finding intersecting data ...")
-    location_sids = demo.get_sids_for_bbox(*BBOX, level=10)
-    print(f"  Generated {len(location_sids)} SIDs for bbox")
-    intersecting = demo.find_intersecting_data(location_sids, instruments=['GMI'])
-    print(f"  Found {len(intersecting)} intersecting Parquet partition(s)")
-    print()
-
-    # ── Step 3: Download intersecting partitions ────────────────────────
-    print("Step 3: Downloading intersecting partitions ...")
-    data_dict = demo.download_and_analyze(intersecting, instruments=['GMI'])
-    for inst, df in data_dict.items():
-        print(f"  {inst}: {len(df)} rows, columns: {list(df.columns)}")
-    print()
-
-    # ── Step 4: Reconstitute HDF5 from the freshly ingested zarr ─────────
-    # Derive the granule's S3 prefix from the ingested paths so reconstitution
-    # reads only data from this specific granule (not older ingestions).
-    granule_basename = os.path.splitext(os.path.basename(GRANULE_FILE))[0]
-    granule_s3_prefix = f"{S3_PREFIX}/{granule_basename}"
-    print("Step 4: Reconstituting HDF5 from S3 zarr ...")
-    recon_path = demo.reconstitute_hdf5(
-        dataset='GMI_S1',
-        output_hdf5_path=OUTPUT_HDF5,
-        bbox=BBOX,
-        s3_prefix=granule_s3_prefix,
-    )
-    print(f"  Written to: {recon_path}")
-    print()
-
-    # ── Step 5: Structure comparison ─────────────────────────────────────
-    print("=" * 60)
-    print("Structure comparison")
-    print("=" * 60)
-
-    def dump_structure(path, label):
-        print(f"\n--- {label} ---")
-        with h5py.File(path, 'r') as f:
-            def visit(name, obj):
-                if isinstance(obj, h5py.Dataset):
-                    print(f"  /{name:50s} {str(obj.shape):20s} {obj.dtype}")
-                elif isinstance(obj, h5py.Group) and name != '/':
-                    print(f"  /{name:50s} Group")
-            f.visititems(visit)
-
-    dump_structure(OUTPUT_HDF5,  f"RECONSTITUTED  ({os.path.basename(OUTPUT_HDF5)})")
-    dump_structure(ORIGINAL_HDF5, f"ORIGINAL       ({os.path.basename(ORIGINAL_HDF5)})")
+    bbox = regions[region_name.lower()]
+    return StarePodsDemo().get_sids_for_bbox(*bbox, level)
