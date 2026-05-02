@@ -62,10 +62,9 @@ def test_zarr_local_functions():
         q00_dirs = list(Path(local_path).rglob("Q00_*"))
         assert q00_dirs, f"Expected hierarchical Q00_* directories under {local_path}"
         # Default fallback dataset_name="data" since this test passes no dataset.
-        # Each leaf "data/" group has a `__row_positions__` child written by to_zarr_local.
-        assert any((leaf / "__row_positions__").is_dir()
-                   for leaf in Path(local_path).rglob("data")), \
-            "Expected at least one zarr group at the dataset leaf"
+        # Each leaf is now a "data.parquet" file written by to_zarr_local.
+        parquet_leaves = list(Path(local_path).rglob("data.parquet"))
+        assert parquet_leaves, "Expected at least one Parquet partition at the dataset leaf"
 
         print("✅ Local zarr functions test passed!")
 
@@ -92,10 +91,10 @@ def test_zarr_local_with_granule_name():
         assert all(name.startswith("Q") for name in top_level), \
             f"Expected only Q* dirs at root, got {top_level}"
 
-        # Each leaf is <granule>/<dataset>/__row_positions__/
-        leaf_groups = list(Path(local_path).rglob(f"{granule}/{dataset_name}"))
-        assert leaf_groups, f"Expected <granule>/<dataset>/ leaves under the HTM tree"
-        assert all((leaf / "__row_positions__").is_dir() for leaf in leaf_groups)
+        # Each leaf is <granule>/<dataset>.parquet (a single file per partition)
+        leaf_files = list(Path(local_path).rglob(f"{granule}/{dataset_name}.parquet"))
+        assert leaf_files, f"Expected <granule>/<dataset>.parquet leaves under the HTM tree"
+        assert all(leaf.is_file() for leaf in leaf_files)
 
         # Round-trip should still work (from_zarr_local is layout-agnostic)
         sdf_read = sp.STAREDataFrame.from_zarr_local(local_path)

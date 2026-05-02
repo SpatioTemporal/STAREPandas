@@ -28,10 +28,10 @@ _AWS_S3_STORAGE_OPTIONS = {}
 _AWS_RDS_OPTIONS = {}
 
 # Maximum STARE level used for spatial partitioning when writing to S3.
-# Higher levels create too many tiny groups (1-3 rows each), resulting in
-# excessive S3 API calls. Level 6 (~250 km tiles) provides a good balance
-# between spatial locality and chunk size (~3-5 MB per group).
-MAX_PARTITION_LEVEL = 6
+# Each level multiplies partition count by 4. Level 4 caps at ~256 partitions
+# per granule (vs ~4096 at level 6), keeping each Parquet partition file in
+# the multi-MB range — the regime PyArrow / S3 are optimised for.
+MAX_PARTITION_LEVEL = 4
 
 def aws_configure(key=None, secret=None, token=None, region_name=None, endpoint_url=None, client_kwargs=None,
                   rds=None, db_host=None, db_port=None, db_username=None, db_password=None, db_database=None,
@@ -1686,11 +1686,20 @@ class STAREDataFrame(geopandas.GeoDataFrame):
                    dataset=None, data_level=None, raw_collected_time=None, metadata=None,
                    conn=None):
         """
-        Partition STAREDataFrame by SIDs at specified level and write to S3 in hierarchical grouped layout.
+        Partition STAREDataFrame by SIDs at specified level and write to S3 as
+        one Parquet file per partition.
 
-        Layout: s3_path/<hierarchical_path>/[one array per column + __row_positions__]
-        where hierarchical_path is generated using generate_zarr_path(group_id, dataset)
-        (e.g., s3_path/Q00_5/Q01_3/Q02_2/Q03_1/dataset_name/[arrays])
+        Layout: s3_path/<hierarchical_path>.parquet, where ``hierarchical_path``
+        is produced by :meth:`generate_zarr_path` (e.g.
+        ``s3_path/Q00_5/Q01_3/Q02_2/Q03_1/dataset_name.parquet``).
+
+        Each Parquet file contains all DataFrame columns for that partition
+        plus a ``__row_positions__`` column that preserves original row order
+        for reconstitution. ``pixel_width`` and ``granule_name`` (when present
+        in ``metadata``) are stored in the Parquet file's key-value metadata.
+
+        Note: the legacy method name ``to_zarr_s3`` is preserved for API
+        compatibility; the on-disk format is now Parquet, not zarr.
 
         Parameters
         ----------
@@ -1765,12 +1774,15 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         metadata_rows = []
 
         num_groups = len(grouped)
-        print(f"Writing {num_groups} groups to S3...")
+        print(f"Writing {num_groups} Parquet partitions to S3...")
 
-        # TODO: Consider using concurrent.futures.ThreadPoolExecutor to parallelize
-        # S3 group writes for further speedup. Each group write is independent.
+        # Build a single s3fs filesystem instance and reuse it across all writes
+        # so each partition is one S3 PUT instead of ~80 (one per zarr array).
+        import pyarrow as pa
+        import pyarrow.parquet as pq
+        parquet_fs = s3fs.S3FileSystem(**merged_opts)
 
-        # Write each group to its own zarr group using hierarchical paths
+        # Write each partition as a single Parquet file using hierarchical paths
         written_count = 0
         for group_id, gdf in grouped:
             # Skip invalid groups if any
@@ -1779,29 +1791,48 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
             written_count += 1
             if written_count % 50 == 0:
-                print(f"  Progress: {written_count}/{num_groups} groups written...")
+                print(f"  Progress: {written_count}/{num_groups} partitions written...")
 
-            # Generate hierarchical path for this group
+            # Generate hierarchical path for this partition; append .parquet suffix
             hierarchical_path = self.generate_zarr_path(group_id, dataset or "data")
-            group_path = f"{s3_path}/{hierarchical_path}"
+            group_path = f"{s3_path}/{hierarchical_path}.parquet"
 
-            # zarr.open_group with mode="w" handles directory creation via S3's implicit model
-            zg = zarr.open_group(group_path, mode="w", storage_options=merged_opts)
-
-            # Store pixel_width in group attrs for downstream HDF5 reconstitution
-            if 'pixel_width' in base_meta:
-                zg.attrs['pixel_width'] = int(base_meta['pixel_width'])
-
-            # Per-group arrays for each column
+            # Build a Table containing every column plus __row_positions__ to
+            # preserve original row order. Match the legacy zarr coercion:
+            # anything that lands in a numpy object array (e.g. shapely
+            # geometries, mixed-type columns) becomes a string column so
+            # PyArrow can serialize it.
+            row_pos = original_positions.loc[gdf.index].to_numpy(dtype=np.int64)
+            arrays = {}
             for col in self.columns:
                 values = gdf[col].to_numpy()
                 if values.dtype == np.dtype('O'):
                     values = values.astype('U')
-                zg.empty(name=col, shape=(len(values),), dtype=values.dtype, chunks=(min(chunk_size, max(1, len(values))),))[:] = values
+                arrays[col] = values
+            arrays['__row_positions__'] = row_pos
+            table = pa.table(arrays)
 
-            # Hidden helper to preserve original order
-            row_pos = original_positions.loc[gdf.index].to_numpy(dtype=np.int64)
-            zg.empty(name="__row_positions__", shape=(len(row_pos),), dtype=row_pos.dtype, chunks=(min(chunk_size, max(1, len(row_pos))),))[:] = row_pos
+            # Embed pixel_width / granule_name in Parquet file-level metadata so
+            # reconstitution can recover them without consulting the metadata DB.
+            kv_md = {}
+            if 'pixel_width' in base_meta:
+                kv_md[b'pixel_width'] = str(int(base_meta['pixel_width'])).encode()
+            if base_meta.get('granule_name'):
+                kv_md[b'granule_name'] = str(base_meta['granule_name']).encode()
+            if kv_md:
+                existing = dict(table.schema.metadata or {})
+                existing.update(kv_md)
+                table = table.replace_schema_metadata(existing)
+
+            # s3fs paths are protocol-stripped when passed as filesystem=
+            parquet_path = group_path[len('s3://'):] if group_path.startswith('s3://') else group_path
+            pq.write_table(
+                table,
+                parquet_path,
+                filesystem=parquet_fs,
+                compression='zstd',
+                compression_level=3,
+            )
 
             # Collect metadata for batch insert
             meta_row = dict(base_meta)
@@ -1809,7 +1840,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
                 'grouped_id_full': group_id,
                 'group_path': group_path,
                 'num_rows': int(len(gdf)),
-                'columns': list(self.columns),
+                'columns': list(arrays.keys()),
             })
             metadata_rows.append((
                 dataset, data_level, ts, group_id, bucket_name, int(partition_level), json.dumps(meta_row)
@@ -1866,34 +1897,42 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             except Exception as e:
                 print(f"Warning: Failed to close database connection: {e}")
 
-        print(f"✓ Finished writing {num_groups} groups to {s3_path}")
+        print(f"✓ Finished writing {num_groups} Parquet partitions to {s3_path}")
         return s3_path
     
     def to_zarr_local(self, local_path, level, chunk_size=250000, pixel_width=None,
                       db_path=None, dataset=None, data_level=None, granule_name=None):
         """
-        Partition STAREDataFrame by SIDs at specified level and write to local storage in grouped layout.
+        Partition STAREDataFrame by SIDs at specified level and write to the
+        local filesystem as one Parquet file per partition.
 
-        Layout: local_path/<grouped_id>/[one array per column + __row_positions__]
+        Layout (HTM-subtree, with optional granule segment, Parquet leaf)::
+
+            local_path/Q00_X/Q01_Y/.../QN_M/[<granule_name>/]<dataset_name>.parquet
 
         When ``db_path`` is provided the function also records one metadata row
-        per zarr group into a SQLite ``PodsMetadata`` table (same schema as the
-        S3/RDS version but using ``LocalPath`` instead of ``S3 bucket``).
+        per Parquet partition into a SQLite ``PodsMetadata`` table (same schema
+        as the S3/RDS version but using ``LocalPath`` instead of ``S3 bucket``).
+
+        Note: the legacy method name ``to_zarr_local`` is preserved for API
+        compatibility; the on-disk format is now Parquet, not zarr.
 
         Parameters
         ----------
         local_path : str
-            Local path where the zarr root directory will be created
+            Local root directory; HTM subtree is built underneath.
         level : int
-            STARE level for partitioning SIDs
+            STARE level for partitioning SIDs.
         chunk_size : int, optional
-            Size of chunks for zarr arrays (default: 250000)
+            Unused (retained for backward compatibility with callers; Parquet
+            row groups are sized by PyArrow defaults).
         pixel_width : int, optional
-            Number of across-track pixels per scanline. Stored in zarr group attrs
-            so that ``reconstitute_hdf5_from_zarr`` can rebuild the 2D HDF5 structure.
+            Number of across-track pixels per scanline. Stored in the Parquet
+            file's key-value metadata so :func:`reconstitute_hdf5_from_local_zarr`
+            can rebuild the 2D HDF5 structure.
         db_path : str, optional
-            Path to the SQLite database file.  When provided, metadata rows are
-            inserted after all zarr groups are written.
+            Path to the SQLite database file. When provided, metadata rows are
+            inserted after all Parquet files are written.
         dataset : str, optional
             Dataset name recorded in the SQLite metadata (e.g. ``"GMI_S1"``).
         data_level : str, optional
@@ -1929,12 +1968,16 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         ts_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
         # Layout (S3-parity HTM-subtree, with optional granule segment):
-        #   local_path/Q00_X/Q01_Y/.../QN_M/[<granule_name>/]<dataset_name>/[arrays]
+        #   local_path/Q00_X/Q01_Y/.../QN_M/[<granule_name>/]<dataset_name>.parquet
         # When granule_name is provided, multiple granules' contributions to the
-        # same HTM partition coexist as siblings under the partition leaf.
+        # same HTM partition coexist as sibling Parquet files under the partition.
         if granule_name is not None and '/' in granule_name:
             raise ValueError(f"granule_name must not contain '/': {granule_name!r}")
         dataset_name = dataset if dataset is not None else "data"
+
+        import pyarrow as pa
+        import pyarrow.parquet as pq
+
         for group_id, gdf in grouped:
             if isinstance(group_id, (int, np.integer)) and group_id < 0:
                 continue
@@ -1945,33 +1988,53 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             htm_path = self.generate_zarr_path(group_id, dataset_name="")
             htm_segments = [seg for seg in htm_path.split('/') if seg]
             if granule_name is not None:
-                leaf_segments = [granule_name, dataset_name]
+                parent_segments = [*htm_segments, granule_name]
             else:
-                leaf_segments = [dataset_name]
-            group_dir = os.path.join(local_path, *htm_segments, *leaf_segments)
-            os.makedirs(group_dir, exist_ok=True)
-            zg = zarr.open_group(group_dir, mode="w")
+                parent_segments = htm_segments
+            parent_dir = os.path.join(local_path, *parent_segments)
+            os.makedirs(parent_dir, exist_ok=True)
+            group_path = os.path.join(parent_dir, f"{dataset_name}.parquet")
 
-            # Store pixel_width in group attrs for downstream HDF5 reconstitution
-            if pixel_width is not None:
-                zg.attrs['pixel_width'] = int(pixel_width)
-
+            # Build a Table containing every column plus __row_positions__ so
+            # reconstitution can restore original row order. Match the legacy
+            # zarr coercion: anything that lands in a numpy object array
+            # (e.g. shapely geometries, mixed-type columns) becomes a string
+            # column so PyArrow can serialize it.
+            row_pos = original_positions.loc[gdf.index].to_numpy(dtype=np.int64)
+            arrays = {}
             for col in self.columns:
                 values = gdf[col].to_numpy()
                 if values.dtype == np.dtype('O'):
                     values = values.astype('U')
-                zg.empty(name=col, shape=(len(values),), dtype=values.dtype, chunks=(min(chunk_size, max(1, len(values))),))[:] = values
+                arrays[col] = values
+            arrays['__row_positions__'] = row_pos
+            table = pa.table(arrays)
 
-            row_pos = original_positions.loc[gdf.index].to_numpy(dtype=np.int64)
-            zg.empty(name="__row_positions__", shape=(len(row_pos),), dtype=row_pos.dtype, chunks=(min(chunk_size, max(1, len(row_pos))),))[:] = row_pos
+            # Embed pixel_width / granule_name in Parquet file-level metadata.
+            kv_md = {}
+            if pixel_width is not None:
+                kv_md[b'pixel_width'] = str(int(pixel_width)).encode()
+            if granule_name is not None:
+                kv_md[b'granule_name'] = str(granule_name).encode()
+            if kv_md:
+                existing = dict(table.schema.metadata or {})
+                existing.update(kv_md)
+                table = table.replace_schema_metadata(existing)
+
+            pq.write_table(
+                table,
+                group_path,
+                compression='zstd',
+                compression_level=3,
+            )
 
             # Collect metadata row for SQLite insertion
             if db_path is not None:
                 meta_blob = json.dumps({
                     "grouped_id_full": int(group_id),
-                    "group_path": os.path.abspath(group_dir),
+                    "group_path": os.path.abspath(group_path),
                     "num_rows": len(gdf),
-                    "columns": list(self.columns),
+                    "columns": list(arrays.keys()),
                     "pixel_width": int(pixel_width) if pixel_width is not None else None,
                     "granule_name": granule_name,
                 })
@@ -2427,20 +2490,28 @@ class STAREDataFrame(geopandas.GeoDataFrame):
     @classmethod
     def from_zarr_s3(cls, s3_path, storage_options=None):
         """
-        Read STAREDataFrame from S3 grouped zarr store written by to_zarr_s3.
-        
+        Read STAREDataFrame from S3 Parquet partitions written by
+        :meth:`to_zarr_s3`.
+
+        Walks ``s3_path`` recursively, reads every ``*.parquet`` object, and
+        concatenates the rows back in original order using
+        ``__row_positions__``. Method name retained for API compatibility;
+        the underlying leaf format is now Parquet.
+
         Parameters
         ----------
         s3_path : str
-            S3 path to the zarr root directory
+            S3 path to the storage root (e.g. ``"s3://bucket/granule_name"``).
         storage_options : dict, optional
-            S3 storage options including credentials and region
-            
+            S3 storage options including credentials and region.
+
         Returns
         -------
         STAREDataFrame
-            The reconstructed STAREDataFrame in original row order
+            The reconstructed STAREDataFrame in original row order.
         """
+        import pyarrow.parquet as pq
+
         merged_opts = dict(_AWS_S3_STORAGE_OPTIONS)
         if not merged_opts:
             _load_config_from_default_locations()
@@ -2454,136 +2525,84 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             )
         fs = s3fs.S3FileSystem(**merged_opts)
 
-        # Recursively discover zarr groups in hierarchical directory structure
-        def find_zarr_groups(base_path, max_depth=10):
-            """Recursively find zarr groups in hierarchical structure."""
-            zarr_groups = []
-            
-            def _recursive_search(current_path, depth):
-                if depth > max_depth:
-                    return
-                
-                try:
-                    entries = fs.ls(current_path)
-                except Exception:
-                    return
-                
-                for entry in entries:
-                    candidate = entry.rstrip('/')
-                    
-                    # Check if this is a zarr group
-                    if fs.exists(candidate + '/.zgroup'):
-                        zarr_groups.append(candidate)
-                    else:
-                        # Check if it's a directory that might contain zarr groups
-                        try:
-                            if fs.isdir(candidate):
-                                _recursive_search(candidate, depth + 1)
-                        except Exception:
-                            continue
-            
-            _recursive_search(base_path, 0)
-            return zarr_groups
+        # Recursively discover Parquet files under s3_path
+        prefix = s3_path[len('s3://'):] if s3_path.startswith('s3://') else s3_path
+        try:
+            parquet_keys = [k for k in fs.find(prefix) if k.endswith('.parquet')]
+        except Exception:
+            parquet_keys = []
 
-        group_dirs = find_zarr_groups(s3_path)
+        if not parquet_keys:
+            return cls()
 
-        # Read each group's arrays into a DataFrame and collect
         frames = []
-        for gpath in group_dirs:
-            zg = zarr.open_group(gpath, mode="r", storage_options=merged_opts)
-            cols = [name for name in zg.array_keys() if name != "__row_positions__"]
-            data = {}
-            for name in cols:
-                arr = zg[name][:]
-                if arr.dtype.kind == 'U':
-                    arr = arr.astype('O')
-                data[name] = arr
-            df_part = pandas.DataFrame(data)
-            row_pos = zg["__row_positions__"][:].astype(np.int64)
-            df_part["__row_pos__"] = row_pos
+        for key in parquet_keys:
+            df_part = pq.read_table(key, filesystem=fs).to_pandas()
+            if df_part.empty:
+                continue
             frames.append(df_part)
 
         if not frames:
             return cls()
 
         df = pandas.concat(frames, ignore_index=True)
-        df.sort_values("__row_pos__", inplace=True)
-        df.drop(columns=["__row_pos__"], inplace=True)
+        if '__row_positions__' in df.columns:
+            df = df.sort_values('__row_positions__').drop(
+                columns=['__row_positions__']
+            ).reset_index(drop=True)
 
         return cls(df)
     
     @classmethod
     def from_zarr_local(cls, local_path):
         """
-        Read STAREDataFrame from local grouped zarr store written by to_zarr_local.
-        
+        Read STAREDataFrame from local Parquet partitions written by
+        :meth:`to_zarr_local`.
+
+        Walks ``local_path`` recursively, reads every ``*.parquet`` file, and
+        concatenates the rows back in original order using
+        ``__row_positions__``. Method name retained for API compatibility;
+        the underlying leaf format is now Parquet.
+
         Parameters
         ----------
         local_path : str
-            Local path to the zarr root directory
-            
+            Local path to the storage root directory.
+
         Returns
         -------
         STAREDataFrame
-            The reconstructed STAREDataFrame in original row order
+            The reconstructed STAREDataFrame in original row order.
         """
+        import pyarrow.parquet as pq
+
         if not os.path.isdir(local_path):
-            # Nothing to read
             return cls()
 
-        # Recursively discover zarr groups produced by to_zarr_local. A directory
-        # is one of our groups iff it contains a `__row_positions__` child (the
-        # row-order helper this writer always emits). This is zarr-version
-        # agnostic (works for both v2 `.zgroup` and v3 `zarr.json` stores) and
-        # handles both the new HTM-subtree layout and any pre-existing flat
-        # layout transparently.
-        def find_zarr_groups(base_path, max_depth=32):
-            zarr_groups = []
+        parquet_files = []
+        for root, _dirs, files in os.walk(local_path):
+            for f in files:
+                if f.endswith('.parquet'):
+                    parquet_files.append(os.path.join(root, f))
 
-            def _recursive_search(current_path, depth):
-                if depth > max_depth:
-                    return
-                try:
-                    entries = os.listdir(current_path)
-                except OSError:
-                    return
-                if '__row_positions__' in entries and os.path.isdir(
-                    os.path.join(current_path, '__row_positions__')
-                ):
-                    zarr_groups.append(current_path)
-                    return
-                for name in entries:
-                    candidate = os.path.join(current_path, name)
-                    if os.path.isdir(candidate):
-                        _recursive_search(candidate, depth + 1)
-
-            _recursive_search(base_path, 0)
-            return zarr_groups
-
-        group_dirs = find_zarr_groups(local_path)
+        if not parquet_files:
+            return cls()
 
         frames = []
-        for gdir in group_dirs:
-            zg = zarr.open_group(gdir, mode="r")
-            cols = [n for n in zg.array_keys() if n != "__row_positions__"]
-            data = {}
-            for n in cols:
-                arr = zg[n][:]
-                if arr.dtype.kind == 'U':
-                    arr = arr.astype('O')
-                data[n] = arr
-            df_part = pandas.DataFrame(data)
-            row_pos = zg["__row_positions__"][:].astype(np.int64)
-            df_part["__row_pos__"] = row_pos
+        for fpath in parquet_files:
+            df_part = pq.read_table(fpath).to_pandas()
+            if df_part.empty:
+                continue
             frames.append(df_part)
 
         if not frames:
             return cls()
 
         df = pandas.concat(frames, ignore_index=True)
-        df.sort_values("__row_pos__", inplace=True)
-        df.drop(columns=["__row_pos__"], inplace=True)
-        df.reset_index(drop=True, inplace=True)
+        if '__row_positions__' in df.columns:
+            df = df.sort_values('__row_positions__').drop(
+                columns=['__row_positions__']
+            ).reset_index(drop=True)
 
         return cls(df)
 

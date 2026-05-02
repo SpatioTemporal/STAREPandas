@@ -3,14 +3,14 @@
 Demo: Local STARE-PODS pipeline — no AWS or RDS required.
 
 This script mirrors demo_reconstitute_hdf5_from_s3.py but uses the local
-filesystem for zarr storage and SQLite for metadata.  No cloud credentials
-are needed.
+filesystem for Parquet storage and SQLite for metadata.  No cloud
+credentials are needed.
 
 Workflow
 --------
-1. Ingest a GMI granule → zarr groups on local disk + SQLite metadata
+1. Ingest a GMI granule → Parquet partitions on local disk + SQLite metadata
 2. Find intersecting data for a bounding box via STARE SIDs + SQLite
-3. Load intersecting zarr chunks from disk
+3. Load intersecting Parquet partitions from disk
 4. Reconstitute an HDF5 file (both S1 and S2 scans)
 5. Compare the reconstituted structure with the original granule
 
@@ -24,7 +24,7 @@ import h5py
 from starepandas.demo import LocalStarePodsDemo
 
 # ── Configuration ─────────────────────────────────────────────────────────────
-LOCAL_ROOT = "/tmp/stare_pods_local"   # zarr store + SQLite DB live here
+LOCAL_ROOT = "/tmp/stare_pods_local"   # Parquet store + SQLite DB live here
 
 GRANULE_FILE = (
     "/Users/thatdaihaiton/Workspace/STARE/L1C_Data_Samples/GPM/2025/Jan_1_2/"
@@ -80,7 +80,7 @@ def main():
 
     # ── Step 1: Ingest ────────────────────────────────────────────────────────
     print("=" * 60)
-    print("Step 1: Ingest granule → local zarr + SQLite")
+    print("Step 1: Ingest granule → local Parquet + SQLite")
     print("=" * 60)
     local_paths = demo.ingest_granules(GRANULE_FILE, instrument='GMI', level=10)
     print(f"Written {len(local_paths)} scan path(s).")
@@ -103,9 +103,9 @@ def main():
         print(intersecting[['Dataset', 'grouped_id', 'group_path']].to_string(index=False))
     print()
 
-    # ── Step 3: Load intersecting chunks ─────────────────────────────────────
+    # ── Step 3: Load intersecting partitions ─────────────────────────────────
     print("=" * 60)
-    print("Step 3: Load intersecting zarr chunks from disk")
+    print("Step 3: Load intersecting Parquet partitions from disk")
     print("=" * 60)
     if not intersecting.empty:
         data_dict = demo.download_and_analyze(intersecting, instruments=list(intersecting['Dataset'].unique()))

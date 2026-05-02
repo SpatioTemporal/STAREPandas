@@ -3,9 +3,9 @@
 STARE-PODS Demonstration API
 
 High-level API for demonstrating STARE-PODS workflow:
-1. Ingest granules into zarr chunks stored in S3
+1. Ingest granules into Parquet partitions stored in S3
 2. Find intersecting data across different instruments using STARE SIDs
-3. Download and analyze only intersecting chunks
+3. Download and analyze only intersecting partitions
 4. Compare and visualize data from multiple instruments
 """
 
@@ -27,9 +27,9 @@ class StarePodsDemo:
     High-level STARE-PODS demonstration API.
     
     Provides simple interface for:
-    - Ingesting granules into S3 zarr storage
+    - Ingesting granules into S3 Parquet partitions
     - Finding intersecting data using STARE spatial indexing
-    - Downloading and analyzing intersecting chunks
+    - Downloading and analyzing intersecting partitions
     - Comparing multiple instruments at same location/time
     """
     
@@ -52,8 +52,8 @@ class StarePodsDemo:
     def ingest_granules(self, data_path: str, instrument: str, s3_prefix: str,
                      scan: Optional[str] = None, level: int = 10, **kwargs) -> List[str]:
         """
-        Partition granules into zarr chunks and store in S3.
-        
+        Partition granules into Parquet files and store in S3.
+
         Parameters
         ----------
         data_path : str
@@ -66,7 +66,7 @@ class StarePodsDemo:
             Specific scan to process (e.g., "S1", "S2")
         **kwargs
             Additional arguments for to_zarr_s3()
-            
+
         Returns
         -------
         List[str]
@@ -123,7 +123,7 @@ class StarePodsDemo:
                 logger.error(f"✗ Failed to process {granule_file}: {e}")
                 continue
         
-        logger.info(f"Ingested {len(s3_paths)} zarr datasets")
+        logger.info(f"Ingested {len(s3_paths)} Parquet dataset(s)")
         return s3_paths
     
     def find_intersecting_data(self, location_sids: List[int], instruments: List[str],
@@ -219,93 +219,89 @@ class StarePodsDemo:
         logger.info(f"Found {len(result_df)} total intersecting chunks")
         return result_df
     
-    def download_and_analyze(self, intersecting_metadata: pd.DataFrame, 
+    def download_and_analyze(self, intersecting_metadata: pd.DataFrame,
                            instruments: Optional[List[str]] = None) -> Dict[str, pd.DataFrame]:
         """
-        Download intersecting chunks and create STAREDataFrames.
-        
+        Download intersecting Parquet partitions and create STAREDataFrames.
+
         Parameters
         ----------
         intersecting_metadata : pd.DataFrame
             Metadata from find_intersecting_data()
         instruments : List[str], optional
             Specific instruments to analyze (if None, analyze all)
-            
+
         Returns
         -------
         Dict[str, pd.DataFrame]
             Dictionary mapping instrument to STAREDataFrames
         """
+        import pyarrow.parquet as pq
+        import s3fs
+
         if intersecting_metadata.empty:
             logger.warning("No metadata to download")
             return {}
-        
+
         if instruments is None:
             instruments = intersecting_metadata['Dataset'].unique().tolist()
-        
-        logger.info(f"Downloading intersecting chunks for {instruments}")
-        
-        # Group by instrument and S3 path
+
+        logger.info(f"Downloading intersecting partitions for {instruments}")
+
+        merged_opts = dict(starepandas.staredataframe._AWS_S3_STORAGE_OPTIONS)
+        parquet_fs = s3fs.S3FileSystem(**merged_opts) if merged_opts else s3fs.S3FileSystem()
+
         data_results = {}
-        
+
         for instrument in instruments:
             instrument_data = intersecting_metadata[
                 intersecting_metadata['Dataset'] == instrument
             ]
-            
+
             if instrument_data.empty:
                 logger.warning(f"No data found for {instrument}")
                 continue
-            
+
             total_chunks = len(instrument_data)
-            logger.info(f"Processing {total_chunks} chunks for {instrument}")
+            logger.info(f"Processing {total_chunks} partitions for {instrument}")
 
             dfs_by_chunk = []
             for chunk_i, (_, chunk_meta) in enumerate(instrument_data.iterrows()):
+                grouped_id = chunk_meta.get('grouped_id', '')
                 try:
-                    # Extract S3 path and chunk information
-                    s3_bucket = chunk_meta['S3 bucket']
                     group_path = chunk_meta.get('group_path', '')
-                    grouped_id = chunk_meta.get('grouped_id', '')
-                    
                     if not group_path:
                         continue
-                    
-                    # Construct full S3 path
-                    s3_path = f"s3://{s3_bucket}/{group_path}"
-                    
-                    logger.debug(f"Downloading chunk {grouped_id} from {s3_path}")
 
-                    # Use existing function to download specific groups
-                    if grouped_id:
-                        df = starepandas.io.granules.from_zarr_s3_chunked_groups(
-                            s3_path=s3_path,
-                            group_sid_ids=[grouped_id]
-                        )
-                    else:
-                        # Fallback to full chunked reading
-                        df = starepandas.io.granules.from_zarr_s3_chunked(s3_path)
+                    # group_path is the full s3://bucket/.../<dataset>.parquet path
+                    read_path = group_path[len('s3://'):] if group_path.startswith('s3://') else group_path
+                    logger.debug(f"Downloading partition {grouped_id} from {group_path}")
+
+                    df = pq.read_table(read_path, filesystem=parquet_fs).to_pandas()
 
                     if not df.empty:
                         dfs_by_chunk.append(df)
-                        logger.debug(f"✓ Downloaded {len(df)} rows for chunk {grouped_id}")
+                        logger.debug(f"✓ Downloaded {len(df)} rows for partition {grouped_id}")
                         if (chunk_i + 1) % 500 == 0:
-                            logger.info(f"  {instrument}: downloaded {chunk_i + 1}/{total_chunks} chunks ...")
+                            logger.info(f"  {instrument}: downloaded {chunk_i + 1}/{total_chunks} partitions ...")
                     else:
-                        logger.warning(f"Empty result for chunk {grouped_id}")
-                        
+                        logger.warning(f"Empty result for partition {grouped_id}")
+
                 except Exception as e:
-                    logger.error(f"Error downloading chunk {grouped_id}: {e}")
+                    logger.error(f"Error downloading partition {grouped_id}: {e}")
                     continue
-            
+
             if dfs_by_chunk:
-                # Combine all chunks for this instrument
                 combined_df = pd.concat(dfs_by_chunk, ignore_index=True)
+                if '__row_positions__' in combined_df.columns:
+                    combined_df = combined_df.sort_values('__row_positions__').drop(
+                        columns=['__row_positions__']
+                    ).reset_index(drop=True)
                 data_results[instrument] = starepandas.STAREDataFrame(combined_df)
                 logger.info(f"✓ Combined {len(combined_df)} rows for {instrument}")
             else:
                 logger.warning(f"No successful downloads for {instrument}")
-        
+
         logger.info(f"Downloaded data for {len(data_results)} instruments")
         return data_results
     
@@ -421,11 +417,12 @@ class StarePodsDemo:
         compression_opts: int = 4,
     ) -> str:
         """
-        Reconstitute an HDF5 granule from zarr chunks stored in S3.
+        Reconstitute an HDF5 granule from Parquet partitions stored in S3.
 
-        Queries the RDS metadata to find zarr groups whose STARE partition
-        SIDs intersect the requested area, downloads only those groups, and
-        writes an HDF5 file that matches the original granule structure.
+        Queries the RDS metadata to find Parquet partitions whose STARE
+        partition SIDs intersect the requested area, downloads only those
+        files, and writes an HDF5 file that matches the original granule
+        structure.
 
         Parameters
         ----------
@@ -602,26 +599,22 @@ class LocalStarePodsDemo:
     """
     Local STARE-PODS pipeline — no AWS or RDS required.
 
-    Mirrors :class:`StarePodsDemo` but writes zarr groups to the local
-    filesystem and stores metadata in a SQLite database.  Useful for
+    Mirrors :class:`StarePodsDemo` but writes Parquet partitions to the
+    local filesystem and stores metadata in a SQLite database.  Useful for
     development, offline work, or environments without cloud access.
 
-    Directory layout::
+    Directory layout (HTM-subtree, Parquet leaves)::
 
         <local_root>/
-        ├── metadata.db              # SQLite — PodsMetadata table
-        └── <granule_basename>/      # one directory per granule
-            ├── <grouped_id_0>/      # flat zarr group dirs
-            │   ├── lat/
-            │   ├── lon/
-            │   ├── Tc1/ …
-            │   └── __row_positions__/
-            └── <grouped_id_N>/
+        ├── metadata.db                          # SQLite — PodsMetadata table
+        └── Q00_X/Q01_Y/.../QN_M/
+            └── <granule_basename>/
+                └── <dataset>.parquet            # one Parquet file per partition
 
     Parameters
     ----------
     local_root : str
-        Root directory for zarr storage and the SQLite database file.
+        Root directory for Parquet storage and the SQLite database file.
         Created automatically if it does not exist.
     """
 
@@ -705,7 +698,7 @@ class LocalStarePodsDemo:
                 logger.error(f"✗ Failed to process {granule_file}: {e}")
                 continue
 
-        logger.info(f"Ingested {len(local_paths)} zarr dataset(s)")
+        logger.info(f"Ingested {len(local_paths)} Parquet dataset(s)")
         return local_paths
 
     # ── Spatial query ─────────────────────────────────────────────────────────
@@ -747,7 +740,7 @@ class LocalStarePodsDemo:
         pandas.DataFrame
             Matching metadata rows.
         """
-        # No spatial filter — return all groups for the requested instruments
+        # No spatial filter — return all partitions for the requested instruments
         if location_sids is None:
             all_meta = []
             for instrument in instruments:
@@ -760,7 +753,7 @@ class LocalStarePodsDemo:
                             self.db_path, dataset_prefix=instrument, **kwargs
                         )
                     if meta is not None and not meta.empty:
-                        logger.info(f"Loaded all {len(meta)} groups for {instrument}")
+                        logger.info(f"Loaded all {len(meta)} partitions for {instrument}")
                         all_meta.append(meta)
                     else:
                         logger.warning(f"No metadata found for {instrument}")
@@ -827,7 +820,7 @@ class LocalStarePodsDemo:
         instruments: Optional[List[str]] = None,
     ) -> Dict[str, pd.DataFrame]:
         """
-        Load intersecting zarr chunks from local disk into STAREDataFrames.
+        Load intersecting Parquet partitions from local disk into STAREDataFrames.
 
         Parameters
         ----------
@@ -841,7 +834,7 @@ class LocalStarePodsDemo:
         dict
             Mapping ``dataset_name → STAREDataFrame``.
         """
-        import zarr as _zarr
+        import pyarrow.parquet as pq
 
         if intersecting_metadata.empty:
             logger.warning("No metadata to load")
@@ -861,20 +854,16 @@ class LocalStarePodsDemo:
             total = len(rows)
             for i, (_, chunk) in enumerate(rows.iterrows()):
                 gpath = chunk.get('group_path', '')
-                if not gpath or not os.path.isdir(gpath):
+                if not gpath or not os.path.isfile(gpath):
                     continue
                 try:
-                    zg = _zarr.open_group(gpath, mode='r')
-                    col_data = {k: zg[k][:] for k in zg.array_keys() if k != '__row_positions__'}
-                    if not col_data:
+                    df_chunk = pq.read_table(gpath).to_pandas()
+                    if df_chunk.empty:
                         continue
-                    df_chunk = pd.DataFrame(col_data)
-                    if '__row_positions__' in zg:
-                        df_chunk['__row_positions__'] = zg['__row_positions__'][:]
                     frames.append(df_chunk)
                     logger.debug(f"✓ Loaded {len(df_chunk)} rows from {gpath}")
                     if (i + 1) % 500 == 0:
-                        logger.info(f"  {instrument}: loaded {i + 1}/{total} groups ...")
+                        logger.info(f"  {instrument}: loaded {i + 1}/{total} partitions ...")
                 except Exception as e:
                     logger.error(f"Error loading {gpath}: {e}")
 
@@ -904,7 +893,7 @@ class LocalStarePodsDemo:
         compression_opts: int = 4,
     ) -> str:
         """
-        Reconstitute an HDF5 granule from local zarr chunks.
+        Reconstitute an HDF5 granule from local Parquet partitions.
 
         Parameters
         ----------
@@ -1019,14 +1008,14 @@ if __name__ == "__main__":
     print(f"S3      : {S3_PREFIX}")
     print()
 
-    # ── Step 1: Ingest the single granule into S3 zarr ──────────────────
-    print("Step 1: Ingesting granule into S3 zarr ...")
+    # ── Step 1: Ingest the single granule into S3 Parquet ────────────────
+    print("Step 1: Ingesting granule into S3 Parquet partitions ...")
     s3_paths = demo.ingest_granules(
         data_path=GRANULE_FILE,
         instrument='GMI',
         s3_prefix=S3_PREFIX,
     )
-    print(f"  Stored {len(s3_paths)} zarr dataset(s) to S3")
+    print(f"  Stored {len(s3_paths)} Parquet dataset(s) to S3")
     print()
 
     # ── Step 2: Find intersecting data via STARE SIDs ───────────────────
@@ -1034,11 +1023,11 @@ if __name__ == "__main__":
     location_sids = demo.get_sids_for_bbox(*BBOX, level=10)
     print(f"  Generated {len(location_sids)} SIDs for bbox")
     intersecting = demo.find_intersecting_data(location_sids, instruments=['GMI'])
-    print(f"  Found {len(intersecting)} intersecting zarr group(s)")
+    print(f"  Found {len(intersecting)} intersecting Parquet partition(s)")
     print()
 
-    # ── Step 3: Download intersecting chunks ────────────────────────────
-    print("Step 3: Downloading intersecting chunks ...")
+    # ── Step 3: Download intersecting partitions ────────────────────────
+    print("Step 3: Downloading intersecting partitions ...")
     data_dict = demo.download_and_analyze(intersecting, instruments=['GMI'])
     for inst, df in data_dict.items():
         print(f"  {inst}: {len(df)} rows, columns: {list(df.columns)}")

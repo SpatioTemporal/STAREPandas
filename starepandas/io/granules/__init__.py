@@ -1010,11 +1010,14 @@ def reconstitute_hdf5_from_zarr(
     mode='w',
 ):
     """
-    Reconstitute an HDF5 granule from zarr chunks stored on S3 or local disk.
+    Reconstitute an HDF5 granule from Parquet partitions stored on S3 or local disk.
 
-    Reads only the zarr groups whose STARE partition SIDs intersect the
+    Reads only the Parquet files whose STARE partition SIDs intersect the
     requested area, concatenates them into a STAREDataFrame, then calls
     ``STAREDataFrame.to_hdf5()`` to write the original granule structure.
+
+    Note: function name retained for API compatibility; the underlying leaf
+    format is now Parquet, not zarr.
 
     Parameters
     ----------
@@ -1062,7 +1065,7 @@ def reconstitute_hdf5_from_zarr(
         matching zarr groups are found, or if ``pixel_width`` cannot be
         determined.
     """
-    import zarr
+    import pyarrow.parquet as pq
     import pystare
     from starepandas import STAREDataFrame
     from starepandas.staredataframe import _AWS_S3_STORAGE_OPTIONS, MAX_PARTITION_LEVEL
@@ -1132,60 +1135,74 @@ def reconstitute_hdf5_from_zarr(
             dummy = STAREDataFrame()
             for gid in query_group_ids:
                 rel = dummy.generate_zarr_path(gid, dataset)
-                group_paths.append((f"{zarr_path}/{rel}", gid))
+                group_paths.append((f"{zarr_path}/{rel}.parquet", gid))
     else:
-        # Local: flat layout — each sub-directory name is the integer group SID
+        # Local: HTM-subtree layout — walk the tree for `<dataset>.parquet`
+        # leaves, decode the partition SID from HTM path segments, and keep
+        # only those that intersect the query.
         if not os.path.isdir(zarr_path):
             raise ValueError(f"Local zarr path does not exist: {zarr_path}")
-        for entry in os.listdir(zarr_path):
-            entry_path = os.path.join(zarr_path, entry)
-            if not os.path.isdir(entry_path):
+        dummy = STAREDataFrame()
+        target_basename = f"{dataset}.parquet"
+        for root, _dirs, files in os.walk(zarr_path):
+            if target_basename not in files:
+                continue
+            filepath = os.path.join(root, target_basename)
+            rel = os.path.relpath(filepath, zarr_path)
+            parts = rel.split(os.sep)
+            htm_parts = [p for p in parts[:-1] if p.startswith('Q')]
+            if not htm_parts:
                 continue
             try:
-                gid = int(entry)
-            except ValueError:
+                sid, _ = dummy.parse_zarr_path('/'.join(htm_parts) + f'/{dataset}')
+            except Exception:
                 continue
-            if gid in query_group_ids:
-                group_paths.append((entry_path, gid))
+            if sid in query_group_ids:
+                group_paths.append((filepath, sid))
 
     if not group_paths:
         raise ValueError(
-            f"No zarr groups found for dataset '{dataset}' intersecting the "
-            f"requested area.  Queried {len(query_group_ids)} partition SIDs."
+            f"No Parquet partitions found for dataset '{dataset}' intersecting "
+            f"the requested area.  Queried {len(query_group_ids)} partition SIDs."
         )
 
-    # ── Read matching groups ──────────────────────────────────────────────────
+    # ── Read matching partitions ─────────────────────────────────────────────
+    if is_s3:
+        import s3fs
+        parquet_fs = s3fs.S3FileSystem(**merged_opts) if merged_opts else s3fs.S3FileSystem()
+    else:
+        parquet_fs = None
+
     frames = []
     for gpath, _gid in group_paths:
         try:
-            zg = zarr.open_group(gpath, mode='r', storage_options=merged_opts if is_s3 else {})
+            if is_s3:
+                read_path = gpath[len('s3://'):] if gpath.startswith('s3://') else gpath
+                pq_file = pq.ParquetFile(read_path, filesystem=parquet_fs)
+            else:
+                pq_file = pq.ParquetFile(gpath)
         except Exception as e:
-            logging.warning("Skipping zarr group %s — could not open: %s", gpath, e)
+            logging.warning("Skipping Parquet partition %s — could not open: %s", gpath, e)
             continue
 
-        # Harvest pixel_width from zarr attrs (first group wins)
-        if zarr_pixel_width is None and 'pixel_width' in zg.attrs:
-            zarr_pixel_width = int(zg.attrs['pixel_width'])
+        # Harvest pixel_width from Parquet kv-metadata (first partition wins)
+        if zarr_pixel_width is None:
+            md = pq_file.schema_arrow.metadata or {}
+            pw_bytes = md.get(b'pixel_width')
+            if pw_bytes is not None:
+                try:
+                    zarr_pixel_width = int(pw_bytes.decode())
+                except (ValueError, AttributeError):
+                    pass
 
-        # Read all per-column arrays (skip the hidden helper array)
-        col_data = {}
-        for key in zg.array_keys():
-            if key == '__row_positions__':
-                continue
-            col_data[key] = zg[key][:]
-
-        if not col_data:
+        df_chunk = pq_file.read().to_pandas()
+        if df_chunk.empty:
             continue
-
-        row_positions = zg['__row_positions__'][:] if '__row_positions__' in zg else None
-        df_chunk = pd.DataFrame(col_data)
-        if row_positions is not None:
-            df_chunk['__row_positions__'] = row_positions
         frames.append(df_chunk)
 
     if not frames:
         raise ValueError(
-            f"All matched zarr groups were empty for dataset '{dataset}'."
+            f"All matched Parquet partitions were empty for dataset '{dataset}'."
         )
 
     # ── Concatenate and sort by original row order ────────────────────────────
@@ -1203,7 +1220,7 @@ def reconstitute_hdf5_from_zarr(
         logging.debug("pixel_width=%d provided explicitly for dataset '%s'", resolved_pw, dataset)
     elif zarr_pixel_width is not None:
         resolved_pw = zarr_pixel_width
-        logging.debug("pixel_width=%d read from zarr group attrs for dataset '%s'", resolved_pw, dataset)
+        logging.debug("pixel_width=%d read from Parquet kv-metadata for dataset '%s'", resolved_pw, dataset)
     else:
         resolved_pw = SCAN_PIXEL_WIDTHS.get(dataset)
         if resolved_pw is not None:
@@ -1212,7 +1229,7 @@ def reconstitute_hdf5_from_zarr(
     if resolved_pw is None:
         raise ValueError(
             f"Cannot determine pixel_width for dataset '{dataset}'. "
-            "Pass pixel_width explicitly or ensure it was stored in zarr group attrs."
+            "Pass pixel_width explicitly or ensure it was stored in Parquet kv-metadata."
         )
 
     # ── Derive scan group name from dataset string ────────────────────────────
@@ -1514,11 +1531,15 @@ def reconstitute_hdf5_from_local_zarr(
     mode='w',
 ):
     """
-    Reconstitute an HDF5 granule from zarr chunks stored on the local filesystem.
+    Reconstitute an HDF5 granule from Parquet partitions stored on the local
+    filesystem.
 
     Local equivalent of :func:`reconstitute_hdf5_from_zarr`.  Instead of
     querying S3 + RDS it queries the SQLite database written by
-    :func:`to_zarr_local_meta` and opens zarr groups on local disk.
+    :func:`to_zarr_local_meta` and opens Parquet partitions on local disk.
+
+    Note: function name retained for API compatibility; the underlying leaf
+    format is now Parquet, not zarr.
 
     Parameters
     ----------
@@ -1557,7 +1578,7 @@ def reconstitute_hdf5_from_local_zarr(
     str
         ``output_hdf5_path``
     """
-    import zarr
+    import pyarrow.parquet as pq
     import pystare
     from starepandas import STAREDataFrame
     from starepandas.staredataframe import MAX_PARTITION_LEVEL
@@ -1632,41 +1653,37 @@ def reconstitute_hdf5_from_local_zarr(
 
     if matching.empty:
         raise ValueError(
-            f"No zarr groups found for dataset '{dataset}'"
+            f"No Parquet partitions found for dataset '{dataset}'"
             + (" intersecting the requested area." if not no_spatial_filter else " in the database.")
         )
 
-    # Read matching groups from local disk
+    # Read matching Parquet partitions from local disk
     frames = []
     zarr_pixel_width = None
     for _, row in matching.iterrows():
         gpath = row['group_path']
         try:
-            zg = zarr.open_group(gpath, mode='r')
+            pq_file = pq.ParquetFile(gpath)
         except Exception as e:
-            logging.warning("Skipping zarr group %s — could not open: %s", gpath, e)
+            logging.warning("Skipping Parquet partition %s — could not open: %s", gpath, e)
             continue
 
-        if zarr_pixel_width is None and 'pixel_width' in zg.attrs:
-            zarr_pixel_width = int(zg.attrs['pixel_width'])
+        if zarr_pixel_width is None:
+            md = pq_file.schema_arrow.metadata or {}
+            pw_bytes = md.get(b'pixel_width')
+            if pw_bytes is not None:
+                try:
+                    zarr_pixel_width = int(pw_bytes.decode())
+                except (ValueError, AttributeError):
+                    pass
 
-        col_data = {}
-        for key in zg.array_keys():
-            if key == '__row_positions__':
-                continue
-            col_data[key] = zg[key][:]
-
-        if not col_data:
+        df_chunk = pq_file.read().to_pandas()
+        if df_chunk.empty:
             continue
-
-        row_positions = zg['__row_positions__'][:] if '__row_positions__' in zg else None
-        df_chunk = pd.DataFrame(col_data)
-        if row_positions is not None:
-            df_chunk['__row_positions__'] = row_positions
         frames.append(df_chunk)
 
     if not frames:
-        raise ValueError(f"All matched zarr groups were empty for dataset '{dataset}'.")
+        raise ValueError(f"All matched Parquet partitions were empty for dataset '{dataset}'.")
 
     combined = pd.concat(frames, ignore_index=True)
     if '__row_positions__' in combined.columns:
@@ -1687,7 +1704,7 @@ def reconstitute_hdf5_from_local_zarr(
     if resolved_pw is None:
         raise ValueError(
             f"Cannot determine pixel_width for dataset '{dataset}'. "
-            "Pass pixel_width explicitly or ensure it was stored in zarr group attrs."
+            "Pass pixel_width explicitly or ensure it was stored in Parquet kv-metadata."
         )
 
     # Derive HDF5 scan group name from dataset string
