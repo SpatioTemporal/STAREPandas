@@ -413,16 +413,24 @@ class StarePodsDemo:
         str
             ``output_hdf5_path`` — path of the written HDF5 file.
         """
-        if (bbox is None) == (area_sids is None):
+        # Relaxed (2026-05-25, task 13 — match LocalStarePodsDemo behaviour):
+        # both None means "no spatial filter — reconstitute the full granule".
+        # Either set, but not both.
+        if bbox is not None and area_sids is not None:
             raise ValueError(
-                "Provide exactly one of 'bbox' or 'area_sids', not both or neither."
+                "Provide at most one of 'bbox' or 'area_sids', not both."
             )
 
         datasets = [dataset] if isinstance(dataset, str) else list(dataset)
         resolved_root = s3_root or "s3://"
 
         for i, ds in enumerate(datasets):
-            area_desc = f"bbox={bbox}" if bbox is not None else f"{len(area_sids)} area SIDs"
+            if bbox is not None:
+                area_desc = f"bbox={bbox}"
+            elif area_sids is not None:
+                area_desc = f"{len(area_sids)} area SIDs"
+            else:
+                area_desc = "full granule (no spatial filter)"
             logger.info(f"Reconstituting HDF5 for dataset='{ds}' over {area_desc}")
 
             # First scan creates the file ('w'), subsequent scans append ('a')

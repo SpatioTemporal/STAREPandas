@@ -43,9 +43,10 @@ GRANULE_FILE = (
 # S3 root where Parquet partitions and RDS metadata for this demo live.
 S3_PREFIX = "s3://zarrpods/gmi-demo-parquet"
 
-# Bounding box filter — set to None to reconstitute the full granule,
-# or e.g. (115, -30, 120, -25) to restrict to SW Australia / Perth.
-BBOX = (115, -30, 120, -25)
+# Bounding box filter — set to None to reconstitute the full granule
+# (matching local_starepods_examples.py), or e.g. (115, -30, 120, -25)
+# to restrict to SW Australia / Perth.
+BBOX = None   # full granule, no spatial filter — mirrors the local demo
 
 DATASETS = ["GMI_S1", "GMI_S2"]
 

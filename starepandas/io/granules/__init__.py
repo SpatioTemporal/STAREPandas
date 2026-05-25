@@ -1108,22 +1108,29 @@ def reconstitute_hdf5_from_s3(
     from starepandas.staredataframe import _AWS_S3_STORAGE_OPTIONS, MAX_PARTITION_LEVEL
 
     # ── Validate inputs ──────────────────────────────────────────────────────
-    if (area_sids is None) == (bbox is None):
+    # Both-None means "no spatial filter — reconstitute the full granule"
+    # (task 13 parity with the local reconstitute_hdf5_from_local). Either
+    # set, but not both.
+    if area_sids is not None and bbox is not None:
         raise ValueError(
-            "Provide exactly one of 'area_sids' or 'bbox', not both or neither."
+            "Provide at most one of 'area_sids' or 'bbox', not both."
         )
 
-    # ── Build query SIDs ─────────────────────────────────────────────────────
-    if bbox is not None:
-        lon_min, lat_min, lon_max, lat_max = bbox
-        lats = [lat_min, lat_min, lat_max, lat_max]
-        lons = [lon_min, lon_max, lon_max, lon_min]
-        area_sids = pystare.cover_from_hull(lats, lons, MAX_PARTITION_LEVEL)
+    no_spatial_filter = (area_sids is None and bbox is None)
 
-    coerced = pystare.spatial_coerce_resolution(
-        np.array(area_sids, dtype=np.int64), MAX_PARTITION_LEVEL
-    )
-    query_group_ids = set(int(s) for s in np.unique(coerced))
+    # ── Build query SIDs (skipped when no_spatial_filter) ────────────────────
+    if not no_spatial_filter:
+        if bbox is not None:
+            lon_min, lat_min, lon_max, lat_max = bbox
+            lats = [lat_min, lat_min, lat_max, lat_max]
+            lons = [lon_min, lon_max, lon_max, lon_min]
+            area_sids = pystare.cover_from_hull(lats, lons, MAX_PARTITION_LEVEL)
+        coerced = pystare.spatial_coerce_resolution(
+            np.array(area_sids, dtype=np.int64), MAX_PARTITION_LEVEL
+        )
+        query_group_ids = set(int(s) for s in np.unique(coerced))
+    else:
+        query_group_ids = None   # signal: include every partition for this dataset
 
     # ── Collect matching partition paths ─────────────────────────────────────
     is_s3 = s3_root.startswith('s3://')
@@ -1141,34 +1148,46 @@ def reconstitute_hdf5_from_s3(
             if s3_prefix is not None:
                 meta_df = meta_df[meta_df['group_path'].str.startswith(s3_prefix)]
 
-            # Detect the actual STARE level used for grouped_id in this dataset.
-            # It may differ from MAX_PARTITION_LEVEL when data was ingested with a
-            # different partitioning level.  Lower 5 bits of a STARE SID encode level.
-            storage_levels = set(int(gid & 0x1f) for gid in meta_df['grouped_id'].dropna())
-            if storage_levels == {MAX_PARTITION_LEVEL}:
-                effective_query_ids = query_group_ids  # fast path: levels already match
+            if no_spatial_filter:
+                # Task 13 — no bbox/area_sids: take every partition for this dataset.
+                matching = meta_df
             else:
-                # Re-coerce the query area to each unique storage level so the
-                # set-membership filter works regardless of how data was ingested.
-                effective_query_ids: set = set()
-                for slevel in storage_levels:
-                    if bbox is not None:
-                        lon_min_q, lat_min_q, lon_max_q, lat_max_q = bbox
-                        lats_q = [lat_min_q, lat_min_q, lat_max_q, lat_max_q]
-                        lons_q = [lon_min_q, lon_max_q, lon_max_q, lon_min_q]
-                        sids_q = pystare.cover_from_hull(lats_q, lons_q, slevel)
-                    else:
-                        sids_q = area_sids
-                    coerced_q = pystare.spatial_coerce_resolution(
-                        np.array(sids_q, dtype=np.int64), slevel
-                    )
-                    effective_query_ids.update(int(s) for s in np.unique(coerced_q))
+                # Detect the actual STARE level used for grouped_id in this dataset.
+                # It may differ from MAX_PARTITION_LEVEL when data was ingested with
+                # a different partitioning level. Lower 5 bits of a SID encode level.
+                storage_levels = set(int(gid & 0x1f) for gid in meta_df['grouped_id'].dropna())
+                if storage_levels == {MAX_PARTITION_LEVEL}:
+                    effective_query_ids = query_group_ids  # fast path: levels match
+                else:
+                    # Re-coerce the query area to each unique storage level so the
+                    # set-membership filter works regardless of ingest level.
+                    effective_query_ids: set = set()
+                    for slevel in storage_levels:
+                        if bbox is not None:
+                            lon_min_q, lat_min_q, lon_max_q, lat_max_q = bbox
+                            lats_q = [lat_min_q, lat_min_q, lat_max_q, lat_max_q]
+                            lons_q = [lon_min_q, lon_max_q, lon_max_q, lon_min_q]
+                            sids_q = pystare.cover_from_hull(lats_q, lons_q, slevel)
+                        else:
+                            sids_q = area_sids
+                        coerced_q = pystare.spatial_coerce_resolution(
+                            np.array(sids_q, dtype=np.int64), slevel
+                        )
+                        effective_query_ids.update(int(s) for s in np.unique(coerced_q))
+                matching = meta_df[meta_df['grouped_id'].isin(effective_query_ids)]
 
-            matching = meta_df[meta_df['grouped_id'].isin(effective_query_ids)]
             for _, row in matching.iterrows():
                 group_paths.append((row['group_path'], int(row['grouped_id'])))
         else:
-            # Fallback: construct paths directly from query SIDs
+            # Fallback: construct paths directly from query SIDs.
+            # Only valid when we actually have a query area — no_spatial_filter
+            # has no SIDs to construct from.
+            if no_spatial_filter:
+                raise ValueError(
+                    f"No PodsMetadata rows for dataset '{dataset}' and no "
+                    "spatial filter to enumerate partitions from. Pass bbox= "
+                    "or area_sids=, or ensure the dataset has been ingested."
+                )
             dummy = STAREDataFrame()
             for gid in query_group_ids:
                 rel = dummy.generate_partition_path(gid, dataset)
@@ -1194,7 +1213,8 @@ def reconstitute_hdf5_from_s3(
                 sid, _ = dummy.parse_partition_path('/'.join(htm_parts) + f'/{dataset}')
             except Exception:
                 continue
-            if sid in query_group_ids:
+            # Task 13: no_spatial_filter ⇒ include every partition found.
+            if no_spatial_filter or sid in query_group_ids:
                 group_paths.append((filepath, sid))
 
     if not group_paths:
