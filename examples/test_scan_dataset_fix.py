@@ -145,7 +145,7 @@ def test_hierarchical_path_generation():
         
         for group_id, gdf in grouped:
             if isinstance(group_id, (int, np.integer)) and group_id >= 0:
-                hierarchical_path = sdf.generate_zarr_path(group_id, scan_dataset)
+                hierarchical_path = sdf.generate_partition_path(group_id, scan_dataset)
                 full_path = f"{s3_path}/{hierarchical_path}"
                 
                 print(f"    Group {group_id}:")
@@ -167,7 +167,7 @@ def demonstrate_fix():
     print("\n=== Complete Fix Demonstration ===")
     
     print("Original Problem:")
-    print("  to_zarr_s3(file_path, s3_path='s3://zarrpods', dataset='SSMIS')")
+    print("  to_s3(file_path, s3_path='s3://zarrpods', dataset='SSMIS')")
     print("  For SSMIS with scans S1, S2, S3:")
     print("  ❌ OLD: s3://zarrpods_S1/Q00_3/Q01_3/Q02_3/Q03_2/SSMIS")
     print("  ❌ OLD: s3://zarrpods_S2/Q00_3/Q01_3/Q02_3/Q03_2/SSMIS") 
@@ -175,7 +175,7 @@ def demonstrate_fix():
     print("  → Invalid bucket names with underscores")
     
     print("\nFixed Solution:")
-    print("  to_zarr_s3(file_path, s3_path='s3://zarrpods', dataset='SSMIS')")
+    print("  to_s3(file_path, s3_path='s3://zarrpods', dataset='SSMIS')")
     print("  For SSMIS with scans S1, S2, S3:")
     print("  ✅ NEW: s3://zarrpods/Q00_3/Q01_3/Q02_3/Q03_2/SSMIS_S1")
     print("  ✅ NEW: s3://zarrpods/Q00_3/Q01_3/Q02_3/Q03_2/SSMIS_S2")
@@ -183,11 +183,11 @@ def demonstrate_fix():
     print("  → Valid bucket name, scan info in dataset name")
     
     print("\nKey Changes:")
-    print("  1. Directory Creation Fix (STAREDataFrame.to_zarr_s3):")
-    print("     - Ensures parent directories exist before zarr creation")
+    print("  1. Directory Creation Fix (STAREDataFrame.to_s3):")
+    print("     - Ensures parent directories exist before storage creation")
     print("     - Resolves FileNotFoundError for hierarchical paths")
     
-    print("  2. Scan Dataset Fix (generic to_zarr_s3):")
+    print("  2. Scan Dataset Fix (generic to_s3):")
     print("     - OLD: scan_s3_path = f'{s3_path}_{scan_name}'")
     print("     - NEW: scan_dataset = f'{dataset}_{scan_name}'")
     print("     - Keeps S3 path clean, puts scan info in dataset name")
@@ -205,7 +205,7 @@ def main():
     print("Scan Dataset Name Fix Test")
     print("=" * 50)
     print("This test verifies that scan names are properly integrated")
-    print("into the dataset name within hierarchical zarr paths.")
+    print("into the dataset name within hierarchical Parquet paths.")
     print()
     
     # Load configuration
@@ -225,7 +225,7 @@ def main():
     print("✅ Directory creation fix: Resolves FileNotFoundError")
     print("✅ Scan dataset fix: Valid S3 paths with scan info in dataset name")
     print("\nYour original command should now work:")
-    print("  to_zarr_s3(file_path, s3_path='s3://zarrpods', dataset='SSMIS')")
+    print("  to_s3(file_path, s3_path='s3://zarrpods', dataset='SSMIS')")
     print("  → Creates: s3://zarrpods/Q00_X/Q01_Y/.../SSMIS_S1")
     print("  → Creates: s3://zarrpods/Q00_X/Q01_Y/.../SSMIS_S2")
     print("  → etc.")

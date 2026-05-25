@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Test script for the parse_zarr_path function in STAREDataFrame.
+Test script for the parse_partition_path function in STAREDataFrame.
 
-This script demonstrates and tests the parse_zarr_path function that reconstructs
-STARE SIDs from hierarchical zarr paths (reverse of generate_zarr_path).
+This script demonstrates and tests the parse_partition_path function that reconstructs
+STARE SIDs from hierarchical Parquet paths (reverse of generate_partition_path).
 """
 
 import os
@@ -16,7 +16,7 @@ from starepandas import STAREDataFrame
 
 
 def test_round_trip_conversion():
-    """Test that parse_zarr_path is the true inverse of generate_zarr_path."""
+    """Test that parse_partition_path is the true inverse of generate_partition_path."""
     print("=== Round-Trip Conversion Test ===")
     
     sdf = STAREDataFrame()
@@ -40,11 +40,11 @@ def test_round_trip_conversion():
         
         try:
             # Generate path from SID
-            path = sdf.generate_zarr_path(original_sid, dataset)
+            path = sdf.generate_partition_path(original_sid, dataset)
             print(f"  Generated path: {path}")
             
             # Parse path back to SID
-            reconstructed_sid, reconstructed_dataset = sdf.parse_zarr_path(path)
+            reconstructed_sid, reconstructed_dataset = sdf.parse_partition_path(path)
             print(f"  Reconstructed SID: {reconstructed_sid}")
             print(f"  Reconstructed dataset: '{reconstructed_dataset}'")
             
@@ -89,7 +89,7 @@ def test_path_parsing():
         print(f"\nTest {i+1}: {path}")
         
         try:
-            sid, dataset = sdf.parse_zarr_path(path)
+            sid, dataset = sdf.parse_partition_path(path)
             print(f"  Parsed SID: {sid}")
             print(f"  Parsed dataset: '{dataset}'")
             print(f"  SID (hex): {hex(sid)}")
@@ -102,7 +102,7 @@ def test_path_parsing():
             print(f"  Level 0 value: {level_0_value}")
             
             # Verify by generating path from parsed SID
-            regenerated_path = sdf.generate_zarr_path(sid, dataset)
+            regenerated_path = sdf.generate_partition_path(sid, dataset)
             if regenerated_path == path:
                 print(f"  ✓ Verification SUCCESSFUL")
             else:
@@ -140,7 +140,7 @@ def test_error_handling():
         print(f"\nTest {i+1}: '{path}'")
         
         try:
-            sid, dataset = sdf.parse_zarr_path(path)
+            sid, dataset = sdf.parse_partition_path(path)
             print(f"  ✗ UNEXPECTED SUCCESS: SID={sid}, Dataset='{dataset}'")
         except ValueError as e:
             print(f"  ✓ Expected error: {e}")
@@ -196,8 +196,8 @@ def test_bit_patterns():
         print(f"  Original (binary): {bin(original_sid)}")
         
         # Generate path and parse it back
-        path = sdf.generate_zarr_path(original_sid, "TEST")
-        reconstructed_sid, dataset = sdf.parse_zarr_path(path)
+        path = sdf.generate_partition_path(original_sid, "TEST")
+        reconstructed_sid, dataset = sdf.parse_partition_path(path)
         
         print(f"  Generated path: {path}")
         print(f"  Reconstructed SID: {reconstructed_sid}")
@@ -263,11 +263,11 @@ def test_real_world_scenarios():
         print(f"  Dataset: '{dataset}'")
         
         # Generate path
-        path = sdf.generate_zarr_path(original_sid, dataset)
+        path = sdf.generate_partition_path(original_sid, dataset)
         print(f"  Generated path: {path}")
         
         # Parse path
-        reconstructed_sid, reconstructed_dataset = sdf.parse_zarr_path(path)
+        reconstructed_sid, reconstructed_dataset = sdf.parse_partition_path(path)
         print(f"  Reconstructed SID: {reconstructed_sid}")
         print(f"  Reconstructed dataset: '{reconstructed_dataset}'")
         
@@ -283,7 +283,7 @@ def test_real_world_scenarios():
 
 def main():
     """Run all tests."""
-    print("STARE SID Zarr Path Parsing Tests")
+    print("STARE SID Partition Path Parsing Tests")
     print("=" * 50)
     
     # Run tests
@@ -306,8 +306,8 @@ def main():
         print("✗ Error handling test FAILED")
     
     print("\nFunction Features:")
-    print("✓ Parses hierarchical zarr paths back to STARE SIDs")
-    print("✓ True inverse of generate_zarr_path function")
+    print("✓ Parses hierarchical Parquet paths back to STARE SIDs")
+    print("✓ True inverse of generate_partition_path function")
     print("✓ Validates path format and component values")
     print("✓ Ensures bits 62-63 are always set to 0")
     print("✓ Comprehensive error handling for invalid paths")
@@ -315,7 +315,7 @@ def main():
     
     print("\nUsage:")
     print("sdf = STAREDataFrame()")
-    print("sid, dataset = sdf.parse_zarr_path('Q00_5/Q01_3/.../QN_M/DatasetName')")
+    print("sid, dataset = sdf.parse_partition_path('Q00_5/Q01_3/.../QN_M/DatasetName')")
     print("# Returns reconstructed SID and dataset name")
 
 

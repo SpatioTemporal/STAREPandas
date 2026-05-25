@@ -1,10 +1,10 @@
-# Zarr Metadata API
+# Metadata API
 
-The `starepandas.io.granules` module provides functions to load and analyze metadata from the RDS database for zarr data stored in S3. These functions allow you to query information about datasets that have been processed and stored using the `to_zarr_s3` function.
+The `starepandas.io.granules` module provides functions to load and analyze metadata from the RDS database for Parquet data stored in S3. These functions allow you to query information about datasets that have been processed and stored using the `to_s3` function.
 
 ## Overview
 
-When you use the `to_zarr_s3` function to store granule data in S3, metadata is automatically written to an RDS PostgreSQL database. This metadata includes:
+When you use the `to_s3` function to store granule data in S3, metadata is automatically written to an RDS PostgreSQL database. This metadata includes:
 
 - Dataset information (name, data level)
 - S3 storage details (bucket, group paths)
@@ -14,7 +14,7 @@ When you use the `to_zarr_s3` function to store granule data in S3, metadata is 
 
 ## Functions
 
-### `load_zarr_metadata()`
+### `load_s3_metadata()`
 
 Load metadata from the RDS database with flexible filtering options.
 
@@ -38,14 +38,14 @@ Load metadata from the RDS database with flexible filtering options.
   - `S3 bucket`: S3 bucket name
   - `Resolution level`: STARE resolution level
   - `MetadataJson`: JSON metadata containing additional information
-  - `group_path`: S3 path to the zarr group (from MetadataJson)
+  - `group_path`: S3 path to the Parquet partition (from MetadataJson)
   - `num_rows`: Number of rows in the group (from MetadataJson)
   - `columns`: List of columns in the group (from MetadataJson)
   - `scan`: Scan name if applicable (from MetadataJson)
 
-### `get_zarr_summary()`
+### `get_s3_summary()`
 
-Get summary statistics about zarr metadata stored in the database.
+Get summary statistics about partition metadata stored in the database.
 
 **Parameters:**
 - `dataset` (str, optional): Filter by dataset name
@@ -68,23 +68,23 @@ Get summary statistics about zarr metadata stored in the database.
 ### Basic Usage
 
 ```python
-from starepandas.io.granules import load_zarr_metadata, get_zarr_summary
+from starepandas.io.granules import load_s3_metadata, get_s3_summary
 
 # Load all metadata
-df = load_zarr_metadata()
+df = load_s3_metadata()
 
 # Get summary statistics
-summary = get_zarr_summary()
+summary = get_s3_summary()
 ```
 
 ### Filtering by Dataset
 
 ```python
 # Load metadata for specific dataset
-modis_df = load_zarr_metadata(dataset="MOD05_L2")
+modis_df = load_s3_metadata(dataset="MOD05_L2")
 
 # Load metadata for multiple criteria
-viirs_df = load_zarr_metadata(
+viirs_df = load_s3_metadata(
     dataset="VNP02DNB",
     data_level="L1B"
 )
@@ -94,14 +94,14 @@ viirs_df = load_zarr_metadata(
 
 ```python
 # Load metadata for specific date range
-df = load_zarr_metadata(
+df = load_s3_metadata(
     start_date="2023-01-01",
     end_date="2023-12-31"
 )
 
 # Load recent data
 from datetime import datetime, timedelta
-recent_df = load_zarr_metadata(
+recent_df = load_s3_metadata(
     start_date=datetime.now() - timedelta(days=30)
 )
 ```
@@ -110,23 +110,23 @@ recent_df = load_zarr_metadata(
 
 ```python
 # Load metadata for specific S3 bucket
-df = load_zarr_metadata(s3_bucket="my-data-bucket")
+df = load_s3_metadata(s3_bucket="my-data-bucket")
 
 # Load metadata for specific resolution level
-df = load_zarr_metadata(resolution_level=10)
+df = load_s3_metadata(resolution_level=10)
 ```
 
 ### Custom Ordering and Limiting
 
 ```python
 # Load most recent 100 records
-df = load_zarr_metadata(
+df = load_s3_metadata(
     order_by="RawData Collected Time",
     limit=100
 )
 
 # Load by dataset name
-df = load_zarr_metadata(
+df = load_s3_metadata(
     order_by="Dataset",
     limit=50
 )
@@ -136,13 +136,13 @@ df = load_zarr_metadata(
 
 ```python
 # Get summary of all data
-summary = get_zarr_summary()
+summary = get_s3_summary()
 
 # Get summary for specific dataset
-modis_summary = get_zarr_summary(dataset="MOD05_L2")
+modis_summary = get_s3_summary(dataset="MOD05_L2")
 
 # Get summary for specific S3 bucket
-bucket_summary = get_zarr_summary(s3_bucket="my-data-bucket")
+bucket_summary = get_s3_summary(s3_bucket="my-data-bucket")
 ```
 
 ## Database Schema
@@ -163,7 +163,7 @@ CREATE TABLE "PodsMetadata" (
 
 ### MetadataJson Structure
 
-The `MetadataJson` field contains additional information in JSON format. When you call `load_zarr_metadata()`, this JSON is automatically parsed and expanded into separate columns:
+The `MetadataJson` field contains additional information in JSON format. When you call `load_s3_metadata()`, this JSON is automatically parsed and expanded into separate columns:
 
 ```json
 {
@@ -177,7 +177,7 @@ The `MetadataJson` field contains additional information in JSON format. When yo
 }
 ```
 
-**Note**: The `num_rows` and other metadata fields are stored in the `MetadataJson` column, not as separate database columns. The `load_zarr_metadata()` function automatically parses this JSON and creates separate columns for easier access.
+**Note**: The `num_rows` and other metadata fields are stored in the `MetadataJson` column, not as separate database columns. The `load_s3_metadata()` function automatically parses this JSON and creates separate columns for easier access.
 
 ## Configuration
 
@@ -219,25 +219,25 @@ The functions will raise appropriate errors if:
 Common error messages:
 
 - `Missing RDS configuration`: RDS connection parameters not set
-- `Error loading zarr metadata from database`: Database connection or query error
+- `Error loading metadata from database`: Database connection or query error
 - `psycopg2 is required`: Missing PostgreSQL driver
 
 ## Performance Considerations
 
 - Use appropriate filters to limit the amount of data returned
 - Use `limit` parameter for large result sets
-- Consider using `get_zarr_summary()` for overview statistics instead of loading all metadata
+- Consider using `get_s3_summary()` for overview statistics instead of loading all metadata
 - Index the database on frequently queried columns (Dataset, DataLevel, S3 bucket, etc.)
 
-## Integration with to_zarr_s3
+## Integration with to_s3
 
-These functions work seamlessly with the `to_zarr_s3` function:
+These functions work seamlessly with the `to_s3` function:
 
 ```python
-from starepandas.io.granules import to_zarr_s3, load_zarr_metadata
+from starepandas.io.granules import to_s3, load_s3_metadata
 
 # Store data in S3
-s3_path = to_zarr_s3(
+s3_path = to_s3(
     file_path="path/to/granule.hdf",
     s3_path="s3://bucket/data",
     level=10,
@@ -246,7 +246,7 @@ s3_path = to_zarr_s3(
 )
 
 # Query metadata
-metadata = load_zarr_metadata(dataset="MOD05_L2")
+metadata = load_s3_metadata(dataset="MOD05_L2")
 ```
 
-This allows you to track and manage all your zarr datasets stored in S3 through a centralized metadata system.
+This allows you to track and manage all your Parquet datasets stored in S3 through a centralized metadata system.

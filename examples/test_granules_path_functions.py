@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Test script for the zarr path functions in starepandas.io.granules module.
+Test script for the partition path functions in starepandas.io.granules module.
 
-This script demonstrates and tests the generate_zarr_path() and parse_zarr_path()
+This script demonstrates and tests the generate_partition_path() and parse_partition_path()
 functions that are now located in the granules I/O module.
 """
 
@@ -12,11 +12,11 @@ import sys
 # Add the parent directory to the path so we can import starepandas
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from starepandas.io.granules import generate_zarr_path, parse_zarr_path
+from starepandas.io.granules import generate_partition_path, parse_partition_path
 
 
 def test_granules_path_functions():
-    """Test the zarr path functions in granules module."""
+    """Test the partition path functions in granules module."""
     print("=== Testing Granules Path Functions ===")
     
     # Test data
@@ -34,12 +34,12 @@ def test_granules_path_functions():
         print(f"\nTest {i+1}: SID {original_sid}, Dataset '{dataset}'")
         
         try:
-            # Test generate_zarr_path from granules module
-            path = generate_zarr_path(original_sid, dataset)
+            # Test generate_partition_path from granules module
+            path = generate_partition_path(original_sid, dataset)
             print(f"  Generated path: {path}")
             
-            # Test parse_zarr_path from granules module
-            reconstructed_sid, reconstructed_dataset = parse_zarr_path(path)
+            # Test parse_partition_path from granules module
+            reconstructed_sid, reconstructed_dataset = parse_partition_path(path)
             print(f"  Reconstructed SID: {reconstructed_sid}")
             print(f"  Reconstructed dataset: '{reconstructed_dataset}'")
             
@@ -84,8 +84,8 @@ def test_comparison_with_class_methods():
         print(f"\nTest {i+1}: SID {sid}")
         
         # Generate paths using both methods
-        granules_path = generate_zarr_path(sid, dataset)
-        class_path = sdf.generate_zarr_path(sid, dataset)
+        granules_path = generate_partition_path(sid, dataset)
+        class_path = sdf.generate_partition_path(sid, dataset)
         
         print(f"  Granules function: {granules_path}")
         print(f"  Class method:      {class_path}")
@@ -98,8 +98,8 @@ def test_comparison_with_class_methods():
             all_match = False
         
         # Parse paths using both methods
-        granules_result = parse_zarr_path(granules_path)
-        class_result = sdf.parse_zarr_path(class_path)
+        granules_result = parse_partition_path(granules_path)
+        class_result = sdf.parse_partition_path(class_path)
         
         print(f"  Granules parse: {granules_result}")
         print(f"  Class parse:    {class_result}")
@@ -123,27 +123,27 @@ def test_import_patterns():
     test_dataset = "IMPORT_TEST"
     
     print("1. Direct function import:")
-    print("   from starepandas.io.granules import generate_zarr_path, parse_zarr_path")
+    print("   from starepandas.io.granules import generate_partition_path, parse_partition_path")
     
     # Already imported at top of file
-    path1 = generate_zarr_path(test_sid, test_dataset)
-    result1 = parse_zarr_path(path1)
+    path1 = generate_partition_path(test_sid, test_dataset)
+    result1 = parse_partition_path(path1)
     print(f"   Result: {path1} → {result1}")
     
     print("\n2. Module import:")
     print("   from starepandas.io import granules")
     
     from starepandas.io import granules
-    path2 = granules.generate_zarr_path(test_sid, test_dataset)
-    result2 = granules.parse_zarr_path(path2)
+    path2 = granules.generate_partition_path(test_sid, test_dataset)
+    result2 = granules.parse_partition_path(path2)
     print(f"   Result: {path2} → {result2}")
     
     print("\n3. Full module path import:")
     print("   import starepandas.io.granules as granules_io")
     
     import starepandas.io.granules as granules_io
-    path3 = granules_io.generate_zarr_path(test_sid, test_dataset)
-    result3 = granules_io.parse_zarr_path(path3)
+    path3 = granules_io.generate_partition_path(test_sid, test_dataset)
+    result3 = granules_io.parse_partition_path(path3)
     print(f"   Result: {path3} → {result3}")
     
     # Check all methods produce identical results
@@ -165,13 +165,13 @@ def test_integration_with_other_functions():
     # List key functions
     key_functions = [
         'read_granule',
-        'to_zarr_s3', 
-        'load_zarr_metadata',
-        'get_zarr_summary',
-        'from_zarr_s3_chunked',
-        'from_zarr_s3_chunked_groups',
-        'generate_zarr_path',
-        'parse_zarr_path'
+        'to_s3', 
+        'load_s3_metadata',
+        'get_s3_summary',
+        'from_s3',
+        'from_s3_groups',
+        'generate_partition_path',
+        'parse_partition_path'
     ]
     
     available_functions = []
@@ -191,11 +191,11 @@ def test_integration_with_other_functions():
         # Generate a path
         sid = 3445253714938429444
         dataset = "INTEGRATION_TEST"
-        path = generate_zarr_path(sid, dataset)
+        path = generate_partition_path(sid, dataset)
         print(f"  1. Generated path: {path}")
         
         # Parse it back
-        parsed_sid, parsed_dataset = parse_zarr_path(path)
+        parsed_sid, parsed_dataset = parse_partition_path(path)
         print(f"  2. Parsed back: SID={parsed_sid}, Dataset='{parsed_dataset}'")
         
         # Check consistency
@@ -219,21 +219,21 @@ def demonstrate_new_usage():
     print(f"\nRecommended usage patterns:")
     
     print(f"\n1. For general use:")
-    print("   from starepandas.io.granules import generate_zarr_path, parse_zarr_path")
-    print("   path = generate_zarr_path(sid, dataset)")
-    print("   sid, dataset = parse_zarr_path(path)")
+    print("   from starepandas.io.granules import generate_partition_path, parse_partition_path")
+    print("   path = generate_partition_path(sid, dataset)")
+    print("   sid, dataset = parse_partition_path(path)")
     
     print(f"\n2. For I/O workflows:")
     print("   from starepandas.io.granules import (")
-    print("       read_granule, to_zarr_s3, generate_zarr_path, parse_zarr_path")
+    print("       read_granule, to_s3, generate_partition_path, parse_partition_path")
     print("   )")
     print("   # Use all functions together for complete workflow")
     
     print(f"\n3. For module-based approach:")
     print("   from starepandas.io import granules")
-    print("   path = granules.generate_zarr_path(sid, dataset)")
+    print("   path = granules.generate_partition_path(sid, dataset)")
     print("   data = granules.read_granule(file_path)")
-    print("   granules.to_zarr_s3(file_path, s3_path, level)")
+    print("   granules.to_s3(file_path, s3_path, level)")
     
     # Example workflow
     print(f"\nExample complete workflow:")
@@ -242,18 +242,18 @@ def demonstrate_new_usage():
     dataset = "WORKFLOW_EXAMPLE"
     
     # Generate storage path
-    storage_path = generate_zarr_path(sid, dataset)
+    storage_path = generate_partition_path(sid, dataset)
     print(f"  1. Storage path: {storage_path}")
     
     # Simulate storage location
-    s3_location = f"s3://my-bucket/zarr/{storage_path}"
-    local_location = f"/data/zarr/{storage_path}"
+    s3_location = f"s3://my-bucket/parquet/{storage_path}"
+    local_location = f"/data/parquet/{storage_path}"
     
     print(f"  2. S3 location: {s3_location}")
     print(f"  3. Local location: {local_location}")
     
     # Later, parse path to understand what's stored
-    parsed_sid, parsed_dataset = parse_zarr_path(storage_path)
+    parsed_sid, parsed_dataset = parse_partition_path(storage_path)
     print(f"  4. Parsed info: SID={parsed_sid}, Dataset='{parsed_dataset}'")
     
     print(f"\nBenefits of new location:")
@@ -265,7 +265,7 @@ def demonstrate_new_usage():
 
 def main():
     """Run all tests and demonstrations."""
-    print("STARE Zarr Path Functions in Granules Module")
+    print("STARE Partition Path Functions in Granules Module")
     print("=" * 60)
     
     # Run tests
@@ -304,8 +304,8 @@ def main():
     print(f"\nOverall Result: {'✓ ALL TESTS PASSED' if all_passed else '✗ SOME TESTS FAILED'}")
     
     print("\nFunctions Now Available In:")
-    print("- starepandas.io.granules.generate_zarr_path(sid, dataset_name)")
-    print("- starepandas.io.granules.parse_zarr_path(zarr_path)")
+    print("- starepandas.io.granules.generate_partition_path(sid, dataset_name)")
+    print("- starepandas.io.granules.parse_partition_path(partition_path)")
     
     print("\nThis location makes more sense as these are I/O utility functions!")
 

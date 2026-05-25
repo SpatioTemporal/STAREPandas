@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-Example demonstrating the zarr metadata functions in starepandas.io.granules.
+Example demonstrating the partition metadata functions in starepandas.io.granules.
 
 This example shows how to:
-1. Load metadata from the RDS database for zarr data stored in S3
-2. Get summary statistics about stored zarr datasets
+1. Load metadata from the RDS database for Parquet partitions stored in S3
+2. Get summary statistics about stored Parquet datasets
 3. Filter and query metadata by various criteria
 """
 
@@ -15,7 +15,7 @@ import datetime
 # Add the parent directory to the path to import starepandas
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from starepandas.io.granules import load_zarr_metadata, get_zarr_summary
+from starepandas.io.granules import load_s3_metadata, get_s3_summary
 
 
 def example_load_all_metadata():
@@ -24,11 +24,11 @@ def example_load_all_metadata():
     
     try:
         # Load all metadata
-        df = load_zarr_metadata()
+        df = load_s3_metadata()
         
         if df.empty:
             print("No metadata found in database.")
-            print("This is expected if no zarr data has been stored yet.")
+            print("This is expected if no Parquet data has been stored yet.")
             return
         
         print(f"✓ Loaded {len(df)} metadata records")
@@ -57,7 +57,7 @@ def example_filter_by_dataset():
     
     try:
         # Load metadata for specific dataset
-        df = load_zarr_metadata(dataset="MOD05_L2")
+        df = load_s3_metadata(dataset="MOD05_L2")
         
         if df.empty:
             print("No MOD05_L2 metadata found.")
@@ -80,7 +80,7 @@ def example_filter_by_date_range():
         start_date = "2023-01-01"
         end_date = "2023-12-31"
         
-        df = load_zarr_metadata(
+        df = load_s3_metadata(
             start_date=start_date,
             end_date=end_date
         )
@@ -102,7 +102,7 @@ def example_filter_by_s3_bucket():
     
     try:
         # Load metadata for specific S3 bucket
-        df = load_zarr_metadata(s3_bucket="my-data-bucket")
+        df = load_s3_metadata(s3_bucket="my-data-bucket")
         
         if df.empty:
             print("No metadata found for S3 bucket 'my-data-bucket'")
@@ -121,7 +121,7 @@ def example_custom_ordering_and_limit():
     
     try:
         # Load metadata with custom ordering and limit
-        df = load_zarr_metadata(
+        df = load_s3_metadata(
             order_by="RawData Collected Time",
             limit=10
         )
@@ -145,7 +145,7 @@ def example_get_summary():
     
     try:
         # Get summary of all data
-        summary = get_zarr_summary()
+        summary = get_s3_summary()
         
         if summary.empty:
             print("No data found for summary.")
@@ -155,7 +155,7 @@ def example_get_summary():
         print(summary)
         
         # Get summary for specific dataset
-        modis_summary = get_zarr_summary(dataset="MOD05_L2")
+        modis_summary = get_s3_summary(dataset="MOD05_L2")
         
         if not modis_summary.empty:
             print("\n✓ MODIS summary:")
@@ -171,7 +171,7 @@ def example_analyze_metadata():
     
     try:
         # Load all metadata
-        df = load_zarr_metadata()
+        df = load_s3_metadata()
         
         if df.empty:
             print("No metadata to analyze.")
@@ -209,7 +209,7 @@ def example_analyze_metadata():
 
 def main():
     """Run all examples."""
-    print("Zarr Metadata Functions Examples")
+    print("Partition Metadata Functions Examples")
     print("=" * 50)
     
     # Run examples
@@ -224,7 +224,7 @@ def main():
     print("\n" + "=" * 50)
     print("Examples completed!")
     print("\nKey Features:")
-    print("- Load metadata from RDS database for zarr data stored in S3")
+    print("- Load metadata from RDS database for Parquet data stored in S3")
     print("- Filter by dataset, data level, S3 bucket, resolution level, date range")
     print("- Get summary statistics and aggregations")
     print("- Custom ordering and limiting of results")

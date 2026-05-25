@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Example script demonstrating the generate_zarr_path function in STAREDataFrame.
+Example script demonstrating the generate_partition_path function in STAREDataFrame.
 
-This script shows how to use the generate_zarr_path method to create hierarchical
-paths for storing zarr files based on STARE SID structure.
+This script shows how to use the generate_partition_path method to create hierarchical
+paths for storing Parquet files based on STARE SID structure.
 """
 
 import os
@@ -16,7 +16,7 @@ from starepandas import STAREDataFrame
 
 
 def example_basic_usage():
-    """Basic usage example of generate_zarr_path."""
+    """Basic usage example of generate_partition_path."""
     print("=== Basic Usage Example ===")
     
     # Create a STAREDataFrame instance
@@ -35,7 +35,7 @@ def example_basic_usage():
     print("Generating paths for different SID and dataset combinations:")
     
     for i, (sid, dataset) in enumerate(zip(example_sids, datasets)):
-        path = sdf.generate_zarr_path(sid, dataset)
+        path = sdf.generate_partition_path(sid, dataset)
         print(f"\n{i+1}. SID: {sid}")
         print(f"   Dataset: {dataset}")
         print(f"   Path: {path}")
@@ -61,7 +61,7 @@ def example_hierarchical_organization():
     
     print("SIDs with similar hierarchical structure:")
     for i, sid in enumerate(similar_sids):
-        path = sdf.generate_zarr_path(sid, dataset)
+        path = sdf.generate_partition_path(sid, dataset)
         components = path.split('/')
         
         print(f"\n{i+1}. SID: {sid}")
@@ -88,7 +88,7 @@ def example_storage_applications():
     
     print("Organizing different processing levels for the same spatial region:")
     for dataset in datasets:
-        path = sdf.generate_zarr_path(sid, dataset)
+        path = sdf.generate_partition_path(sid, dataset)
         print(f"  {dataset}: {path}")
     
     print("\nStorage structure benefits:")
@@ -104,7 +104,7 @@ def example_storage_applications():
     ]
     
     for i, sid in enumerate(different_sids):
-        path = sdf.generate_zarr_path(sid, "MOD09")
+        path = sdf.generate_partition_path(sid, "MOD09")
         print(f"  Region {i+1}: {path}")
 
 
@@ -116,7 +116,7 @@ def example_path_analysis():
     sid = 3448068485499011499
     dataset = "MOD09"
     
-    path = sdf.generate_zarr_path(sid, dataset)
+    path = sdf.generate_partition_path(sid, dataset)
     components = path.split('/')
     
     print(f"Analyzing path: {path}")
@@ -149,12 +149,12 @@ def example_use_cases():
     print("\n=== Use Cases Example ===")
     
     print("1. **Cloud Storage Organization**:")
-    print("   s3://my-bucket/data/{generate_zarr_path(sid, dataset)}")
+    print("   s3://my-bucket/data/{generate_partition_path(sid, dataset)}")
     print("   Example: s3://my-bucket/data/Q00_5/Q01_3/.../MOD09")
     
     print("\n2. **Local File System**:")
-    print("   /data/zarr/{generate_zarr_path(sid, dataset)}")
-    print("   Example: /data/zarr/Q00_5/Q01_3/.../VIIRS_L2")
+    print("   /data/parquet/{generate_partition_path(sid, dataset)}")
+    print("   Example: /data/parquet/Q00_5/Q01_3/.../VIIRS_L2")
     
     print("\n3. **Database Indexing**:")
     print("   Use path components as database keys for spatial indexing")
@@ -171,7 +171,7 @@ def example_use_cases():
 
 def main():
     """Run all examples."""
-    print("STARE SID Zarr Path Generation Examples")
+    print("STARE SID Partition Path Generation Examples")
     print("=" * 50)
     
     # Run examples
@@ -192,8 +192,8 @@ def main():
     
     print("\nUsage:")
     print("sdf = STAREDataFrame()")
-    print("path = sdf.generate_zarr_path(sid, dataset_name)")
-    print("# Use path for zarr storage organization")
+    print("path = sdf.generate_partition_path(sid, dataset_name)")
+    print("# Use path for Parquet storage organization")
 
 
 if __name__ == "__main__":

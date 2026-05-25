@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Example script demonstrating the zarr path functions in starepandas.io.granules.
+Example script demonstrating the partition path functions in starepandas.io.granules.
 
-This script shows how to use generate_zarr_path() and parse_zarr_path()
+This script shows how to use generate_partition_path() and parse_partition_path()
 from their new location in the granules I/O module.
 """
 
@@ -12,7 +12,7 @@ import sys
 # Add the parent directory to the path so we can import starepandas
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from starepandas.io.granules import generate_zarr_path, parse_zarr_path
+from starepandas.io.granules import generate_partition_path, parse_partition_path
 
 
 def example_basic_usage():
@@ -27,18 +27,18 @@ def example_basic_usage():
         (0, "Simple_Dataset"),
     ]
     
-    print("Using zarr path functions from starepandas.io.granules:")
+    print("Using partition path functions from starepandas.io.granules:")
     
     for i, (sid, dataset) in enumerate(examples):
         print(f"\n{i+1}. SID: {sid}")
         print(f"   Dataset: '{dataset}'")
         
         # Generate path using granules function
-        path = generate_zarr_path(sid, dataset)
+        path = generate_partition_path(sid, dataset)
         print(f"   Generated path: {path}")
         
         # Parse path back using granules function
-        reconstructed_sid, reconstructed_dataset = parse_zarr_path(path)
+        reconstructed_sid, reconstructed_dataset = parse_partition_path(path)
         print(f"   Parsed SID: {reconstructed_sid}")
         print(f"   Parsed dataset: '{reconstructed_dataset}'")
         
@@ -58,19 +58,19 @@ def example_integrated_workflow():
     
     # Import other granules functions for demonstration
     from starepandas.io.granules import (
-        to_zarr_s3, 
-        load_zarr_metadata,
-        from_zarr_s3_chunked_groups
+        to_s3, 
+        load_s3_metadata,
+        from_s3_groups
     )
     
-    print("Complete zarr I/O workflow using granules module functions:")
+    print("Complete I/O workflow using granules module functions:")
     
     # Step 1: Generate storage path
     sid = 3445253714938429444
     dataset = "MOD09_L2_Workflow"
     
-    storage_path = generate_zarr_path(sid, dataset)
-    s3_path = f"s3://my-zarr-bucket/{storage_path}"
+    storage_path = generate_partition_path(sid, dataset)
+    s3_path = f"s3://my-parquet-bucket/{storage_path}"
     
     print(f"\n1. Storage Path Generation:")
     print(f"   SID: {sid}")
@@ -82,12 +82,12 @@ def example_integrated_workflow():
     print(f"\n2. Data Processing (simulated):")
     print(f"   # Read granule data")
     print(f"   # data = read_granule(granule_file)")
-    print(f"   # Store to zarr")
-    print(f"   # to_zarr_s3(granule_file, '{s3_path}', level=10)")
+    print(f"   # Store to Parquet")
+    print(f"   # to_s3(granule_file, '{s3_path}', level=10)")
     
     # Step 3: Later, parse path to understand stored data
     print(f"\n3. Path Analysis:")
-    parsed_sid, parsed_dataset = parse_zarr_path(storage_path)
+    parsed_sid, parsed_dataset = parse_partition_path(storage_path)
     
     print(f"   Parsed from path '{storage_path}':")
     print(f"   - SID: {parsed_sid}")
@@ -98,7 +98,7 @@ def example_integrated_workflow():
     print(f"\n4. Data Retrieval (simulated):")
     print(f"   # Use parsed SID for spatial queries")
     print(f"   # group_sids = [parsed_sid]")
-    print(f"   # data = from_zarr_s3_chunked_groups(s3_path, group_sids)")
+    print(f"   # data = from_s3_groups(s3_path, group_sids)")
     
     print(f"\n5. Workflow Benefits:")
     print(f"   ✓ Consistent path generation and parsing")
@@ -115,27 +115,27 @@ def example_import_patterns():
     
     # Pattern 1: Direct function import
     print(f"\n1. Direct function import (recommended for frequent use):")
-    print("   from starepandas.io.granules import generate_zarr_path, parse_zarr_path")
-    print("   path = generate_zarr_path(sid, dataset)")
-    print("   sid, dataset = parse_zarr_path(path)")
+    print("   from starepandas.io.granules import generate_partition_path, parse_partition_path")
+    print("   path = generate_partition_path(sid, dataset)")
+    print("   sid, dataset = parse_partition_path(path)")
     
     # Pattern 2: Module import
     print(f"\n2. Module import (good for organized workflows):")
     print("   from starepandas.io import granules")
-    print("   path = granules.generate_zarr_path(sid, dataset)")
-    print("   sid, dataset = granules.parse_zarr_path(path)")
+    print("   path = granules.generate_partition_path(sid, dataset)")
+    print("   sid, dataset = granules.parse_partition_path(path)")
     
     # Pattern 3: Full module path
     print(f"\n3. Full module path (explicit and clear):")
     print("   import starepandas.io.granules as granules_io")
-    print("   path = granules_io.generate_zarr_path(sid, dataset)")
-    print("   sid, dataset = granules_io.parse_zarr_path(path)")
+    print("   path = granules_io.generate_partition_path(sid, dataset)")
+    print("   sid, dataset = granules_io.parse_partition_path(path)")
     
     # Pattern 4: Combined with other functions
     print(f"\n4. Combined with other I/O functions:")
     print("   from starepandas.io.granules import (")
-    print("       read_granule, to_zarr_s3, generate_zarr_path, parse_zarr_path,")
-    print("       load_zarr_metadata, from_zarr_s3_chunked_groups")
+    print("       read_granule, to_s3, generate_partition_path, parse_partition_path,")
+    print("       load_s3_metadata, from_s3_groups")
     print("   )")
     print("   # Complete I/O workflow with all functions available")
     
@@ -146,8 +146,8 @@ def example_import_patterns():
     test_sid = 3447505514752114692
     test_dataset = "PATTERN_DEMO"
     
-    path = granules.generate_zarr_path(test_sid, test_dataset)
-    parsed_sid, parsed_dataset = granules.parse_zarr_path(path)
+    path = granules.generate_partition_path(test_sid, test_dataset)
+    parsed_sid, parsed_dataset = granules.parse_partition_path(path)
     
     print(f"   Input: SID={test_sid}, Dataset='{test_dataset}'")
     print(f"   Path: {path}")
@@ -172,7 +172,7 @@ def example_spatial_organization():
     
     paths = []
     for dataset in datasets:
-        path = generate_zarr_path(base_sid, dataset)
+        path = generate_partition_path(base_sid, dataset)
         paths.append(path)
         print(f"  {dataset}:")
         print(f"    → {path}")
@@ -194,7 +194,7 @@ def example_spatial_organization():
     # Show how to parse any path to get spatial info
     print(f"\nExtracting spatial info from paths:")
     for i, path in enumerate(paths[:2]):  # Show first 2
-        sid, dataset = parse_zarr_path(path)
+        sid, dataset = parse_partition_path(path)
         levels = (sid & 0x1F) + 1
         print(f"  {dataset}:")
         print(f"    - Parsed SID: {sid}")
@@ -220,7 +220,7 @@ def example_error_handling():
     for path, description in invalid_paths:
         print(f"\n  Testing: '{path}' ({description})")
         try:
-            result = parse_zarr_path(path)
+            result = parse_partition_path(path)
             print(f"    ✗ Unexpected success: {result}")
         except ValueError as e:
             print(f"    ✓ Properly handled: {e}")
@@ -236,7 +236,7 @@ def example_error_handling():
 
 def main():
     """Run all examples."""
-    print("STARE Zarr Path Functions in Granules Module")
+    print("STARE Partition Path Functions in Granules Module")
     print("=" * 60)
     
     # Run examples
@@ -252,17 +252,17 @@ def main():
     print("✓ Perfect integration with other I/O functions")
     print("✓ Multiple import patterns supported")
     print("✓ Consistent API with comprehensive error handling")
-    print("✓ Enables complete zarr I/O workflows")
+    print("✓ Enables complete I/O workflows")
     
     print("\nNew Function Locations:")
-    print("- starepandas.io.granules.generate_zarr_path(sid, dataset_name)")
-    print("- starepandas.io.granules.parse_zarr_path(zarr_path)")
+    print("- starepandas.io.granules.generate_partition_path(sid, dataset_name)")
+    print("- starepandas.io.granules.parse_partition_path(partition_path)")
     
     print("\nRecommended Usage:")
-    print("from starepandas.io.granules import generate_zarr_path, parse_zarr_path")
+    print("from starepandas.io.granules import generate_partition_path, parse_partition_path")
     print("# or")
     print("from starepandas.io import granules")
-    print("path = granules.generate_zarr_path(sid, dataset)")
+    print("path = granules.generate_partition_path(sid, dataset)")
 
 
 if __name__ == "__main__":

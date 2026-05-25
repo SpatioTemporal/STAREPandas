@@ -3,7 +3,7 @@
 Test script to verify the hierarchical directory creation fix.
 
 This script tests that the FileNotFoundError issue has been resolved
-when using hierarchical zarr paths with to_zarr_s3.
+when using hierarchical Parquet paths with to_s3.
 """
 
 import os
@@ -15,12 +15,12 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from starepandas import STAREDataFrame
-from starepandas.io.granules import to_zarr_s3
+from starepandas.io.granules import to_s3
 
 
-def test_staredataframe_to_zarr_s3():
-    """Test the STAREDataFrame.to_zarr_s3 method with hierarchical paths."""
-    print("=== Testing STAREDataFrame.to_zarr_s3 with Hierarchical Paths ===")
+def test_staredataframe_to_s3():
+    """Test the STAREDataFrame.to_s3 method with hierarchical paths."""
+    print("=== Testing STAREDataFrame.to_s3 with Hierarchical Paths ===")
     
     # Create test data
     data = {
@@ -51,24 +51,24 @@ def test_staredataframe_to_zarr_s3():
     print(f"\nHierarchical paths that would be created:")
     for group_id, gdf in grouped:
         if isinstance(group_id, (int, np.integer)) and group_id >= 0:
-            hierarchical_path = sdf.generate_zarr_path(group_id, dataset)
+            hierarchical_path = sdf.generate_partition_path(group_id, dataset)
             print(f"  Group {group_id}:")
             print(f"    Path: {hierarchical_path}")
             print(f"    Full path: s3://test-bucket/data/{hierarchical_path}")
             print(f"    Rows: {len(gdf)}")
     
     print(f"\n✓ Directory creation logic will ensure parent directories exist")
-    print(f"✓ zarr.open_group will succeed with proper directory structure")
+    print(f"✓ s3fs will succeed with proper directory structure")
 
 
-def test_generic_to_zarr_s3():
-    """Test the generic to_zarr_s3 function with hierarchical paths."""
-    print("\n=== Testing Generic to_zarr_s3 with Hierarchical Paths ===")
+def test_generic_to_s3():
+    """Test the generic to_s3 function with hierarchical paths."""
+    print("\n=== Testing Generic to_s3 with Hierarchical Paths ===")
     
     # This would be the call that failed before the fix
     print("Example call that would have failed before:")
-    print("  from starepandas.io.granules import to_zarr_s3")
-    print("  result = to_zarr_s3(")
+    print("  from starepandas.io.granules import to_s3")
+    print("  result = to_s3(")
     print("    file_path='/path/to/granule',")
     print("    s3_path='s3://bucket/granule-name',")
     print("    level=10,")
@@ -76,11 +76,11 @@ def test_generic_to_zarr_s3():
     print("  )")
     
     print("\nWhat happens now with the fix:")
-    print("  1. Generic to_zarr_s3 reads granule file")
+    print("  1. Generic to_s3 reads granule file")
     print("  2. Creates STAREDataFrame from granule data")
-    print("  3. Calls STAREDataFrame.to_zarr_s3() with hierarchical paths")
+    print("  3. Calls STAREDataFrame.to_s3() with hierarchical paths")
     print("  4. Directory creation logic ensures parent paths exist")
-    print("  5. zarr.open_group succeeds with proper directory structure")
+    print("  5. s3fs succeeds with proper directory structure")
     print("  6. Data is successfully stored in hierarchical organization")
 
 
@@ -118,7 +118,7 @@ def test_directory_creation_scenarios():
         test_sid = scenario['sid']
         dataset = "TEST"
         
-        hierarchical_path = sdf.generate_zarr_path(test_sid, dataset)
+        hierarchical_path = sdf.generate_partition_path(test_sid, dataset)
         path_components = hierarchical_path.split('/')
         actual_depth = len(path_components) - 1  # Subtract dataset name
         
@@ -133,7 +133,7 @@ def test_directory_creation_scenarios():
         print(f"      - Extracts parent: s3://bucket/data/{'/'.join(path_components[:-1])}")
         print(f"      - Checks if parent exists using s3fs")
         print(f"      - Creates parent with fs.makedirs(parent, exist_ok=True)")
-        print(f"      - Proceeds with zarr.open_group(full_path)")
+        print(f"      - Proceeds with s3fs(full_path)")
 
 
 def test_error_recovery():
@@ -144,27 +144,27 @@ def test_error_recovery():
     
     print("\n  1. S3 Authentication Failure:")
     print("     - Directory creation fails with warning")
-    print("     - zarr.open_group still attempts creation")
-    print("     - Clear error message if zarr also fails")
+    print("     - s3fs still attempts creation")
+    print("     - Clear error message if storage write also fails")
     
     print("\n  2. Bucket Does Not Exist:")
     print("     - Directory creation detects missing bucket")
     print("     - Warning logged about bucket issue")
-    print("     - zarr.open_group provides clear bucket error")
+    print("     - s3fs provides clear bucket error")
     
     print("\n  3. Permission Denied:")
     print("     - Directory creation fails with permission error")
     print("     - Warning logged, operation continues")
-    print("     - zarr.open_group may succeed if permissions allow")
+    print("     - s3fs may succeed if permissions allow")
     
     print("\n  4. Network Connectivity Issues:")
     print("     - Temporary failure in directory creation")
     print("     - Warning logged, operation continues")
-    print("     - zarr.open_group may retry successfully")
+    print("     - s3fs may retry successfully")
     
     print("\n  Benefits of this approach:")
     print("     ✓ Graceful degradation - warnings instead of failures")
-    print("     ✓ zarr.open_group can still succeed in some cases")
+    print("     ✓ s3fs can still succeed in some cases")
     print("     ✓ Clear error messages when both approaches fail")
     print("     ✓ No breaking changes to existing functionality")
 
@@ -180,8 +180,8 @@ def test_performance_impact():
     print("  ✓ Skip creation if parent already exists")
     
     print("\nPerformance impact analysis:")
-    print("  - Additional S3 API calls: 1 per zarr group (exists check)")
-    print("  - Additional S3 API calls: 0-1 per zarr group (makedirs if needed)")
+    print("  - Additional S3 API calls: 1 per Parquet partition (exists check)")
+    print("  - Additional S3 API calls: 0-1 per Parquet partition (makedirs if needed)")
     print("  - Network overhead: Minimal (single exists + optional makedirs)")
     print("  - Time complexity: O(1) per group (not O(depth))")
     
@@ -189,7 +189,7 @@ def test_performance_impact():
     print("  - 100 groups: ~100-200 additional S3 API calls")
     print("  - 1000 groups: ~1000-2000 additional S3 API calls")
     print("  - 10000 groups: ~10000-20000 additional S3 API calls")
-    print("  - Cost: Minimal compared to zarr array creation")
+    print("  - Cost: Minimal compared to Parquet array creation")
     
     print("\nOptimization opportunities:")
     print("  - Batch directory creation for common prefixes")
@@ -204,8 +204,8 @@ def demonstrate_before_after():
     
     print("BEFORE (causing FileNotFoundError):")
     print("  1. Generate hierarchical path: Q00_5/Q01_3/Q02_2/Q03_1/DATASET")
-    print("  2. Call zarr.open_group(s3://bucket/data/Q00_5/Q01_3/Q02_2/Q03_1/DATASET)")
-    print("  3. zarr tries to create .zgroup file in nested directory")
+    print("  2. Call s3fs(s3://bucket/data/Q00_5/Q01_3/Q02_2/Q03_1/DATASET)")
+    print("  3. storage tries to create file in nested directory")
     print("  4. S3 fails because parent directories don't exist")
     print("  5. FileNotFoundError: The specified bucket does not exist")
     print("     (misleading error - bucket exists, directory structure doesn't)")
@@ -215,13 +215,13 @@ def demonstrate_before_after():
     print("  2. Extract parent: s3://bucket/data/Q00_5/Q01_3/Q02_2/Q03_1")
     print("  3. Check if parent exists using s3fs")
     print("  4. Create parent directory structure if missing")
-    print("  5. Call zarr.open_group(s3://bucket/data/Q00_5/Q01_3/Q02_2/Q03_1/DATASET)")
-    print("  6. zarr successfully creates .zgroup file")
+    print("  5. Call s3fs(s3://bucket/data/Q00_5/Q01_3/Q02_2/Q03_1/DATASET)")
+    print("  6. storage successfully creates file")
     print("  7. Data stored successfully in hierarchical organization")
     
     print("\nKey improvements:")
     print("  ✓ Resolves FileNotFoundError for hierarchical paths")
-    print("  ✓ Ensures proper directory structure before zarr operations")
+    print("  ✓ Ensures proper directory structure before storage operations")
     print("  ✓ Provides clear error messages when issues occur")
     print("  ✓ Maintains backward compatibility")
     print("  ✓ Optimized for performance")
@@ -233,10 +233,10 @@ def main():
     print("=" * 60)
     
     # Test STAREDataFrame method
-    test_staredataframe_to_zarr_s3()
+    test_staredataframe_to_s3()
     
     # Test generic function
-    test_generic_to_zarr_s3()
+    test_generic_to_s3()
     
     # Test different scenarios
     test_directory_creation_scenarios()
@@ -259,8 +259,8 @@ def main():
     print("✓ Backward compatibility maintained")
     print("✓ Works with both STAREDataFrame and generic functions")
     
-    print("\nThe fix ensures that hierarchical zarr storage works reliably")
-    print("by creating necessary directory structures before zarr operations.")
+    print("\nThe fix ensures that hierarchical Parquet storage works reliably")
+    print("by creating necessary directory structures before storage operations.")
 
 
 if __name__ == "__main__":

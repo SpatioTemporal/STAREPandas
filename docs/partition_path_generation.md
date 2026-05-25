@@ -1,19 +1,19 @@
-# STARE SID Zarr Path Generation
+# STARE SID Partition Path Generation
 
-The `generate_zarr_path` method in `STAREDataFrame` creates hierarchical relative paths for storing zarr files based on the STARE SID (Spatial Temporal Adaptive Resolution Encoding Spatial Index) structure.
+The `generate_partition_path` method in `STAREDataFrame` creates hierarchical relative paths for storing Parquet files based on the STARE SID (Spatial Temporal Adaptive Resolution Encoding Spatial Index) structure.
 
 ## Overview
 
-This function extracts the hierarchical level structure encoded in STARE SIDs and generates organized directory paths that reflect the spatial relationships in the data. This enables efficient storage, retrieval, and spatial queries of zarr-formatted datasets.
+This function extracts the hierarchical level structure encoded in STARE SIDs and generates organized directory paths that reflect the spatial relationships in the data. This enables efficient storage, retrieval, and spatial queries of Parquet datasets.
 
 ## Function Signatures
 
-### generate_zarr_path
+### generate_partition_path
 
 ```python
-def generate_zarr_path(self, sid, dataset_name):
+def generate_partition_path(self, sid, dataset_name):
     """
-    Generate relative path for storing zarr file based on STARE SID structure.
+    Generate relative partition path based on STARE SID structure.
     
     Parameters
     ----------
@@ -25,22 +25,22 @@ def generate_zarr_path(self, sid, dataset_name):
     Returns
     -------
     str
-        Relative path for storing zarr file
+        Relative path for storing Parquet file
     """
 ```
 
-### parse_zarr_path
+### parse_partition_path
 
 ```python
-def parse_zarr_path(self, zarr_path):
+def parse_partition_path(self, partition_path):
     """
-    Parse hierarchical zarr path and reconstruct STARE SID from path components.
+    Parse hierarchical Parquet path and reconstruct STARE SID from path components.
     
-    This is the reverse operation of generate_zarr_path.
+    This is the reverse operation of generate_partition_path.
     
     Parameters
     ----------
-    zarr_path : str
+    partition_path : str
         Hierarchical path in format Q00_X/Q01_Y/.../QN_M/DatasetName
         
     Returns
@@ -95,12 +95,12 @@ sdf = STAREDataFrame()
 # Generate path for a STARE SID
 sid = 3448068485499011499
 dataset = "MOD09"
-path = sdf.generate_zarr_path(sid, dataset)
+path = sdf.generate_partition_path(sid, dataset)
 print(path)
 # Output: Q00_5/Q01_3/Q02_3/Q03_2/Q04_3/Q05_1/Q06_0/Q07_0/Q08_0/Q09_0/Q10_0/Q11_0/MOD09
 
 # Parse path back to SID and dataset
-reconstructed_sid, reconstructed_dataset = sdf.parse_zarr_path(path)
+reconstructed_sid, reconstructed_dataset = sdf.parse_partition_path(path)
 print(f"SID: {reconstructed_sid}, Dataset: {reconstructed_dataset}")
 # Output: SID: 3448068464705536011, Dataset: MOD09
 ```
@@ -113,11 +113,11 @@ original_sid = 3445253714938429444
 dataset = "VIIRS_L2"
 
 # Generate path
-path = sdf.generate_zarr_path(original_sid, dataset)
+path = sdf.generate_partition_path(original_sid, dataset)
 print(f"Path: {path}")
 
 # Parse path back
-reconstructed_sid, parsed_dataset = sdf.parse_zarr_path(path)
+reconstructed_sid, parsed_dataset = sdf.parse_partition_path(path)
 print(f"Reconstructed SID: {reconstructed_sid}")
 print(f"Dataset: {parsed_dataset}")
 
@@ -135,7 +135,7 @@ sid = 3448068485499011499
 datasets = ["MOD09_L1", "MOD09_L2", "MOD09_L3"]
 
 for dataset in datasets:
-    path = sdf.generate_zarr_path(sid, dataset)
+    path = sdf.generate_partition_path(sid, dataset)
     print(f"{dataset}: {path}")
 
 # Output:
@@ -154,7 +154,7 @@ similar_sids = [
 ]
 
 for i, sid in enumerate(similar_sids):
-    path = sdf.generate_zarr_path(sid, "MOD09")
+    path = sdf.generate_partition_path(sid, "MOD09")
     print(f"Region {i+1}: {path}")
 
 # Output:
@@ -169,25 +169,25 @@ for i, sid in enumerate(similar_sids):
 
 ```python
 # S3 bucket organization
-s3_base = "s3://my-bucket/zarr-data"
+s3_base = "s3://my-bucket/parquet-data"
 sid = 3448068485499011499
 dataset = "MOD09"
 
-path = sdf.generate_zarr_path(sid, dataset)
+path = sdf.generate_partition_path(sid, dataset)
 full_s3_path = f"{s3_base}/{path}"
 print(full_s3_path)
-# Output: s3://my-bucket/zarr-data/Q00_5/Q01_3/.../MOD09
+# Output: s3://my-bucket/parquet-data/Q00_5/Q01_3/.../MOD09
 ```
 
 ### Local File System
 
 ```python
 # Local storage organization
-local_base = "/data/zarr"
-path = sdf.generate_zarr_path(sid, dataset)
+local_base = "/data/parquet"
+path = sdf.generate_partition_path(sid, dataset)
 full_local_path = f"{local_base}/{path}"
 print(full_local_path)
-# Output: /data/zarr/Q00_5/Q01_3/.../MOD09
+# Output: /data/parquet/Q00_5/Q01_3/.../MOD09
 ```
 
 ## Benefits
@@ -212,31 +212,31 @@ print(full_local_path)
 - Reduces I/O by avoiding irrelevant data
 - Enables spatial indexing at the file system level
 
-## Integration with Zarr Storage
+## Integration with Parquet Storage
 
 ### Writing Data
 
 ```python
-# Example: Writing zarr data using generated paths
-import zarr
+# Example: Writing Parquet data using generated paths
+
 import os
 
 sdf = STAREDataFrame(your_data)
-base_path = "/data/zarr"
+base_path = "/data/parquet"
 
 for index, row in sdf.iterrows():
     sid = row['sids']
     dataset = "MOD09"
     
     # Generate hierarchical path
-    rel_path = sdf.generate_zarr_path(sid, dataset)
+    rel_path = sdf.generate_partition_path(sid, dataset)
     full_path = os.path.join(base_path, rel_path)
     
     # Ensure directory exists
     os.makedirs(os.path.dirname(full_path), exist_ok=True)
     
-    # Write zarr data
-    zarr_group = zarr.open_group(full_path, mode='w')
+    # Write Parquet data
+    parquet_path = s3fs(full_path, mode='w')
     # ... write your data
 ```
 
@@ -249,19 +249,19 @@ def read_spatial_region(base_path, level_prefix):
     import glob
     
     pattern = os.path.join(base_path, level_prefix, "**/MOD09")
-    zarr_paths = glob.glob(pattern, recursive=True)
+    parquet_paths = glob.glob(pattern, recursive=True)
     
     # Read and combine data from matching paths
     data_frames = []
-    for path in zarr_paths:
-        zg = zarr.open_group(path, mode='r')
-        # ... read zarr data and convert to DataFrame
+    for path in Parquet_paths:
+        zg = s3fs(path, mode='r')
+        # ... read Parquet data and convert to DataFrame
         data_frames.append(df)
     
     return pd.concat(data_frames, ignore_index=True)
 
 # Read all data from Q00_5/Q01_3 region
-region_data = read_spatial_region("/data/zarr", "Q00_5/Q01_3")
+region_data = read_spatial_region("/data/parquet", "Q00_5/Q01_3")
 ```
 
 ## Performance Considerations
@@ -284,7 +284,7 @@ region_data = read_spatial_region("/data/zarr", "Q00_5/Q01_3")
 ## Best Practices
 
 ### Path Construction
-- Always use the `generate_zarr_path` method for consistency
+- Always use the `generate_partition_path` method for consistency
 - Validate SID values before path generation
 - Use meaningful dataset names for clarity
 
@@ -310,7 +310,7 @@ The function handles various edge cases:
 ```python
 # Example error handling
 try:
-    path = sdf.generate_zarr_path(sid, dataset_name)
+    path = sdf.generate_partition_path(sid, dataset_name)
     # Use path for storage operations
 except Exception as e:
     print(f"Error generating path for SID {sid}: {e}")
@@ -319,10 +319,10 @@ except Exception as e:
 
 ## Function Relationship
 
-The `generate_zarr_path` and `parse_zarr_path` functions work together as complementary operations:
+The `generate_partition_path` and `parse_partition_path` functions work together as complementary operations:
 
-- **generate_zarr_path**: Extracts hierarchical level structure from STARE SIDs
-- **parse_zarr_path**: Reconstructs hierarchical level structure into STARE SIDs
+- **generate_partition_path**: Extracts hierarchical level structure from STARE SIDs
+- **parse_partition_path**: Reconstructs hierarchical level structure into STARE SIDs
 - **Level Structure Preservation**: Both functions preserve the hierarchical organization
 - **Spatial Information**: Lower bits containing precise spatial coordinates are not preserved
 - **Perfect Round-Trip**: Works perfectly for SIDs containing only level information
@@ -332,21 +332,21 @@ The `generate_zarr_path` and `parse_zarr_path` functions work together as comple
 1. **Purpose**: These functions are designed for hierarchical storage organization, not complete spatial data preservation
 2. **Level Structure**: The hierarchical level structure is perfectly preserved in both directions
 3. **Spatial Precision**: Precise spatial coordinates in lower SID bits are not used in path generation
-4. **Validation**: `parse_zarr_path` includes comprehensive validation and error handling
+4. **Validation**: `parse_partition_path` includes comprehensive validation and error handling
 5. **Bit Clearing**: Bits 62-63 are always cleared in reconstructed SIDs as requested
 
 ## Related Functions
 
-- `STAREDataFrame.to_zarr_s3()`: Write grouped zarr to S3
-- `STAREDataFrame.to_zarr_local()`: Write grouped zarr locally
-- `STAREDataFrame.generate_zarr_path()`: Generate hierarchical paths from SIDs
-- `STAREDataFrame.parse_zarr_path()`: Parse hierarchical paths back to SIDs
-- `from_zarr_s3_chunked_groups()`: Read specific groups from S3
-- `to_zarr_s3()` (granules): Generic zarr writing function
+- `STAREDataFrame.to_s3()`: Write Parquet partitions to S3
+- `STAREDataFrame.to_local()`: Write Parquet partitions locally
+- `STAREDataFrame.generate_partition_path()`: Generate hierarchical paths from SIDs
+- `STAREDataFrame.parse_partition_path()`: Parse hierarchical paths back to SIDs
+- `from_s3_groups()`: Read specific groups from S3
+- `to_s3()` (granules): Generic Parquet writing function
 
 ## See Also
 
-- [Chunked Zarr Reading](chunked_zarr_reading.md)
-- [Generic to_zarr_s3 Function](generic_to_zarr_s3_api.md)
-- [Zarr Metadata API](zarr_metadata_api.md)
+- [Chunked Parquet Reading](chunked_reading.md)
+- [Generic to_s3 Function](generic_to_s3_api.md)
+- [Metadata API](metadata_api.md)
 - [STARE Documentation](https://stare.readthedocs.io/)

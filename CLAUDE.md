@@ -31,7 +31,7 @@ starepandas/
 │   │   ├── ssmis.py         # SSMIS instrument reader
 │   │   ├── atms.py          # ATMS instrument reader (updated for 2025 format)
 │   │   └── utils.py         # Granule utilities
-│   └── zarr_s3.py            # S3 zarr storage functions
+│   └── s3.py                # S3 Parquet storage functions
 ├── tools/
 │   ├── __init__.py
 │   ├── stare_join.py           # STARE-based spatial joins
@@ -62,7 +62,7 @@ starepandas/
 - **High-level API**: Complete workflow demonstration
 - **Key Methods**:
   - `get_sids_for_bbox()`: Convert bounding box to STARE SIDs
-  - `ingest_granules()`: Partition granules into S3 zarr chunks
+  - `ingest_granules()`: Partition granules into S3 Parquet partitions
   - `find_intersecting_data()`: Find intersecting data across instruments
   - `download_and_analyze()`: Selective chunk download and analysis
   - `plot_comparison()`: Multi-instrument visualization
@@ -208,7 +208,7 @@ Re-run the relevant verification skill to confirm nothing is broken. If you adde
 |---|---|---|
 | Reinstall only | `/stare-pandas-reinstall` | Reinstalls starepandas in `starepandas_3.12_v3` and checks pip log |
 | Basic verification | `/basic-verification-stare-pandas` | Reinstall + core STAREPandas API (import, STAREDataFrame, stare_join, sids_from_xy) |
-| STARE-PODS verification | `/stare-pods-verification` | Reinstall + full S3/RDS pipeline (config, S3, zarr write/read, metadata, intersections) |
+| STARE-PODS verification | `/stare-pods-verification` | Reinstall + full S3/RDS pipeline (config, S3, Parquet write/read, metadata, intersections) |
 
 All skills run exclusively inside the `starepandas_3.12_v3` conda environment.
 
@@ -227,12 +227,12 @@ All skills run exclusively inside the `starepandas_3.12_v3` conda environment.
 2. AWS config loaded from `starepandas/.config`
 3. S3 connectivity (`s3://zarrpods`)
 4. RDS connectivity + `PodsMetadata` table
-5. `generate_zarr_path` produces correct hierarchical path
-6. `parse_zarr_path` round-trips correctly
+5. `generate_partition_path` produces correct hierarchical path
+6. `parse_partition_path` round-trips correctly
 7. `StarePodsDemo.get_sids_for_bbox` (California bbox, level 7)
-8. `STAREDataFrame.to_zarr_s3` writes to `s3://zarrpods/testing-s3`
-9. `load_zarr_metadata` confirms RDS entry after write
-10. `from_zarr_s3_chunked` reads back each group via `group_path`
+8. `STAREDataFrame.to_s3` writes to `s3://zarrpods/testing-s3`
+9. `load_s3_metadata` confirms RDS entry after write
+10. `from_s3` reads back each group via `group_path`
 11. `StarePodsDemo.find_intersecting_data` runs end-to-end
 
 ---
@@ -241,7 +241,7 @@ All skills run exclusively inside the `starepandas_3.12_v3` conda environment.
 
 ### STAREPandas Tests
 - `tests/test_instantiation.py` - Basic STAREDataFrame creation
-- `tests/test_zarr_functions.py` - Zarr storage operations
+- `tests/test_parquet_io.py` - Parquet storage operations
 - `test_atms_implementation.py` - ATMS instrument testing
 - `starepods_complete_demo.ipynb` - Complete demonstration notebook
 

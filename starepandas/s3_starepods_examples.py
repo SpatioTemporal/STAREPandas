@@ -119,7 +119,7 @@ def main():
     intersecting = demo.find_intersecting_data(location_sids, instruments=["GMI"]) \
         if location_sids else None
     if intersecting is not None:
-        # Scope to our s3_prefix so duplicate prior runs (e.g. legacy zarr
+        # Scope to our s3_prefix so duplicate prior runs (e.g. legacy data
         # under another prefix) don't pollute the result.
         if not intersecting.empty and "group_path" in intersecting.columns:
             intersecting = intersecting[

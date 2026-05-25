@@ -10,7 +10,6 @@ import starepandas.tools.temporal_conversions
 import starepandas.io.pod
 import multiprocessing
 import pickle
-import zarr
 import s3fs
 import os
 import json
@@ -37,7 +36,7 @@ def aws_configure(key=None, secret=None, token=None, region_name=None, endpoint_
                   rds=None, db_host=None, db_port=None, db_username=None, db_password=None, db_database=None,
                   **s3fs_kwargs):
     """
-    Configure default AWS/S3 options for zarr S3 helpers and optional RDS Postgres metadata store.
+    Configure default AWS/S3 options for S3 Parquet helpers and optional RDS Postgres metadata store.
 
     Parameters
     - key: AWS access key id
@@ -51,7 +50,7 @@ def aws_configure(key=None, secret=None, token=None, region_name=None, endpoint_
     - **s3fs_kwargs: any additional s3fs.S3FileSystem kwargs
 
     Notes
-    - These options are used by to_zarr_s3/from_zarr_s3 when storage_options is not provided.
+    - These options are used by to_s3/from_s3 when storage_options is not provided.
     - You can pass a ready-made 'client_kwargs' dict or individual fields like 'region_name'/'endpoint_url'.
     """
     global _AWS_S3_STORAGE_OPTIONS, _AWS_RDS_OPTIONS
@@ -94,7 +93,7 @@ def aws_configure(key=None, secret=None, token=None, region_name=None, endpoint_
 
 def load_aws_configure(config_path):
     """
-    Load AWS/S3 configuration from a JSON file and set defaults for zarr S3 helpers.
+    Load AWS/S3 configuration from a JSON file and set defaults for S3 Parquet helpers.
 
     The JSON may contain either s3fs-style keys (key, secret, token, client_kwargs)
     or AWS-style keys (aws_access_key_id, aws_secret_access_key, aws_session_token, region_name, endpoint_url).
@@ -1682,7 +1681,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
         return arrays
 
-    def to_zarr_s3(self, s3_path, level, chunk_size=250000, storage_options=None,
+    def to_s3(self, s3_path, level, chunk_size=250000, storage_options=None,
                    dataset=None, data_level=None, raw_collected_time=None, metadata=None,
                    conn=None):
         """
@@ -1690,7 +1689,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         one Parquet file per partition.
 
         Layout: s3_path/<hierarchical_path>.parquet, where ``hierarchical_path``
-        is produced by :meth:`generate_zarr_path` (e.g.
+        is produced by :meth:`generate_partition_path` (e.g.
         ``s3_path/Q00_5/Q01_3/Q02_2/Q03_1/dataset_name.parquet``).
 
         Each Parquet file contains all DataFrame columns for that partition
@@ -1698,17 +1697,16 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         for reconstitution. ``pixel_width`` and ``granule_name`` (when present
         in ``metadata``) are stored in the Parquet file's key-value metadata.
 
-        Note: the legacy method name ``to_zarr_s3`` is preserved for API
-        compatibility; the on-disk format is now Parquet, not zarr.
+        Note: on-disk format is Parquet.
 
         Parameters
         ----------
         s3_path : str
-            S3 path where the zarr root directory will be created (e.g., "s3://bucket/granule_name")
+            S3 path where the storage root will be created (e.g., "s3://bucket/granule_name")
         level : int
             STARE level for partitioning SIDs
         chunk_size : int, optional
-            Size of chunks for zarr arrays (default: 250000)
+            Unused; retained for API compatibility (default: 250000)
         storage_options : dict, optional
             S3 storage options including credentials and region
         dataset : str, optional
@@ -1739,7 +1737,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         if not merged_opts:
             raise ValueError(
                 "Missing S3 configuration. Call load_aws_configure(config_path) or aws_configure(...) "
-                "to set credentials/region, or pass storage_options to to_zarr_s3."
+                "to set credentials/region, or pass storage_options to to_s3."
             )
 
         # Early exit for empty DataFrames
@@ -1777,7 +1775,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         print(f"Writing {num_groups} Parquet partitions to S3...")
 
         # Build a single s3fs filesystem instance and reuse it across all writes
-        # so each partition is one S3 PUT instead of ~80 (one per zarr array).
+        # so each partition is one S3 PUT.
         import pyarrow as pa
         import pyarrow.parquet as pq
         parquet_fs = s3fs.S3FileSystem(**merged_opts)
@@ -1794,11 +1792,11 @@ class STAREDataFrame(geopandas.GeoDataFrame):
                 print(f"  Progress: {written_count}/{num_groups} partitions written...")
 
             # Generate hierarchical path for this partition; append .parquet suffix
-            hierarchical_path = self.generate_zarr_path(group_id, dataset or "data")
+            hierarchical_path = self.generate_partition_path(group_id, dataset or "data")
             group_path = f"{s3_path}/{hierarchical_path}.parquet"
 
             # Build a Table containing every column plus __row_positions__ to
-            # preserve original row order. Match the legacy zarr coercion:
+            # preserve original row order. Match the legacy coercion:
             # anything that lands in a numpy object array (e.g. shapely
             # geometries, mixed-type columns) becomes a string column so
             # PyArrow can serialize it.
@@ -1900,7 +1898,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         print(f"✓ Finished writing {num_groups} Parquet partitions to {s3_path}")
         return s3_path
     
-    def to_zarr_local(self, local_path, level, chunk_size=250000, pixel_width=None,
+    def to_local(self, local_path, level, chunk_size=250000, pixel_width=None,
                       db_path=None, dataset=None, data_level=None, granule_name=None):
         """
         Partition STAREDataFrame by SIDs at specified level and write to the
@@ -1914,8 +1912,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         per Parquet partition into a SQLite ``PodsMetadata`` table (same schema
         as the S3/RDS version but using ``LocalPath`` instead of ``S3 bucket``).
 
-        Note: the legacy method name ``to_zarr_local`` is preserved for API
-        compatibility; the on-disk format is now Parquet, not zarr.
+        Note: on-disk format is Parquet.
 
         Parameters
         ----------
@@ -1928,7 +1925,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             row groups are sized by PyArrow defaults).
         pixel_width : int, optional
             Number of across-track pixels per scanline. Stored in the Parquet
-            file's key-value metadata so :func:`reconstitute_hdf5_from_local_zarr`
+            file's key-value metadata so :func:`reconstitute_hdf5_from_local`
             can rebuild the 2D HDF5 structure.
         db_path : str, optional
             Path to the SQLite database file. When provided, metadata rows are
@@ -1946,11 +1943,11 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         # Ensure root directory exists
         os.makedirs(local_path, exist_ok=True)
 
-        # Cap partition level to avoid extreme fragmentation (mirrors to_zarr_s3 behaviour)
+        # Cap partition level to avoid extreme fragmentation (mirrors to_s3 behaviour)
         partition_level = min(level, MAX_PARTITION_LEVEL)
         if partition_level < level:
             logging.debug(
-                "to_zarr_local: partition level capped from %d to %d; "
+                "to_local: partition level capped from %d to %d; "
                 "SID data retains full resolution %d.",
                 level, partition_level, level,
             )
@@ -1982,10 +1979,10 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             if isinstance(group_id, (int, np.integer)) and group_id < 0:
                 continue
 
-            # generate_zarr_path appends the dataset segment; pass an empty
+            # generate_partition_path appends the dataset segment; pass an empty
             # dataset_name and strip the trailing empty segment so we have just
             # the HTM segments and can splice the optional granule segment in.
-            htm_path = self.generate_zarr_path(group_id, dataset_name="")
+            htm_path = self.generate_partition_path(group_id, dataset_name="")
             htm_segments = [seg for seg in htm_path.split('/') if seg]
             if granule_name is not None:
                 parent_segments = [*htm_segments, granule_name]
@@ -1997,7 +1994,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
             # Build a Table containing every column plus __row_positions__ so
             # reconstitution can restore original row order. Match the legacy
-            # zarr coercion: anything that lands in a numpy object array
+            # coercion: anything that lands in a numpy object array
             # (e.g. shapely geometries, mixed-type columns) becomes a string
             # column so PyArrow can serialize it.
             row_pos = original_positions.loc[gdf.index].to_numpy(dtype=np.int64)
@@ -2215,7 +2212,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
                 st.create_dataset('SecondOfDay',
                                   data=np.where(np.isnan(seconds_of_day.astype(float)), 0.0, seconds_of_day).astype(np.float64))
 
-            # ── Extra fields stored in zarr by the instrument reader ──────────
+            # ── Extra fields stored by the instrument reader ──────────
             # Columns already written above (handled explicitly)
             _written = (
                 {'lat', 'lon', 'timestamp', 'sids', self._sid_column_name}
@@ -2274,7 +2271,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
                     _written.add(col)
 
             # Remaining per-pixel 2D columns (e.g. Quality, sunLocalTime)
-            # Known dtypes for fields that zarr stores as float64 but originals differ.
+            # Known dtypes for fields stored as float64 whose originals differ.
             _pixel_field_dtypes = {
                 'Quality':      np.int8,
                 'sunLocalTime': np.float32,
@@ -2299,9 +2296,9 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
         return file_path
 
-    def generate_zarr_path(self, sid, dataset_name):
+    def generate_partition_path(self, sid, dataset_name):
         """
-        Generate relative path for storing zarr file based on STARE SID structure.
+        Generate relative partition path based on STARE SID structure.
         
         The path follows the pattern: Q00_0/Q01_2/Q02_3/.../QN_M/DatasetName
         where:
@@ -2328,12 +2325,12 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         Returns
         -------
         str
-            Relative path for storing zarr file
+            Relative partition path
             
         Examples
         --------
         >>> sdf = STAREDataFrame()
-        >>> path = sdf.generate_zarr_path(12345678901234567890, "MOD09")
+        >>> path = sdf.generate_partition_path(12345678901234567890, "MOD09")
         >>> print(path)
         Q00_2/Q01_1/Q02_3/.../MOD09
         """
@@ -2374,16 +2371,16 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         # Join with forward slashes
         return '/'.join(path_components)
 
-    def parse_zarr_path(self, zarr_path):
+    def parse_partition_path(self, partition_path):
         """
-        Parse hierarchical zarr path and reconstruct STARE SID from path components.
+        Parse hierarchical partition path and reconstruct STARE SID from path components.
         
-        This is the reverse operation of generate_zarr_path. Takes a path in the format
+        This is the reverse operation of generate_partition_path. Takes a path in the format
         Q00_X/Q01_Y/Q02_Z/.../QN_M/DatasetName and reconstructs the original STARE SID.
         
         Parameters
         ----------
-        zarr_path : str
+        partition_path : str
             Hierarchical path in format Q00_X/Q01_Y/.../QN_M/DatasetName
             
         Returns
@@ -2395,15 +2392,15 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         Examples
         --------
         >>> sdf = STAREDataFrame()
-        >>> sid, dataset = sdf.parse_zarr_path("Q00_5/Q01_3/Q02_2/Q03_1/MOD09")
+        >>> sid, dataset = sdf.parse_partition_path("Q00_5/Q01_3/Q02_2/Q03_1/MOD09")
         >>> print(f"SID: {sid}, Dataset: {dataset}")
         SID: 12345678901234567890, Dataset: MOD09
         """
-        if not zarr_path:
-            raise ValueError("zarr_path cannot be empty")
+        if not partition_path:
+            raise ValueError("partition_path cannot be empty")
         
         # Split path into components
-        components = zarr_path.split('/')
+        components = partition_path.split('/')
         if len(components) < 2:
             raise ValueError("Path must contain at least one level and dataset name")
         
@@ -2488,15 +2485,14 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         return sid, dataset_name
 
     @classmethod
-    def from_zarr_s3(cls, s3_path, storage_options=None):
+    def from_s3(cls, s3_path, storage_options=None):
         """
         Read STAREDataFrame from S3 Parquet partitions written by
-        :meth:`to_zarr_s3`.
+        :meth:`to_s3`.
 
         Walks ``s3_path`` recursively, reads every ``*.parquet`` object, and
         concatenates the rows back in original order using
-        ``__row_positions__``. Method name retained for API compatibility;
-        the underlying leaf format is now Parquet.
+        ``__row_positions__``.
 
         Parameters
         ----------
@@ -2521,7 +2517,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         if not merged_opts:
             raise ValueError(
                 "Missing S3 configuration. Call load_aws_configure(config_path) or aws_configure(...) "
-                "to set credentials/region, or pass storage_options to from_zarr_s3."
+                "to set credentials/region, or pass storage_options to from_s3."
             )
         fs = s3fs.S3FileSystem(**merged_opts)
 
@@ -2554,15 +2550,14 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         return cls(df)
     
     @classmethod
-    def from_zarr_local(cls, local_path):
+    def from_local(cls, local_path):
         """
         Read STAREDataFrame from local Parquet partitions written by
-        :meth:`to_zarr_local`.
+        :meth:`to_local`.
 
         Walks ``local_path`` recursively, reads every ``*.parquet`` file, and
         concatenates the rows back in original order using
-        ``__row_positions__``. Method name retained for API compatibility;
-        the underlying leaf format is now Parquet.
+        ``__row_positions__``.
 
         Parameters
         ----------

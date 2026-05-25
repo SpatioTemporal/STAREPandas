@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Test script for verifying that generate_zarr_path and parse_zarr_path work correctly
+Test script for verifying that generate_partition_path and parse_partition_path work correctly
 for their intended purpose: hierarchical level organization.
 
 The functions are designed to extract and reconstruct the hierarchical level structure
@@ -53,11 +53,11 @@ def test_level_consistency():
         print(f"  Original level values: {original_level_values}")
         
         # Generate path
-        path = sdf.generate_zarr_path(original_sid, "TEST")
+        path = sdf.generate_partition_path(original_sid, "TEST")
         print(f"  Generated path: {path}")
         
         # Parse path back
-        reconstructed_sid, dataset = sdf.parse_zarr_path(path)
+        reconstructed_sid, dataset = sdf.parse_partition_path(path)
         print(f"  Reconstructed SID: {reconstructed_sid}")
         
         # Extract level information from reconstructed SID
@@ -135,11 +135,11 @@ def test_pure_level_sids():
         print(f"  Hex: {hex(original_sid)}")
         
         # Generate path
-        path = sdf.generate_zarr_path(original_sid, "TEST")
+        path = sdf.generate_partition_path(original_sid, "TEST")
         print(f"  Generated path: {path}")
         
         # Parse path back
-        reconstructed_sid, dataset = sdf.parse_zarr_path(path)
+        reconstructed_sid, dataset = sdf.parse_partition_path(path)
         print(f"  Reconstructed SID: {reconstructed_sid}")
         print(f"  Dataset: '{dataset}'")
         
@@ -175,12 +175,12 @@ def test_path_generation_consistency():
         print(f"\nTest {i+1}: {original_path}")
         
         # Parse path to SID
-        sid, dataset = sdf.parse_zarr_path(original_path)
+        sid, dataset = sdf.parse_partition_path(original_path)
         print(f"  Parsed SID: {sid}")
         print(f"  Parsed dataset: '{dataset}'")
         
         # Generate path from SID
-        regenerated_path = sdf.generate_zarr_path(sid, dataset)
+        regenerated_path = sdf.generate_partition_path(sid, dataset)
         print(f"  Regenerated path: {regenerated_path}")
         
         # Check if paths match
@@ -198,7 +198,7 @@ def explain_function_purpose():
     """Explain what these functions are designed to do."""
     print("\n=== Function Purpose Explanation ===")
     
-    print("The generate_zarr_path and parse_zarr_path functions are designed for:")
+    print("The generate_partition_path and parse_partition_path functions are designed for:")
     print("1. **Hierarchical Organization**: Extract level structure from STARE SIDs")
     print("2. **Storage Path Generation**: Create organized directory structures")
     print("3. **Spatial Grouping**: Group data by STARE hierarchical levels")
@@ -227,17 +227,17 @@ def demonstrate_real_usage():
     sid = 3448068485499011499
     dataset = "MOD09_L2"
     
-    path = sdf.generate_zarr_path(sid, dataset)
+    path = sdf.generate_partition_path(sid, dataset)
     print(f"  SID {sid} → Path: {path}")
-    print(f"  Storage location: /data/zarr/{path}")
-    print(f"  S3 location: s3://my-bucket/zarr/{path}")
+    print(f"  Storage location: /data/parquet/{path}")
+    print(f"  S3 location: s3://my-bucket/parquet/{path}")
     
     # Scenario 2: Spatial grouping
     print("\nScenario 2: Spatial Grouping")
     similar_sids = [3445253714938429444, 3447505514752114692]
     
     for i, sid in enumerate(similar_sids):
-        path = sdf.generate_zarr_path(sid, "MOD09")
+        path = sdf.generate_partition_path(sid, "MOD09")
         components = path.split('/')
         common_prefix = '/'.join(components[:-2])
         print(f"  SID {sid} → Common prefix: {common_prefix}")

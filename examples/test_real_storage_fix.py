@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Test the actual zarr directory creation fix with real S3.
+Test the actual storage directory creation fix with real S3.
 
-This script tests the actual scenario that was failing - creating zarr groups
+This script tests the actual scenario that was failing - creating Parquet partitions
 in hierarchical directory structures on S3.
 """
 
@@ -54,9 +54,9 @@ def load_config():
     print("✓ AWS configuration loaded")
 
 
-def test_hierarchical_zarr():
-    """Test hierarchical zarr creation - the actual failing scenario."""
-    print("\n=== Testing Hierarchical Zarr Creation ===")
+def test_hierarchical_storage():
+    """Test hierarchical Parquet creation - the actual failing scenario."""
+    print("\n=== Testing Hierarchical Parquet Creation ===")
     
     try:
         # Create test data that will generate hierarchical paths
@@ -91,7 +91,7 @@ def test_hierarchical_zarr():
         print(f"\nHierarchical paths that will be created:")
         for group_id, gdf in grouped:
             if isinstance(group_id, (int, np.integer)) and group_id >= 0:
-                hierarchical_path = sdf.generate_zarr_path(group_id, dataset)
+                hierarchical_path = sdf.generate_partition_path(group_id, dataset)
                 full_path = f"{s3_path}/{hierarchical_path}"
                 print(f"  Group {group_id}:")
                 print(f"    Hierarchical path: {hierarchical_path}")
@@ -99,17 +99,17 @@ def test_hierarchical_zarr():
                 print(f"    Rows in group: {len(gdf)}")
         
         # This is the actual call that was failing before the fix
-        print(f"\n🧪 Testing to_zarr_s3 with hierarchical paths...")
+        print(f"\n🧪 Testing to_s3 with hierarchical paths...")
         print("   (This was failing with FileNotFoundError before the fix)")
         
-        result = sdf.to_zarr_s3(
+        result = sdf.to_s3(
             s3_path=s3_path,
             level=level,
             dataset=dataset,
             chunk_size=1000
         )
         
-        print(f"✅ SUCCESS! to_zarr_s3 completed without FileNotFoundError")
+        print(f"✅ SUCCESS! to_s3 completed without FileNotFoundError")
         print(f"   Result: {result}")
         
         # Verify the hierarchical structure was created
@@ -122,11 +122,11 @@ def test_hierarchical_zarr():
         if fs.exists(base_path):
             # Find all files created
             all_files = fs.find(base_path)
-            zarr_files = [f for f in all_files if f.endswith(('.zarray', '.zgroup', '.zattrs'))]
+            parquet_files = [f for f in all_files if f.endswith(('.parquet', '.parquet', '.parquet'))]
             
-            print(f"\n✓ Created hierarchical zarr structure:")
+            print(f"\n✓ Created hierarchical Parquet structure:")
             print(f"   Total files: {len(all_files)}")
-            print(f"   Zarr files: {len(zarr_files)}")
+            print(f"   Parquet files: {len(parquet_files)}")
             
             # Show the hierarchical directory structure
             directories = set()
@@ -146,11 +146,11 @@ def test_hierarchical_zarr():
                 print(f"     ... and {len(directories) - 8} more directories")
         
         # Test reading the data back
-        print(f"\n🧪 Testing from_zarr_s3 with hierarchical discovery...")
+        print(f"\n🧪 Testing from_s3 with hierarchical discovery...")
         
-        sdf_restored = STAREDataFrame.from_zarr_s3(s3_path)
+        sdf_restored = STAREDataFrame.from_s3(s3_path)
         
-        print(f"✅ SUCCESS! from_zarr_s3 completed with recursive discovery")
+        print(f"✅ SUCCESS! from_s3 completed with recursive discovery")
         print(f"   Restored {len(sdf_restored)} rows")
         print(f"   Original columns: {list(sdf.columns)}")
         print(f"   Restored columns: {list(sdf_restored.columns)}")
@@ -172,25 +172,25 @@ def test_hierarchical_zarr():
         return True
         
     except Exception as e:
-        print(f"❌ FAILED! Hierarchical zarr test failed: {e}")
+        print(f"❌ FAILED! Hierarchical Parquet test failed: {e}")
         print("\nThis indicates the directory creation fix is not working properly.")
         import traceback
         traceback.print_exc()
         return False
 
 
-def test_generic_to_zarr_s3():
-    """Test the generic to_zarr_s3 function that was originally failing."""
-    print("\n=== Testing Generic to_zarr_s3 Function ===")
+def test_generic_to_s3():
+    """Test the generic to_s3 function that was originally failing."""
+    print("\n=== Testing Generic to_s3 Function ===")
     
     try:
-        from starepandas.io.granules import to_zarr_s3
+        from starepandas.io.granules import to_s3
         
         # Create a simple test file (we'll simulate this)
         print("Note: This would normally read from a real granule file")
         print("For this test, we're focusing on the hierarchical path creation")
         
-        # The generic function calls STAREDataFrame.to_zarr_s3 internally,
+        # The generic function calls STAREDataFrame.to_s3 internally,
         # so if the hierarchical test above passed, this should work too.
         
         print("✓ Generic function uses same hierarchical path logic")
@@ -208,17 +208,17 @@ def demonstrate_fix():
     print("\n=== How the Directory Creation Fix Works ===")
     
     print("Before the fix:")
-    print("  1. generate_zarr_path() creates: Q00_5/Q01_3/Q02_2/Q03_1/DATASET")
-    print("  2. zarr.open_group() tries to write to nested S3 path")
+    print("  1. generate_partition_path() creates: Q00_5/Q01_3/Q02_2/Q03_1/DATASET")
+    print("  2. s3fs tries to write to nested S3 path")
     print("  3. S3 fails because parent directories don't exist")
     print("  4. FileNotFoundError: The specified bucket does not exist")
     
     print("\nAfter the fix:")
-    print("  1. generate_zarr_path() creates: Q00_5/Q01_3/Q02_2/Q03_1/DATASET")
+    print("  1. generate_partition_path() creates: Q00_5/Q01_3/Q02_2/Q03_1/DATASET")
     print("  2. Extract parent path: Q00_5/Q01_3/Q02_2/Q03_1")
     print("  3. fs.makedirs(parent_path, exist_ok=True)")
-    print("  4. zarr.open_group() succeeds with proper directory structure")
-    print("  5. ✅ Hierarchical zarr storage works!")
+    print("  4. storage succeeds with proper directory structure")
+    print("  5. ✅ Hierarchical Parquet storage works!")
     
     print("\nKey benefits:")
     print("  ✓ Resolves FileNotFoundError for hierarchical paths")
@@ -228,21 +228,21 @@ def demonstrate_fix():
 
 
 def main():
-    """Run the hierarchical zarr fix test."""
-    print("Hierarchical Zarr Directory Creation Fix Test")
+    """Run the hierarchical Parquet fix test."""
+    print("Hierarchical Parquet Directory Creation Fix Test")
     print("=" * 60)
     print("This test verifies that the FileNotFoundError issue has been resolved")
-    print("when using hierarchical zarr paths generated by generate_zarr_path().")
+    print("when using hierarchical Parquet paths generated by generate_partition_path().")
     print()
     
     # Load configuration
     load_config()
     
     # Test the actual failing scenario
-    success = test_hierarchical_zarr()
+    success = test_hierarchical_storage()
     
     # Test generic function
-    test_generic_to_zarr_s3()
+    test_generic_to_s3()
     
     # Show how the fix works
     demonstrate_fix()
@@ -251,12 +251,12 @@ def main():
     if success:
         print("🎉 SUCCESS! The directory creation fix is working correctly!")
         print("✅ FileNotFoundError issue has been resolved")
-        print("✅ Hierarchical zarr storage is now functional")
+        print("✅ Hierarchical Parquet storage is now functional")
         print("✅ Both STAREDataFrame and generic functions work")
         print("✅ Spatial organization using STARE hierarchy is enabled")
         
-        print("\nYou can now use hierarchical zarr storage without errors:")
-        print("  sdf.to_zarr_s3(s3_path, level, dataset='MY_DATASET')")
+        print("\nYou can now use hierarchical Parquet storage without errors:")
+        print("  sdf.to_s3(s3_path, level, dataset='MY_DATASET')")
         print("  # Creates: s3://bucket/Q00_X/Q01_Y/.../MY_DATASET/")
     else:
         print("❌ FAILURE! The directory creation fix needs more work.")

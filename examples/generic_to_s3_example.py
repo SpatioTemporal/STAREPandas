@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Example demonstrating the generic to_zarr_s3 function in starepandas.io.granules.
+Example demonstrating the generic to_s3 function in starepandas.io.granules.
 
 This example shows how to:
-1. Convert a granule file directly to zarr format and store it in S3
+1. Convert a granule file directly to Parquet format and store it in S3
 2. Use different parameters for different granule types
 3. Handle metadata and configuration
 """
@@ -15,7 +15,7 @@ import datetime
 # Add the parent directory to the path to import starepandas
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from starepandas.io.granules import to_zarr_s3
+from starepandas.io.granules import to_s3
 
 
 def example_modis_granule():
@@ -31,8 +31,8 @@ def example_modis_granule():
         return
     
     try:
-        # Convert MODIS granule to zarr and store in S3
-        s3_path = to_zarr_s3(
+        # Convert MODIS granule to Parquet and store in S3
+        s3_path = to_s3(
             file_path=file_path,
             s3_path="s3://my-bucket/modis_data/MOD05_L2_2019336",
             level=10,  # STARE level for partitioning
@@ -47,7 +47,7 @@ def example_modis_granule():
             }
         )
         
-        print(f"✓ Successfully converted MODIS granule to zarr")
+        print(f"✓ Successfully converted MODIS granule to Parquet")
         print(f"✓ Data stored at: {s3_path}")
         
     except Exception as e:
@@ -67,8 +67,8 @@ def example_viirs_granule():
         return
     
     try:
-        # Convert VIIRS granule to zarr and store in S3
-        s3_path = to_zarr_s3(
+        # Convert VIIRS granule to Parquet and store in S3
+        s3_path = to_s3(
             file_path=file_path,
             s3_path="s3://my-bucket/viirs_data/VNP02DNB_2020219",
             level=12,  # Higher resolution for VIIRS
@@ -84,7 +84,7 @@ def example_viirs_granule():
             }
         )
         
-        print(f"✓ Successfully converted VIIRS granule to zarr")
+        print(f"✓ Successfully converted VIIRS granule to Parquet")
         print(f"✓ Data stored at: {s3_path}")
         
     except Exception as e:
@@ -104,8 +104,8 @@ def example_ssmis_granule():
         return
     
     try:
-        # Convert SSMIS granule to zarr and store in S3
-        s3_path = to_zarr_s3(
+        # Convert SSMIS granule to Parquet and store in S3
+        s3_path = to_s3(
             file_path=file_path,
             s3_path="s3://my-bucket/ssmis_data/SSMIS_20210110",
             level=8,  # Lower resolution for SSMIS
@@ -122,7 +122,7 @@ def example_ssmis_granule():
             }
         )
         
-        print(f"✓ Successfully converted SSMIS granule to zarr")
+        print(f"✓ Successfully converted SSMIS granule to Parquet")
         print(f"✓ Data stored at: {s3_path}")
         
     except Exception as e:
@@ -142,8 +142,8 @@ def example_ssmis_specific_scan():
         return
     
     try:
-        # Convert specific SSMIS scan (S1) to zarr and store in S3
-        s3_path = to_zarr_s3(
+        # Convert specific SSMIS scan (S1) to Parquet and store in S3
+        s3_path = to_s3(
             file_path=file_path,
             s3_path="s3://my-bucket/ssmis_data/SSMIS_S1_20210110",
             level=8,
@@ -160,7 +160,7 @@ def example_ssmis_specific_scan():
             }
         )
         
-        print(f"✓ Successfully converted SSMIS S1 scan to zarr")
+        print(f"✓ Successfully converted SSMIS S1 scan to Parquet")
         print(f"✓ Data stored at: {s3_path}")
         
     except Exception as e:
@@ -189,7 +189,7 @@ def example_with_custom_storage_options():
     
     try:
         # Convert granule with custom storage options
-        s3_path = to_zarr_s3(
+        s3_path = to_s3(
             file_path=file_path,
             s3_path="s3://my-bucket/custom_data",
             level=10,
@@ -212,7 +212,7 @@ def example_with_custom_storage_options():
 
 def main():
     """Run all examples."""
-    print("Generic to_zarr_s3 Function Examples")
+    print("Generic to_s3 Function Examples")
     print("=" * 50)
     
     # Run examples
@@ -225,7 +225,7 @@ def main():
     print("\n" + "=" * 50)
     print("Examples completed!")
     print("\nKey Features:")
-    print("- Direct conversion from granule files to S3 zarr storage")
+    print("- Direct conversion from granule files to S3 Parquet storage")
     print("- Automatic STARE indexing and partitioning")
     print("- Support for all granule types (MODIS, VIIRS, SSMIS, etc.)")
     print("- Support for multi-scan granules (e.g., SSMIS)")

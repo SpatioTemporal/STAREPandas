@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Example demonstrating the new hierarchical zarr storage functionality.
+Example demonstrating the new hierarchical Parquet storage functionality.
 
-This script shows how the updated to_zarr_s3 and from_zarr_s3 functions now
-use hierarchical paths for better spatial organization of zarr data.
+This script shows how the updated to_s3 and from_s3 functions now
+use hierarchical paths for better spatial organization of Parquet data.
 """
 
 import os
@@ -18,8 +18,8 @@ from starepandas import STAREDataFrame
 
 
 def example_hierarchical_storage():
-    """Example showing hierarchical zarr storage."""
-    print("=== Hierarchical Zarr Storage Example ===")
+    """Example showing hierarchical Parquet storage."""
+    print("=== Hierarchical Parquet Storage Example ===")
     
     # Create sample data with known STARE SIDs
     print("1. Creating sample STAREDataFrame:")
@@ -63,7 +63,7 @@ def example_path_generation(sdf):
     print(f"\n   Generated hierarchical paths:")
     for group_id, gdf in grouped:
         if isinstance(group_id, (int, np.integer)) and group_id >= 0:
-            hierarchical_path = sdf.generate_zarr_path(group_id, dataset)
+            hierarchical_path = sdf.generate_partition_path(group_id, dataset)
             print(f"     Group {group_id}:")
             print(f"       Path: {hierarchical_path}")
             print(f"       Rows: {len(gdf)}")
@@ -121,9 +121,9 @@ def example_spatial_queries():
     
     print("\n   d) Programmatic query construction:")
     print("      # Generate query path for specific SID")
-    print("      from starepandas.io.granules import generate_zarr_path")
+    print("      from starepandas.io.granules import generate_partition_path")
     print("      sid = 3445253714938429444")
-    print("      path = generate_zarr_path(sid, 'WEATHER_DATA')")
+    print("      path = generate_partition_path(sid, 'WEATHER_DATA')")
     print("      query = f's3://bucket/data/{path}'")
 
 
@@ -135,22 +135,22 @@ def example_workflow_integration():
     
     print("\n   a) Data ingestion and storage:")
     print("      sdf = STAREDataFrame(raw_data, sids='sids')")
-    print("      sdf.to_zarr_s3('s3://bucket/weather/2024-01-01', level=10, dataset='TEMP')")
+    print("      sdf.to_s3('s3://bucket/weather/2024-01-01', level=10, dataset='TEMP')")
     print("      → Automatically creates hierarchical organization")
     
     print("\n   b) Data discovery and reading:")
-    print("      sdf_restored = STAREDataFrame.from_zarr_s3('s3://bucket/weather/2024-01-01')")
-    print("      → Recursively discovers all zarr groups")
+    print("      sdf_restored = STAREDataFrame.from_s3('s3://bucket/weather/2024-01-01')")
+    print("      → Recursively discovers all Parquet partitions")
     print("      → Restores complete dataset with original order")
     
     print("\n   c) Spatial analysis:")
     print("      # Find data in specific region")
-    print("      region_path = generate_zarr_path(target_sid, 'TEMP')")
+    print("      region_path = generate_partition_path(target_sid, 'TEMP')")
     print("      specific_data = read_specific_region(f's3://bucket/weather/2024-01-01/{region_path}')")
     
     print("\n   d) Metadata integration:")
-    print("      from starepandas.io.granules import load_zarr_metadata")
-    print("      metadata = load_zarr_metadata(dataset='TEMP')")
+    print("      from starepandas.io.granules import load_s3_metadata")
+    print("      metadata = load_s3_metadata(dataset='TEMP')")
     print("      → Query metadata with spatial path information")
 
 
@@ -161,12 +161,12 @@ def example_backward_compatibility():
     print("   Existing code continues to work:")
     
     print("\n   Before:")
-    print("     sdf.to_zarr_s3(s3_path, level)")
-    print("     restored = STAREDataFrame.from_zarr_s3(s3_path)")
+    print("     sdf.to_s3(s3_path, level)")
+    print("     restored = STAREDataFrame.from_s3(s3_path)")
     
     print("\n   After (same API, better organization):")
-    print("     sdf.to_zarr_s3(s3_path, level, dataset='MY_DATA')")
-    print("     restored = STAREDataFrame.from_zarr_s3(s3_path)")
+    print("     sdf.to_s3(s3_path, level, dataset='MY_DATA')")
+    print("     restored = STAREDataFrame.from_s3(s3_path)")
     print("     → Same function calls, hierarchical storage automatically")
     
     print("\n   Benefits:")
@@ -198,7 +198,7 @@ def example_performance_considerations():
 
 def main():
     """Run all examples."""
-    print("Hierarchical Zarr Storage Example")
+    print("Hierarchical Parquet Storage Example")
     print("=" * 50)
     
     # Create sample data
@@ -224,18 +224,18 @@ def main():
     
     print("\n" + "=" * 50)
     print("Summary:")
-    print("✓ Hierarchical zarr storage now integrated into STAREDataFrame")
-    print("✓ Automatic spatial organization using generate_zarr_path()")
+    print("✓ Hierarchical Parquet storage now integrated into STAREDataFrame")
+    print("✓ Automatic spatial organization using generate_partition_path()")
     print("✓ Recursive discovery enables reading hierarchical data")
     print("✓ Path-based spatial queries for efficient data access")
     print("✓ Backward compatible with existing code")
     print("✓ Significant performance and organization benefits")
     
     print("\nKey Functions:")
-    print("- sdf.to_zarr_s3(): Now creates hierarchical spatial organization")
-    print("- STAREDataFrame.from_zarr_s3(): Recursively reads hierarchical data")
-    print("- generate_zarr_path(): Creates spatial hierarchy paths")
-    print("- parse_zarr_path(): Extracts spatial info from paths")
+    print("- sdf.to_s3(): Now creates hierarchical spatial organization")
+    print("- STAREDataFrame.from_s3(): Recursively reads hierarchical data")
+    print("- generate_partition_path(): Creates spatial hierarchy paths")
+    print("- parse_partition_path(): Extracts spatial info from paths")
     
     print("\nThis represents a major enhancement to STAREPandas spatial data")
     print("organization while maintaining full backward compatibility!")

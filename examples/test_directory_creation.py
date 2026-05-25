@@ -2,8 +2,8 @@
 """
 Test script for hierarchical directory creation in S3.
 
-This script tests that the updated to_zarr_s3 function properly creates
-the necessary directory structure before attempting to write zarr groups.
+This script tests that the updated to_s3 function properly creates
+the necessary directory structure before attempting to write Parquet partitions.
 """
 
 import os
@@ -57,7 +57,7 @@ def test_hierarchical_path_generation():
     
     print("Generated hierarchical paths:")
     for sid in data['sids']:
-        path = sdf.generate_zarr_path(sid, dataset)
+        path = sdf.generate_partition_path(sid, dataset)
         print(f"  SID {sid}:")
         print(f"    Path: {path}")
         print(f"    Levels: {len(path.split('/')) - 1}")  # -1 for dataset name
@@ -82,7 +82,7 @@ def simulate_directory_creation():
         parent_path = '/'.join(full_path.split('/')[:-1])
         
         print(f"\n  Hierarchical path: {hierarchical_path}")
-        print(f"  Full zarr path: {full_path}")
+        print(f"  Full partition path: {full_path}")
         print(f"  Parent directory: {parent_path}")
         
         # Show what directories would need to be created
@@ -101,20 +101,20 @@ def test_error_handling():
     
     print("Error handling scenarios:")
     print("  1. Invalid S3 credentials:")
-    print("     → Warning logged, zarr.open_group attempts creation")
-    print("     → Graceful fallback to zarr's built-in directory handling")
+    print("     → Warning logged, s3fs attempts creation")
+    print("     → Graceful fallback to Parquet's built-in directory handling")
     
     print("\n  2. Non-existent S3 bucket:")
     print("     → Warning logged about directory creation failure")
-    print("     → zarr.open_group will fail with clear error message")
+    print("     → s3fs will fail with clear error message")
     
     print("\n  3. Permission denied:")
     print("     → Warning logged, operation continues")
-    print("     → zarr.open_group handles final directory creation")
+    print("     → s3fs handles final directory creation")
     
     print("\n  4. Network issues:")
     print("     → Temporary failure logged as warning")
-    print("     → Retry logic in zarr.open_group may succeed")
+    print("     → Retry logic in Parquet.open_group may succeed")
 
 
 def test_performance_considerations():
@@ -140,26 +140,26 @@ def demonstrate_fix():
     
     print("Original issue:")
     print("  FileNotFoundError: The specified bucket does not exist")
-    print("  → This occurred because zarr tried to write to nested paths")
+    print("  → This occurred because storage tried to write to nested paths")
     print("  → S3 requires parent directories to exist before file creation")
     
     print("\nSolution implemented:")
-    print("  1. Extract parent directory from full zarr group path")
+    print("  1. Extract parent directory from full Parquet partition path")
     print("  2. Check if parent directory exists using s3fs")
     print("  3. Create parent directory structure if missing")
-    print("  4. Proceed with zarr.open_group() creation")
+    print("  4. Proceed with s3fs() creation")
     print("  5. Handle errors gracefully with warning messages")
     
     print("\nCode flow:")
-    print("  hierarchical_path = generate_zarr_path(group_id, dataset)")
+    print("  hierarchical_path = generate_partition_path(group_id, dataset)")
     print("  group_path = f'{s3_path}/{hierarchical_path}'")
     print("  parent_path = '/'.join(group_path.split('/')[:-1])")
     print("  fs.makedirs(parent_path, exist_ok=True)")
-    print("  zg = zarr.open_group(group_path, mode='w', ...)")
+    print("  zg = s3fs(group_path, mode='w', ...)")
     
     print("\nBenefits:")
     print("  ✓ Resolves FileNotFoundError for hierarchical paths")
-    print("  ✓ Ensures directory structure exists before zarr creation")
+    print("  ✓ Ensures directory structure exists before storage creation")
     print("  ✓ Maintains backward compatibility")
     print("  ✓ Provides graceful error handling")
     print("  ✓ Optimized for performance")
@@ -167,7 +167,7 @@ def demonstrate_fix():
 
 def main():
     """Run all tests."""
-    print("Directory Creation Test for Hierarchical Zarr")
+    print("Directory Creation Test for Hierarchical Parquet")
     print("=" * 60)
     
     # Test directory logic

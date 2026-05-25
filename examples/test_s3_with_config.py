@@ -17,7 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from starepandas import STAREDataFrame
 from starepandas.staredataframe import aws_configure
 import s3fs
-import zarr
+
 
 
 def load_config_manually():
@@ -140,25 +140,25 @@ def test_directory_creation():
         return False
 
 
-def test_zarr_creation():
-    """Test zarr group creation with hierarchical paths."""
-    print("\n=== Testing Zarr Group Creation ===")
+def test_storage_creation():
+    """Test Parquet partition creation with hierarchical paths."""
+    print("\n=== Testing Storage Creation ===")
     
     from starepandas.staredataframe import _AWS_S3_STORAGE_OPTIONS
     
     try:
-        # Test simple zarr creation first
+        # Test simple storage creation first
         simple_path = "s3://zarrpods/test-simple-zarr"
-        print(f"Testing simple zarr creation: {simple_path}")
+        print(f"Testing simple storage creation: {simple_path}")
         
-        zg_simple = zarr.open_group(simple_path, mode="w", storage_options=_AWS_S3_STORAGE_OPTIONS)
+        zg_simple = s3fs(simple_path, mode="w", storage_options=_AWS_S3_STORAGE_OPTIONS)
         arr = zg_simple.empty('test_array', shape=(5,), dtype='f4')
         arr[:] = [1.0, 2.0, 3.0, 4.0, 5.0]
-        print("✓ Simple zarr creation successful")
+        print("✓ Simple storage creation successful")
         
-        # Test hierarchical zarr creation
+        # Test hierarchical Parquet creation
         hierarchical_path = "s3://zarrpods/test-hierarchical-zarr/Q00_5/Q01_3/Q02_2/TEST_DATASET"
-        print(f"Testing hierarchical zarr creation: {hierarchical_path}")
+        print(f"Testing hierarchical Parquet creation: {hierarchical_path}")
         
         # Create parent directory first (this is what our fix does)
         fs = s3fs.S3FileSystem(**_AWS_S3_STORAGE_OPTIONS)
@@ -170,11 +170,11 @@ def test_zarr_creation():
             fs.makedirs(parent_path, exist_ok=True)
             print("✓ Parent directory created")
         
-        # Now create zarr group
-        zg_hier = zarr.open_group(hierarchical_path, mode="w", storage_options=_AWS_S3_STORAGE_OPTIONS)
+        # Now create Parquet partition
+        zg_hier = s3fs(hierarchical_path, mode="w", storage_options=_AWS_S3_STORAGE_OPTIONS)
         arr = zg_hier.empty('test_array', shape=(3,), dtype='f4')
         arr[:] = [10.0, 20.0, 30.0]
-        print("✓ Hierarchical zarr creation successful")
+        print("✓ Hierarchical Parquet creation successful")
         
         # Clean up
         fs.rm("zarrpods/test-simple-zarr", recursive=True)
@@ -184,15 +184,15 @@ def test_zarr_creation():
         return True
         
     except Exception as e:
-        print(f"✗ Zarr creation test failed: {e}")
+        print(f"✗ Storage creation test failed: {e}")
         import traceback
         traceback.print_exc()
         return False
 
 
-def test_staredataframe_to_zarr_s3():
-    """Test STAREDataFrame.to_zarr_s3 with the directory creation fix."""
-    print("\n=== Testing STAREDataFrame.to_zarr_s3 ===")
+def test_staredataframe_to_s3():
+    """Test STAREDataFrame.to_s3 with the directory creation fix."""
+    print("\n=== Testing STAREDataFrame.to_s3 ===")
     
     try:
         # Create test data
@@ -207,25 +207,25 @@ def test_staredataframe_to_zarr_s3():
         sdf = STAREDataFrame(pd.DataFrame(data), sids='sids')
         print(f"✓ Created test STAREDataFrame with {len(sdf)} rows")
         
-        # Test to_zarr_s3 with hierarchical paths
+        # Test to_s3 with hierarchical paths
         s3_path = "s3://zarrpods/test-staredataframe-hierarchical"
         dataset = "WEATHER_TEST"
         level = 8
         
-        print(f"Testing to_zarr_s3:")
+        print(f"Testing to_s3:")
         print(f"  S3 path: {s3_path}")
         print(f"  Dataset: {dataset}")
         print(f"  Level: {level}")
         
         # This should now work with our directory creation fix
-        result = sdf.to_zarr_s3(
+        result = sdf.to_s3(
             s3_path=s3_path,
             level=level,
             dataset=dataset,
             chunk_size=1000
         )
         
-        print(f"✓ to_zarr_s3 completed successfully")
+        print(f"✓ to_s3 completed successfully")
         print(f"  Result: {result}")
         
         # Verify the data was written
@@ -239,7 +239,7 @@ def test_staredataframe_to_zarr_s3():
             print(f"✓ Created {len(contents)} files/directories")
             
             # Show hierarchical structure
-            dirs = [c for c in contents if not c.endswith('.zarray') and not c.endswith('.zgroup') and not c.endswith('.zattrs')]
+            dirs = [c for c in contents if not c.endswith('.parquet') and not c.endswith('.parquet') and not c.endswith('.parquet')]
             if dirs:
                 print("  Hierarchical structure:")
                 for d in sorted(dirs)[:5]:  # Show first 5
@@ -248,9 +248,9 @@ def test_staredataframe_to_zarr_s3():
                     print(f"    ... and {len(dirs) - 5} more")
         
         # Test reading back the data
-        print("\nTesting from_zarr_s3:")
-        sdf_restored = STAREDataFrame.from_zarr_s3(s3_path)
-        print(f"✓ from_zarr_s3 completed successfully")
+        print("\nTesting from_s3:")
+        sdf_restored = STAREDataFrame.from_s3(s3_path)
+        print(f"✓ from_s3 completed successfully")
         print(f"  Restored {len(sdf_restored)} rows")
         print(f"  Columns: {list(sdf_restored.columns)}")
         
@@ -275,7 +275,7 @@ def test_staredataframe_to_zarr_s3():
 
 def main():
     """Run all tests."""
-    print("S3 Configuration and Hierarchical Zarr Test")
+    print("S3 Configuration and Hierarchical Parquet Test")
     print("=" * 60)
     
     # Load configuration
@@ -293,20 +293,20 @@ def main():
         print("✗ Failed directory creation test")
         return
     
-    # Test zarr creation
-    if not test_zarr_creation():
-        print("✗ Failed zarr creation test")
+    # Test storage creation
+    if not test_storage_creation():
+        print("✗ Failed storage creation test")
         return
     
     # Test STAREDataFrame functionality
-    if not test_staredataframe_to_zarr_s3():
+    if not test_staredataframe_to_s3():
         print("✗ Failed STAREDataFrame test")
         return
     
     print("\n" + "=" * 60)
     print("✅ All tests passed!")
     print("The directory creation fix is working correctly.")
-    print("Hierarchical zarr storage should now work without FileNotFoundError.")
+    print("Hierarchical Parquet storage should now work without FileNotFoundError.")
 
 
 if __name__ == "__main__":

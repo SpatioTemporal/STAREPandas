@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-Example script demonstrating how to read chunked zarr data from S3.
+Example script demonstrating how to read chunked Parquet data from S3.
 
-This script shows how to use the from_zarr_s3_chunked function to read
-zarr data stored in a chunked format (single zarr group) rather than
-the grouped format expected by STAREDataFrame.from_zarr_s3().
+This script shows how to use the from_s3 function to read
+Parquet data stored in a chunked format (single Parquet partition) rather than
+the grouped format expected by STAREDataFrame.from_s3().
 """
 
 import os
@@ -13,14 +13,14 @@ import sys
 # Add the parent directory to the path so we can import starepandas
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from starepandas.io.granules import from_zarr_s3_chunked
+from starepandas.io.granules import from_s3
 
 
-def example_read_chunked_zarr():
-    """Example of reading chunked zarr data from S3."""
-    print("=== Reading Chunked Zarr Data from S3 ===")
+def example_read_chunked_parquet():
+    """Example of reading chunked Parquet data from S3."""
+    print("=== Reading Chunked Parquet Data from S3 ===")
     
-    # S3 path to the chunked zarr data
+    # S3 path to the chunked Parquet data
     s3_path = "s3://zarrpods/MOD09.A2020032.1940.006.2020034015024/"
     
     # Storage options - use None to load from config file or environment
@@ -33,8 +33,8 @@ def example_read_chunked_zarr():
     storage_options = None  # Will load from .config file or environment
     
     try:
-        # Read the chunked zarr data
-        df = from_zarr_s3_chunked(s3_path, storage_options=storage_options)
+        # Read the chunked Parquet data
+        df = from_s3(s3_path, storage_options=storage_options)
         
         print(f"✓ Successfully loaded data: {df.shape}")
         print(f"✓ Data type: {type(df)}")
@@ -72,30 +72,30 @@ def example_read_chunked_zarr():
         return df
         
     except Exception as e:
-        print(f"✗ Error reading chunked zarr data: {e}")
+        print(f"✗ Error reading chunked Parquet data: {e}")
         return None
 
 
 def example_compare_formats():
-    """Example showing the difference between chunked and grouped zarr formats."""
-    print("\n=== Chunked vs Grouped Zarr Formats ===")
+    """Example showing the difference between chunked and grouped Parquet formats."""
+    print("\n=== Chunked vs Grouped Parquet Formats ===")
     
-    print("Chunked Zarr Format (what we just read):")
-    print("  - Single zarr group at root level")
+    print("Chunked Parquet Format (what we just read):")
+    print("  - Single Parquet partition at root level")
     print("  - All arrays stored as chunked arrays in the root")
     print("  - Efficient for large datasets")
-    print("  - Use: from_zarr_s3_chunked()")
+    print("  - Use: from_s3()")
     
-    print("\nGrouped Zarr Format (expected by from_zarr_s3):")
+    print("\nGrouped Parquet Format (expected by from_s3):")
     print("  - Root contains multiple group directories")
     print("  - Each group directory contains arrays for that STARE group")
     print("  - Each group has a .zgroup file")
-    print("  - Use: STAREDataFrame.from_zarr_s3()")
+    print("  - Use: STAREDataFrame.from_s3()")
     
-    print("\nWhy from_zarr_s3() returned empty DataFrame:")
+    print("\nWhy from_s3() returned empty DataFrame:")
     print("  - It looks for group directories with .zgroup files")
     print("  - Your data is stored in chunked format, not grouped format")
-    print("  - Solution: Use from_zarr_s3_chunked() instead")
+    print("  - Solution: Use from_s3() instead")
 
 
 def example_analyze_data(df):
@@ -140,11 +140,11 @@ def example_analyze_data(df):
 
 def main():
     """Run all examples."""
-    print("Chunked Zarr Reading Examples")
+    print("Chunked Parquet Reading Examples")
     print("=" * 50)
     
     # Read the data
-    df = example_read_chunked_zarr()
+    df = example_read_chunked_parquet()
     
     # Compare formats
     example_compare_formats()
@@ -155,11 +155,11 @@ def main():
     print("\n" + "=" * 50)
     print("Examples completed!")
     print("\nKey Points:")
-    print("- Use from_zarr_s3_chunked() for chunked zarr format")
-    print("- Use STAREDataFrame.from_zarr_s3() for grouped zarr format")
+    print("- Use from_s3() for chunked Parquet format")
+    print("- Use STAREDataFrame.from_s3() for grouped Parquet format")
     print("- Chunked format is more efficient for large datasets")
     print("- Grouped format allows for better partitioning by STARE groups")
-    print("- Your data is in chunked format, which is why from_zarr_s3() returned empty")
+    print("- Your data is in chunked format, which is why from_s3() returned empty")
 
 
 if __name__ == "__main__":

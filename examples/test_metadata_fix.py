@@ -119,7 +119,7 @@ def test_large_sid_insertion():
     
     try:
         # This should now work with the BIGINT column
-        result = sdf.to_zarr_s3(
+        result = sdf.to_s3(
             s3_path="s3://zarrpods/test-metadata-fix",
             level=3,
             dataset="METADATA_TEST",
@@ -142,10 +142,10 @@ def test_metadata_retrieval():
     print("\n=== Testing Metadata Retrieval ===")
     
     try:
-        from starepandas.io.granules import load_zarr_metadata
+        from starepandas.io.granules import load_s3_metadata
         
         # Load metadata for our test
-        df = load_zarr_metadata(dataset="METADATA_TEST", limit=10)
+        df = load_s3_metadata(dataset="METADATA_TEST", limit=10)
         
         if len(df) > 0:
             print(f"✅ Successfully retrieved {len(df)} metadata records")
@@ -176,7 +176,7 @@ def cleanup_test_data():
     print("\n=== Cleaning Up Test Data ===")
     
     try:
-        # Remove test zarr data from S3
+        # Remove test Parquet data from S3
         from starepandas.staredataframe import _AWS_S3_STORAGE_OPTIONS
         import s3fs
         
@@ -186,7 +186,7 @@ def cleanup_test_data():
             
             if fs.exists(test_path):
                 fs.rm(test_path, recursive=True)
-                print("✓ Removed test zarr data from S3")
+                print("✓ Removed test Parquet data from S3")
         
         # Remove test metadata from database
         from starepandas.staredataframe import _ensure_rds_db_and_table

@@ -274,14 +274,14 @@ def read_granule(file_path,
     return df
 
 
-def to_zarr_s3(file_path, s3_path, level, chunk_size=250000, storage_options=None,
+def to_s3(file_path, s3_path, level, chunk_size=250000, storage_options=None,
                dataset=None, data_level=None, raw_collected_time=None, metadata=None,
                sidecar_path=None, add_sids=True, adapt_resolution=True, read_timestamp=False,
                keep_na_sids=False, nom_res=None, scan=None, **kwargs):
     """
-    Generic function to convert a granule file to STAREDataFrame and write it to S3 in zarr format.
+    Generic function to convert a granule file to STAREDataFrame and write it to S3 as Parquet partitions.
     
-    This function combines the functionality of read_granule() and STAREDataFrame.to_zarr_s3()
+    This function combines the functionality of read_granule() and STAREDataFrame.to_s3()
     to provide a convenient way to process granule files and store them in S3 with STARE indexing.
     
     Parameters
@@ -289,11 +289,11 @@ def to_zarr_s3(file_path, s3_path, level, chunk_size=250000, storage_options=Non
     file_path : str
         Path to the granule file to process
     s3_path : str
-        S3 path where the zarr root directory will be created (e.g., "s3://bucket/granule_name")
+        S3 path where the storage root will be created (e.g., "s3://bucket/granule_name")
     level : int
         STARE level for partitioning SIDs
     chunk_size : int, optional
-        Size of chunks for zarr arrays (default: 250000)
+        Unused; retained for API compatibility (default: 250000)
     storage_options : dict, optional
         S3 storage options including credentials and region
     dataset : str, optional
@@ -329,8 +329,8 @@ def to_zarr_s3(file_path, s3_path, level, chunk_size=250000, storage_options=Non
         
     Examples
     --------
-    >>> # Convert a MODIS granule to zarr and store in S3
-    >>> s3_path = to_zarr_s3(
+    >>> # Convert a MODIS granule to Parquet partitions in S3
+    >>> s3_path = to_s3(
     ...     file_path="path/to/MOD05_L2.A2019336.0000.061.2019336211522.hdf",
     ...     s3_path="s3://my-bucket/modis_data",
     ...     level=10,
@@ -339,7 +339,7 @@ def to_zarr_s3(file_path, s3_path, level, chunk_size=250000, storage_options=Non
     ... )
     
     >>> # Convert a VIIRS granule with custom metadata
-    >>> s3_path = to_zarr_s3(
+    >>> s3_path = to_s3(
     ...     file_path="path/to/VNP02DNB.A2020219.0742.001.2020219125654.nc",
     ...     s3_path="s3://my-bucket/viirs_data",
     ...     level=12,
@@ -349,7 +349,7 @@ def to_zarr_s3(file_path, s3_path, level, chunk_size=250000, storage_options=Non
     ... )
     
     >>> # Convert a specific SSMIS scan
-    >>> s3_path = to_zarr_s3(
+    >>> s3_path = to_s3(
     ...     file_path="path/to/ssmis_file.h5",
     ...     s3_path="s3://my-bucket/ssmis_data",
     ...     level=8,
@@ -389,7 +389,7 @@ def to_zarr_s3(file_path, s3_path, level, chunk_size=250000, storage_options=Non
                 pw = SCAN_PIXEL_WIDTHS.get(scan_key) if scan_key else None
                 if pw is not None:
                     single_meta['pixel_width'] = pw
-                return df.to_zarr_s3(
+                return df.to_s3(
                     s3_path=scan_s3_path,
                     level=level,
                     chunk_size=chunk_size,
@@ -412,7 +412,7 @@ def to_zarr_s3(file_path, s3_path, level, chunk_size=250000, storage_options=Non
                     if pw is not None:
                         scan_metadata['pixel_width'] = pw
 
-                    scan_result = df.to_zarr_s3(
+                    scan_result = df.to_s3(
                         s3_path=s3_path,  # Keep original S3 path
                         level=level,
                         chunk_size=chunk_size,
@@ -427,7 +427,7 @@ def to_zarr_s3(file_path, s3_path, level, chunk_size=250000, storage_options=Non
                 return s3_paths
         else:
             # Single DataFrame (e.g., MODIS, VIIRS)
-            return result.to_zarr_s3(
+            return result.to_s3(
                  s3_path=s3_path,
                  level=level,
                  chunk_size=chunk_size,
@@ -446,14 +446,14 @@ def to_zarr_s3(file_path, s3_path, level, chunk_size=250000, storage_options=Non
             pass
 
 
-def load_zarr_metadata(dataset=None, dataset_prefix=None, data_level=None, s3_bucket=None,
+def load_s3_metadata(dataset=None, dataset_prefix=None, data_level=None, s3_bucket=None,
                       resolution_level=None, start_date=None, end_date=None,
                       grouped_id=None, limit=None, order_by=None):
     """
-    Load metadata from the RDS database for zarr data stored in S3.
+    Load metadata from the RDS database for Parquet partitions stored in S3.
     
     This function queries the PodsMetadata table to retrieve information about
-    zarr datasets that have been stored in S3 using the to_zarr_s3 function.
+    Parquet datasets that have been stored in S3 using the to_s3 function.
     
     Parameters
     ----------
@@ -487,7 +487,7 @@ def load_zarr_metadata(dataset=None, dataset_prefix=None, data_level=None, s3_bu
         - S3 bucket: S3 bucket name
         - Resolution level: STARE resolution level
         - MetadataJson: JSON metadata containing additional information
-        - group_path: S3 path to the zarr group (from MetadataJson)
+        - group_path: S3 path to the Parquet partition (from MetadataJson)
         - num_rows: Number of rows in the group (from MetadataJson)
         - columns: List of columns in the group (from MetadataJson)
         - scan: Scan name if applicable (from MetadataJson)
@@ -495,25 +495,25 @@ def load_zarr_metadata(dataset=None, dataset_prefix=None, data_level=None, s3_bu
     Examples
     --------
     >>> # Load all metadata
-    >>> df = load_zarr_metadata()
+    >>> df = load_s3_metadata()
     
     >>> # Load metadata for specific dataset
-    >>> df = load_zarr_metadata(dataset="MOD05_L2")
+    >>> df = load_s3_metadata(dataset="MOD05_L2")
     
     >>> # Load metadata for specific date range
-    >>> df = load_zarr_metadata(
+    >>> df = load_s3_metadata(
     ...     start_date="2023-01-01",
     ...     end_date="2023-12-31"
     ... )
     
     >>> # Load metadata for specific S3 bucket and resolution
-    >>> df = load_zarr_metadata(
+    >>> df = load_s3_metadata(
     ...     s3_bucket="my-data-bucket",
     ...     resolution_level=10
     ... )
     
     >>> # Load metadata with custom ordering and limit
-    >>> df = load_zarr_metadata(
+    >>> df = load_s3_metadata(
     ...     dataset="SSMIS",
     ...     order_by="RawData Collected Time",
     ...     limit=100
@@ -624,12 +624,12 @@ def load_zarr_metadata(dataset=None, dataset_prefix=None, data_level=None, s3_bu
                 conn.close()
         except:
             pass
-        raise RuntimeError(f"Error loading zarr metadata from database: {e}")
+        raise RuntimeError(f"Error loading metadata from database: {e}")
 
 
-def get_zarr_summary(dataset=None, data_level=None, s3_bucket=None):
+def get_s3_summary(dataset=None, data_level=None, s3_bucket=None):
     """
-    Get a summary of zarr metadata stored in the database.
+    Get a summary of partition metadata stored in the database.
     
     Parameters
     ----------
@@ -656,13 +656,13 @@ def get_zarr_summary(dataset=None, data_level=None, s3_bucket=None):
     Examples
     --------
     >>> # Get summary of all data
-    >>> summary = get_zarr_summary()
+    >>> summary = get_s3_summary()
     
     >>> # Get summary for specific dataset
-    >>> summary = get_zarr_summary(dataset="MOD05_L2")
+    >>> summary = get_s3_summary(dataset="MOD05_L2")
     """
     # Load metadata
-    df = load_zarr_metadata(dataset=dataset, data_level=data_level, s3_bucket=s3_bucket)
+    df = load_s3_metadata(dataset=dataset, data_level=data_level, s3_bucket=s3_bucket)
     
     if df.empty:
         return pd.DataFrame()
@@ -698,12 +698,12 @@ def get_zarr_summary(dataset=None, data_level=None, s3_bucket=None):
     return summary
 
 
-def from_zarr_s3_chunked(s3_path, storage_options=None):
+def from_legacy_zarr_s3(s3_path, storage_options=None):
     """
     Read STAREDataFrame from S3 chunked zarr store (alternative format to grouped zarr).
     
     This function reads zarr data stored as a single chunked group, which is different
-    from the grouped format expected by STAREDataFrame.from_zarr_s3().
+    from the Parquet partitions read by STAREDataFrame.from_s3().
     
     Parameters
     ----------
@@ -719,11 +719,11 @@ def from_zarr_s3_chunked(s3_path, storage_options=None):
         
     Examples
     --------
-    >>> # Read chunked zarr data from S3
-    >>> df = from_zarr_s3_chunked('s3://my-bucket/granule_data/')
-    
+    >>> # Read legacy chunked zarr data from S3
+    >>> df = from_legacy_zarr_s3('s3://my-bucket/granule_data/')
+
     >>> # With custom storage options
-    >>> df = from_zarr_s3_chunked(
+    >>> df = from_legacy_zarr_s3(
     ...     's3://my-bucket/granule_data/',
     ...     storage_options={'key': '...', 'secret': '...', 'client_kwargs': {'region_name': 'us-west-2'}}
     ... )
@@ -742,7 +742,7 @@ def from_zarr_s3_chunked(s3_path, storage_options=None):
     if not merged_opts:
         raise ValueError(
             "Missing S3 configuration. Call load_aws_configure(config_path) or aws_configure(...) "
-            "to set credentials/region, or pass storage_options to from_zarr_s3_chunked."
+            "to set credentials/region, or pass storage_options to from_s3."
         )
     
     # Open zarr group
@@ -764,7 +764,7 @@ def from_zarr_s3_chunked(s3_path, storage_options=None):
     return STAREDataFrame(df)
 
 
-def from_zarr_s3_chunked_groups(s3_path, group_sid_ids, storage_options=None):
+def from_legacy_zarr_s3_groups(s3_path, group_sid_ids, storage_options=None):
     """
     Read specific STARE group SIDs from S3 chunked zarr store.
     
@@ -791,12 +791,12 @@ def from_zarr_s3_chunked_groups(s3_path, group_sid_ids, storage_options=None):
         
     Examples
     --------
-    >>> # Read specific groups from chunked zarr data
+    >>> # Read specific groups from legacy chunked zarr data
     >>> group_ids = [3447505514752114692, 3445253714938429444]
-    >>> df = from_zarr_s3_chunked_groups('s3://my-bucket/granule_data/', group_ids)
-    
+    >>> df = from_legacy_zarr_s3_groups('s3://my-bucket/granule_data/', group_ids)
+
     >>> # With custom storage options
-    >>> df = from_zarr_s3_chunked_groups(
+    >>> df = from_legacy_zarr_s3_groups(
     ...     's3://my-bucket/granule_data/',
     ...     group_ids,
     ...     storage_options={'key': '...', 'secret': '...', 'client_kwargs': {'region_name': 'us-west-2'}}
@@ -827,7 +827,7 @@ def from_zarr_s3_chunked_groups(s3_path, group_sid_ids, storage_options=None):
     if not merged_opts:
         raise ValueError(
             "Missing S3 configuration. Call load_aws_configure(config_path) or aws_configure(...) "
-            "to set credentials/region, or pass storage_options to from_zarr_s3_chunked_groups."
+            "to set credentials/region, or pass storage_options to from_s3_groups."
         )
     
     # First, try to read from group directories (more efficient)
@@ -928,12 +928,12 @@ def from_zarr_s3_chunked_groups(s3_path, group_sid_ids, storage_options=None):
         return STAREDataFrame()
 
 
-def generate_zarr_path(sid, dataset_name):
+def generate_partition_path(sid, dataset_name):
     """
-    Generate relative path for storing zarr file based on STARE SID structure.
+    Generate relative partition path based on STARE SID structure.
     
     This is a convenience function that creates a temporary STAREDataFrame instance
-    and calls its generate_zarr_path method.
+    and calls its generate_partition_path method.
     
     Parameters
     ----------
@@ -945,64 +945,64 @@ def generate_zarr_path(sid, dataset_name):
     Returns
     -------
     str
-        Relative path for storing zarr file in format Q00_X/Q01_Y/.../QN_M/DatasetName
+        Relative partition path in format Q00_X/Q01_Y/.../QN_M/DatasetName
         
     Examples
     --------
-    >>> from starepandas.io.granules import generate_zarr_path
-    >>> path = generate_zarr_path(3445253714938429444, "MOD09")
+    >>> from starepandas.io.granules import generate_partition_path
+    >>> path = generate_partition_path(3445253714938429444, "MOD09")
     >>> print(path)
     Q00_5/Q01_3/Q02_3/Q03_2/Q04_2/MOD09
     
     See Also
     --------
-    STAREDataFrame.generate_zarr_path : The underlying method
-    parse_zarr_path : Reverse operation to parse paths back to SIDs
-    to_zarr_s3 : Generic zarr writing function
+    STAREDataFrame.generate_partition_path : The underlying method
+    parse_partition_path : Reverse operation to parse paths back to SIDs
+    to_s3 : Generic S3 Parquet writing function
     """
     from starepandas import STAREDataFrame
     sdf = STAREDataFrame()
-    return sdf.generate_zarr_path(sid, dataset_name)
+    return sdf.generate_partition_path(sid, dataset_name)
 
 
-def parse_zarr_path(zarr_path):
+def parse_partition_path(partition_path):
     """
-    Parse hierarchical zarr path and reconstruct STARE SID from path components.
-    
+    Parse hierarchical partition path and reconstruct STARE SID from path components.
+
     This is a convenience function that creates a temporary STAREDataFrame instance
-    and calls its parse_zarr_path method. This is the reverse operation of generate_zarr_path.
-    
+    and calls its parse_partition_path method. This is the reverse operation of generate_partition_path.
+
     Parameters
     ----------
-    zarr_path : str
+    partition_path : str
         Hierarchical path in format Q00_X/Q01_Y/.../QN_M/DatasetName
-        
+
     Returns
     -------
     tuple
         (sid, dataset_name) where sid is the reconstructed STARE SID integer
         and dataset_name is the extracted dataset name
-        
+
     Examples
     --------
-    >>> from starepandas.io.granules import parse_zarr_path
-    >>> sid, dataset = parse_zarr_path("Q00_5/Q01_3/Q02_3/Q03_2/Q04_2/MOD09")
+    >>> from starepandas.io.granules import parse_partition_path
+    >>> sid, dataset = parse_partition_path("Q00_5/Q01_3/Q02_3/Q03_2/Q04_2/MOD09")
     >>> print(f"SID: {sid}, Dataset: {dataset}")
     SID: 3445253714938429444, Dataset: MOD09
-    
+
     See Also
     --------
-    STAREDataFrame.parse_zarr_path : The underlying method
-    generate_zarr_path : Reverse operation to generate paths from SIDs
-    from_zarr_s3_chunked : Read chunked zarr from S3
+    STAREDataFrame.parse_partition_path : The underlying method
+    generate_partition_path : Reverse operation to generate paths from SIDs
+    from_s3 : Read Parquet partitions from S3
     """
     from starepandas import STAREDataFrame
     sdf = STAREDataFrame()
-    return sdf.parse_zarr_path(zarr_path)
+    return sdf.parse_partition_path(partition_path)
 
 
-def reconstitute_hdf5_from_zarr(
-    zarr_path, dataset, output_hdf5_path,
+def reconstitute_hdf5_from_s3(
+    s3_root, dataset, output_hdf5_path,
     area_sids=None, bbox=None,
     s3_prefix=None,
     storage_options=None, pixel_width=None,
@@ -1016,19 +1016,16 @@ def reconstitute_hdf5_from_zarr(
     requested area, concatenates them into a STAREDataFrame, then calls
     ``STAREDataFrame.to_hdf5()`` to write the original granule structure.
 
-    Note: function name retained for API compatibility; the underlying leaf
-    format is now Parquet, not zarr.
-
     Parameters
     ----------
-    zarr_path : str
-        Root zarr path.  Use ``"s3://bucket/prefix"`` for S3 or a local
+    s3_root : str
+        Root path.  Use ``"s3://bucket/prefix"`` for S3 or a local
         directory path for local storage.
     dataset : str
         Dataset / scan identifier used when the data were written
         (e.g. ``"GMI_S1"``).  Used to:
 
-        * Locate the correct zarr groups via ``generate_zarr_path``.
+        * locate the correct partition files via ``generate_partition_path``.
         * Derive the HDF5 scan group name (``"S1"`` extracted from
           ``"GMI_S1"``).
         * Look up ``pixel_width`` from ``SCAN_PIXEL_WIDTHS`` when not
@@ -1041,17 +1038,25 @@ def reconstitute_hdf5_from_zarr(
     bbox : tuple of float, optional
         Bounding box ``(lon_min, lat_min, lon_max, lat_max)``.  Converted
         internally to ``area_sids`` via ``pystare.cover_from_hull``.
+    s3_prefix : str, optional
+        When ``s3_root`` is an S3 path, restrict matching to RDS metadata
+        rows whose ``group_path`` starts with this prefix.  Use to scope a
+        reconstitute call to a single granule's ingest run.  Ignored for
+        local roots.
     storage_options : dict, optional
-        Passed to ``zarr.open_group`` for S3 authentication / configuration.
-        If ``None`` and ``zarr_path`` starts with ``"s3://"``, the built-in
+        Passed to ``s3fs.S3FileSystem`` for S3 authentication / configuration.
+        If ``None`` and ``s3_root`` starts with ``"s3://"``, the built-in
         ``_AWS_S3_STORAGE_OPTIONS`` are used.
     pixel_width : int, optional
         Explicit pixel_width override.  When ``None``, the function looks
-        first in the zarr group attributes then in ``SCAN_PIXEL_WIDTHS``.
+        first in the Parquet kv-metadata then in ``SCAN_PIXEL_WIDTHS``.
     compression : str, optional
         HDF5 compression filter (default ``'gzip'``).
     compression_opts : int, optional
         Compression level (default ``4``).
+    mode : str, optional
+        HDF5 file mode passed to ``STAREDataFrame.to_hdf5`` (``'w'`` or
+        ``'a'``).  Default ``'w'``.
 
     Returns
     -------
@@ -1062,7 +1067,7 @@ def reconstitute_hdf5_from_zarr(
     ------
     ValueError
         If neither or both of ``area_sids`` / ``bbox`` are provided, if no
-        matching zarr groups are found, or if ``pixel_width`` cannot be
+        matching partition files are found, or if ``pixel_width`` cannot be
         determined.
     """
     import pyarrow.parquet as pq
@@ -1088,16 +1093,16 @@ def reconstitute_hdf5_from_zarr(
     )
     query_group_ids = set(int(s) for s in np.unique(coerced))
 
-    # ── Collect matching zarr group paths ─────────────────────────────────────
-    is_s3 = zarr_path.startswith('s3://')
+    # ── Collect matching partition paths ─────────────────────────────────────
+    is_s3 = s3_root.startswith('s3://')
     merged_opts = storage_options or (_AWS_S3_STORAGE_OPTIONS if is_s3 else {})
 
     group_paths = []       # (group_path, group_id) tuples
-    zarr_pixel_width = None  # pixel_width read from zarr attrs
+    parquet_pixel_width = None  # pixel_width read from Parquet kv-metadata
 
     if is_s3:
-        from starepandas.io.granules import load_zarr_metadata
-        meta_df = load_zarr_metadata(dataset=dataset)
+        from starepandas.io.granules import load_s3_metadata
+        meta_df = load_s3_metadata(dataset=dataset)
         if meta_df is not None and not meta_df.empty:
             meta_df['grouped_id'] = meta_df['grouped_id'].astype(np.int64)
             # Filter to a specific S3 prefix when provided (e.g. a single granule path)
@@ -1134,27 +1139,27 @@ def reconstitute_hdf5_from_zarr(
             # Fallback: construct paths directly from query SIDs
             dummy = STAREDataFrame()
             for gid in query_group_ids:
-                rel = dummy.generate_zarr_path(gid, dataset)
-                group_paths.append((f"{zarr_path}/{rel}.parquet", gid))
+                rel = dummy.generate_partition_path(gid, dataset)
+                group_paths.append((f"{s3_root}/{rel}.parquet", gid))
     else:
         # Local: HTM-subtree layout — walk the tree for `<dataset>.parquet`
         # leaves, decode the partition SID from HTM path segments, and keep
         # only those that intersect the query.
-        if not os.path.isdir(zarr_path):
-            raise ValueError(f"Local zarr path does not exist: {zarr_path}")
+        if not os.path.isdir(s3_root):
+            raise ValueError(f"Local root path does not exist: {s3_root}")
         dummy = STAREDataFrame()
         target_basename = f"{dataset}.parquet"
-        for root, _dirs, files in os.walk(zarr_path):
+        for root, _dirs, files in os.walk(s3_root):
             if target_basename not in files:
                 continue
             filepath = os.path.join(root, target_basename)
-            rel = os.path.relpath(filepath, zarr_path)
+            rel = os.path.relpath(filepath, s3_root)
             parts = rel.split(os.sep)
             htm_parts = [p for p in parts[:-1] if p.startswith('Q')]
             if not htm_parts:
                 continue
             try:
-                sid, _ = dummy.parse_zarr_path('/'.join(htm_parts) + f'/{dataset}')
+                sid, _ = dummy.parse_partition_path('/'.join(htm_parts) + f'/{dataset}')
             except Exception:
                 continue
             if sid in query_group_ids:
@@ -1186,12 +1191,12 @@ def reconstitute_hdf5_from_zarr(
             continue
 
         # Harvest pixel_width from Parquet kv-metadata (first partition wins)
-        if zarr_pixel_width is None:
+        if parquet_pixel_width is None:
             md = pq_file.schema_arrow.metadata or {}
             pw_bytes = md.get(b'pixel_width')
             if pw_bytes is not None:
                 try:
-                    zarr_pixel_width = int(pw_bytes.decode())
+                    parquet_pixel_width = int(pw_bytes.decode())
                 except (ValueError, AttributeError):
                     pass
 
@@ -1218,8 +1223,8 @@ def reconstitute_hdf5_from_zarr(
     if pixel_width is not None:
         resolved_pw = pixel_width
         logging.debug("pixel_width=%d provided explicitly for dataset '%s'", resolved_pw, dataset)
-    elif zarr_pixel_width is not None:
-        resolved_pw = zarr_pixel_width
+    elif parquet_pixel_width is not None:
+        resolved_pw = parquet_pixel_width
         logging.debug("pixel_width=%d read from Parquet kv-metadata for dataset '%s'", resolved_pw, dataset)
     else:
         resolved_pw = SCAN_PIXEL_WIDTHS.get(dataset)
@@ -1258,7 +1263,7 @@ def reconstitute_hdf5_from_zarr(
 # Local (filesystem + SQLite) pipeline
 # ─────────────────────────────────────────────────────────────────────────────
 
-def to_zarr_local_meta(
+def to_local(
     file_path, local_path, level, db_path,
     chunk_size=250000, dataset=None, data_level=None,
     raw_collected_time=None, metadata=None,
@@ -1268,10 +1273,10 @@ def to_zarr_local_meta(
     **kwargs
 ):
     """
-    Convert a granule file to zarr on the **local filesystem** and record
+    Convert a granule file to Parquet on the **local filesystem** and record
     metadata to a SQLite database.
 
-    This is the local-storage mirror of :func:`to_zarr_s3`.  The calling
+    This is the local-storage mirror of :func:`to_s3`.  The calling
     interface is identical except that ``local_path`` is a filesystem directory
     instead of an S3 URI, ``db_path`` is a SQLite ``.db`` file instead of a
     PostgreSQL connection, and no ``storage_options`` are required.
@@ -1281,7 +1286,7 @@ def to_zarr_local_meta(
     file_path : str
         Path to the granule HDF5 file.
     local_path : str
-        Root directory where zarr groups will be written.  Sub-directories are
+        Root directory where Parquet partitions will be written.  Sub-directories are
         created automatically.  The granule basename is inserted *inside* the
         directory tree (between the HTM-subtree leaf and the dataset segment),
         not appended to ``local_path``.
@@ -1291,7 +1296,7 @@ def to_zarr_local_meta(
         Path to the SQLite metadata database.  Created automatically if it
         does not exist.
     chunk_size : int, optional
-        Zarr chunk size (default: 250 000).
+        Unused; retained for API compatibility.
     dataset : str, optional
         Dataset name stored in metadata (e.g. ``"GMI"``).
     data_level : str, optional
@@ -1317,7 +1322,7 @@ def to_zarr_local_meta(
     granule_name : str, optional
         Granule identifier inserted into the on-disk path between the HTM
         leaf and the dataset segment, and recorded in ``MetadataJson`` so
-        :func:`reconstitute_hdf5_from_local_zarr` can filter by granule.
+        :func:`reconstitute_hdf5_from_local` can filter by granule.
         Defaults to the basename of ``file_path`` without extension.
     **kwargs
         Forwarded to :func:`read_granule`.
@@ -1353,7 +1358,7 @@ def to_zarr_local_meta(
             pw = SCAN_PIXEL_WIDTHS.get(scan_dataset)
             if pw is not None:
                 single_meta['pixel_width'] = pw
-            return df.to_zarr_local(
+            return df.to_local(
                 local_path=local_path,
                 level=level,
                 chunk_size=chunk_size,
@@ -1372,7 +1377,7 @@ def to_zarr_local_meta(
                 pw = SCAN_PIXEL_WIDTHS.get(scan_dataset)
                 if pw is not None:
                     scan_meta['pixel_width'] = pw
-                path_out = df.to_zarr_local(
+                path_out = df.to_local(
                     local_path=local_path,
                     level=level,
                     chunk_size=chunk_size,
@@ -1386,7 +1391,7 @@ def to_zarr_local_meta(
             return local_paths
     else:
         # Single DataFrame
-        return result.to_zarr_local(
+        return result.to_local(
             local_path=local_path,
             level=level,
             chunk_size=chunk_size,
@@ -1398,7 +1403,7 @@ def to_zarr_local_meta(
         )
 
 
-def load_local_zarr_metadata(
+def load_local_metadata(
     db_path,
     dataset=None,
     dataset_prefix=None,
@@ -1410,11 +1415,11 @@ def load_local_zarr_metadata(
     order_by=None,
 ):
     """
-    Load metadata from the local SQLite database for zarr data on disk.
+    Load metadata from the local SQLite database for Parquet partitions on disk.
 
-    Local equivalent of :func:`load_zarr_metadata`.  Returns a
+    Local equivalent of :func:`load_s3_metadata`.  Returns a
     ``pandas.DataFrame`` with the same column structure so that downstream
-    code (e.g. :func:`reconstitute_hdf5_from_local_zarr`) can be written once
+    code (e.g. :func:`reconstitute_hdf5_from_local`) can be written once
     and work for both S3 and local backends.
 
     Parameters
@@ -1498,7 +1503,7 @@ def load_local_zarr_metadata(
 
     df = pd.DataFrame(rows, columns=columns)
 
-    # Expand MetadataJson into individual columns (same pattern as load_zarr_metadata)
+    # Expand MetadataJson into individual columns (same pattern as load_s3_metadata)
     if not df.empty and 'MetadataJson' in df.columns:
         meta_list = []
         for json_str in df['MetadataJson']:
@@ -1517,7 +1522,7 @@ def load_local_zarr_metadata(
     return df
 
 
-def reconstitute_hdf5_from_local_zarr(
+def reconstitute_hdf5_from_local(
     db_path,
     dataset,
     output_hdf5_path,
@@ -1534,12 +1539,9 @@ def reconstitute_hdf5_from_local_zarr(
     Reconstitute an HDF5 granule from Parquet partitions stored on the local
     filesystem.
 
-    Local equivalent of :func:`reconstitute_hdf5_from_zarr`.  Instead of
+    Local equivalent of :func:`reconstitute_hdf5_from_s3`.  Instead of
     querying S3 + RDS it queries the SQLite database written by
-    :func:`to_zarr_local_meta` and opens Parquet partitions on local disk.
-
-    Note: function name retained for API compatibility; the underlying leaf
-    format is now Parquet, not zarr.
+    :func:`to_local` and opens Parquet partitions on local disk.
 
     Parameters
     ----------
@@ -1603,7 +1605,7 @@ def reconstitute_hdf5_from_local_zarr(
         query_group_ids = set(int(s) for s in np.unique(coerced))
 
     # Load metadata from SQLite
-    meta_df = load_local_zarr_metadata(db_path, dataset=dataset)
+    meta_df = load_local_metadata(db_path, dataset=dataset)
     if meta_df is None or meta_df.empty:
         raise ValueError(
             f"No metadata found for dataset '{dataset}' in SQLite database '{db_path}'."
@@ -1630,7 +1632,7 @@ def reconstitute_hdf5_from_local_zarr(
         # No spatial filter — use all groups from local_prefix
         matching = meta_df
     else:
-        # Adaptive STARE level detection (mirrors reconstitute_hdf5_from_zarr)
+        # Adaptive STARE level detection (mirrors reconstitute_hdf5_from_s3)
         storage_levels = set(int(gid & 0x1f) for gid in meta_df['grouped_id'].dropna())
         if storage_levels == {MAX_PARTITION_LEVEL}:
             effective_query_ids = query_group_ids
@@ -1659,7 +1661,7 @@ def reconstitute_hdf5_from_local_zarr(
 
     # Read matching Parquet partitions from local disk
     frames = []
-    zarr_pixel_width = None
+    parquet_pixel_width = None
     for _, row in matching.iterrows():
         gpath = row['group_path']
         try:
@@ -1668,12 +1670,12 @@ def reconstitute_hdf5_from_local_zarr(
             logging.warning("Skipping Parquet partition %s — could not open: %s", gpath, e)
             continue
 
-        if zarr_pixel_width is None:
+        if parquet_pixel_width is None:
             md = pq_file.schema_arrow.metadata or {}
             pw_bytes = md.get(b'pixel_width')
             if pw_bytes is not None:
                 try:
-                    zarr_pixel_width = int(pw_bytes.decode())
+                    parquet_pixel_width = int(pw_bytes.decode())
                 except (ValueError, AttributeError):
                     pass
 
@@ -1696,8 +1698,8 @@ def reconstitute_hdf5_from_local_zarr(
     # Resolve pixel_width
     if pixel_width is not None:
         resolved_pw = pixel_width
-    elif zarr_pixel_width is not None:
-        resolved_pw = zarr_pixel_width
+    elif parquet_pixel_width is not None:
+        resolved_pw = parquet_pixel_width
     else:
         resolved_pw = SCAN_PIXEL_WIDTHS.get(dataset)
 

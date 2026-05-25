@@ -147,7 +147,7 @@ class StarePodsDemo:
             flag — prevents duplicate RDS metadata rows when re-running.
             Default False.
         **kwargs
-            Additional arguments for to_zarr_s3()
+            Additional arguments for to_s3()
 
         Returns
         -------
@@ -189,7 +189,7 @@ class StarePodsDemo:
                 s3_path = f"{s3_prefix}/{base_name}"
                 
                 kwargs.setdefault('read_timestamp', True)
-                s3_result = starepandas.io.granules.to_zarr_s3(
+                s3_result = starepandas.io.granules.to_s3(
                     file_path=granule_file,
                     s3_path=s3_path,
                     level=level,
@@ -262,12 +262,12 @@ class StarePodsDemo:
 
                 # Query metadata — try exact match first, then LIKE for scan-based
                 # datasets stored as e.g. "GMI_S1", "GMI_S2" when queried as "GMI".
-                metadata = starepandas.io.granules.load_zarr_metadata(
+                metadata = starepandas.io.granules.load_s3_metadata(
                     dataset=instrument,
                     **kwargs
                 )
                 if metadata.empty:
-                    metadata = starepandas.io.granules.load_zarr_metadata(
+                    metadata = starepandas.io.granules.load_s3_metadata(
                         dataset_prefix=instrument,
                         **kwargs
                     )
@@ -277,7 +277,7 @@ class StarePodsDemo:
                     continue
 
                 # Filter by coerced grouped SIDs — stored grouped_ids are already
-                # at partition level since to_zarr_s3() partitions at that level
+                # at partition level since to_s3() partitions at that level
                 intersecting_results = []
                 for _, row in metadata.iterrows():
                     row_grouped_id = row.get('grouped_id')
@@ -496,7 +496,7 @@ class StarePodsDemo:
         output_hdf5_path: str,
         bbox: Optional[Tuple[float, float, float, float]] = None,
         area_sids: Optional[List[int]] = None,
-        s3_zarr_path: Optional[str] = None,
+        s3_root: Optional[str] = None,
         s3_prefix: Optional[str] = None,
         pixel_width: Optional[int] = None,
         compression: str = 'gzip',
@@ -526,7 +526,7 @@ class StarePodsDemo:
         area_sids : list of int, optional
             STARE SIDs covering the area of interest.  Exactly one of
             ``bbox`` or ``area_sids`` must be given.
-        s3_zarr_path : str, optional
+        s3_root : str, optional
             Root S3 path used as a fallback when the RDS metadata does not
             contain a ``group_path`` for a matching SID.
         s3_prefix : str, optional
@@ -551,7 +551,7 @@ class StarePodsDemo:
             )
 
         datasets = [dataset] if isinstance(dataset, str) else list(dataset)
-        zarr_path = s3_zarr_path or "s3://"
+        resolved_root = s3_root or "s3://"
 
         for i, ds in enumerate(datasets):
             area_desc = f"bbox={bbox}" if bbox is not None else f"{len(area_sids)} area SIDs"
@@ -560,8 +560,8 @@ class StarePodsDemo:
             # First scan creates the file ('w'), subsequent scans append ('a')
             hdf5_mode = 'w' if i == 0 else 'a'
 
-            starepandas.io.granules.reconstitute_hdf5_from_zarr(
-                zarr_path=zarr_path,
+            starepandas.io.granules.reconstitute_hdf5_from_s3(
+                s3_root=resolved_root,
                 dataset=ds,
                 output_hdf5_path=output_hdf5_path,
                 area_sids=area_sids,
@@ -733,7 +733,7 @@ class LocalStarePodsDemo:
         level : int, optional
             STARE partitioning level (default 10).
         **kwargs
-            Forwarded to :func:`~starepandas.io.granules.to_zarr_local_meta`.
+            Forwarded to :func:`~starepandas.io.granules.to_local`.
 
         Returns
         -------
@@ -762,7 +762,7 @@ class LocalStarePodsDemo:
                 base_name = os.path.splitext(os.path.basename(granule_file))[0]
 
                 kwargs.setdefault('read_timestamp', True)
-                result = starepandas.io.granules.to_zarr_local_meta(
+                result = starepandas.io.granules.to_local(
                     file_path=granule_file,
                     local_path=self.local_root,
                     level=level,
@@ -819,7 +819,7 @@ class LocalStarePodsDemo:
         instruments : list of str
             Instrument / dataset names to search (e.g. ``["GMI"]``).
         **kwargs
-            Forwarded to :func:`load_local_zarr_metadata`.
+            Forwarded to :func:`load_local_metadata`.
 
         Returns
         -------
@@ -831,11 +831,11 @@ class LocalStarePodsDemo:
             all_meta = []
             for instrument in instruments:
                 try:
-                    meta = starepandas.io.granules.load_local_zarr_metadata(
+                    meta = starepandas.io.granules.load_local_metadata(
                         self.db_path, dataset=instrument, **kwargs
                     )
                     if meta is None or meta.empty:
-                        meta = starepandas.io.granules.load_local_zarr_metadata(
+                        meta = starepandas.io.granules.load_local_metadata(
                             self.db_path, dataset_prefix=instrument, **kwargs
                         )
                     if meta is not None and not meta.empty:
@@ -861,11 +861,11 @@ class LocalStarePodsDemo:
         all_results = []
         for instrument in instruments:
             try:
-                meta = starepandas.io.granules.load_local_zarr_metadata(
+                meta = starepandas.io.granules.load_local_metadata(
                     self.db_path, dataset=instrument, **kwargs
                 )
                 if meta.empty:
-                    meta = starepandas.io.granules.load_local_zarr_metadata(
+                    meta = starepandas.io.granules.load_local_metadata(
                         self.db_path, dataset_prefix=instrument, **kwargs
                     )
 
@@ -1022,7 +1022,7 @@ class LocalStarePodsDemo:
             logger.info(f"Reconstituting HDF5 for dataset='{ds}' over bbox={bbox}")
             hdf5_mode = 'w' if i == 0 else 'a'
 
-            starepandas.io.granules.reconstitute_hdf5_from_local_zarr(
+            starepandas.io.granules.reconstitute_hdf5_from_local(
                 db_path=self.db_path,
                 dataset=ds,
                 output_hdf5_path=output_hdf5_path,

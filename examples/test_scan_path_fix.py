@@ -114,7 +114,7 @@ def test_multi_scan_simulation():
     """Simulate multi-scan processing."""
     print("\n=== Simulating Multi-Scan Processing ===")
     
-    # Simulate what happens in the generic to_zarr_s3 function
+    # Simulate what happens in the generic to_s3 function
     base_s3_path = "s3://zarrpods/test-multi-scan"
     
     # Simulate multi-scan result (like SSMIS)
@@ -148,7 +148,7 @@ def demonstrate_fix():
     print("\n=== Fix Demonstration ===")
     
     print("Problem:")
-    print("  When processing multi-scan granules (like SSMIS), the generic to_zarr_s3")
+    print("  When processing multi-scan granules (like SSMIS), the generic to_s3")
     print("  function was creating invalid S3 paths by appending scan names with '_'")
     print("  Example: s3://zarrpods + _S1 = s3://zarrpods_S1 (invalid bucket)")
     
@@ -165,7 +165,7 @@ def demonstrate_fix():
     print("  ✓ Valid S3 bucket names (no underscores)")
     print("  ✓ Proper hierarchical organization")
     print("  ✓ Works with existing bucket structure")
-    print("  ✓ Compatible with hierarchical zarr paths")
+    print("  ✓ Compatible with hierarchical Parquet paths")
 
 
 def main():
@@ -191,7 +191,7 @@ def main():
     print("✅ Scan path fix verified!")
     print("Multi-scan granules should now work correctly with valid S3 paths.")
     print("\nYou can now use:")
-    print("  to_zarr_s3(file_path, s3_path='s3://zarrpods/granule', ...)")
+    print("  to_s3(file_path, s3_path='s3://zarrpods/granule', ...)")
     print("  # Creates: s3://zarrpods/granule/S1, s3://zarrpods/granule/S2, etc.")
 
 

@@ -154,9 +154,9 @@ def debug_directory_creation(test_bucket="zarrpods", test_path="test-directory-c
         print(f"   ✗ Cannot create S3FileSystem: {e}")
 
 
-def debug_zarr_path_creation():
-    """Debug the hierarchical zarr path creation process."""
-    print(f"\n=== Zarr Path Creation Debug ===")
+def debug_partition_path_creation():
+    """Debug the hierarchical Parquet path creation process."""
+    print(f"\n=== Partition Path Creation Debug ===")
     
     # Create test data
     data = {
@@ -184,7 +184,7 @@ def debug_zarr_path_creation():
     print(f"\n2. Generated paths:")
     for group_id, gdf in grouped:
         if isinstance(group_id, (int, np.integer)) and group_id >= 0:
-            hierarchical_path = sdf.generate_zarr_path(group_id, dataset)
+            hierarchical_path = sdf.generate_partition_path(group_id, dataset)
             
             print(f"   Group ID: {group_id}")
             print(f"   Hierarchical path: {hierarchical_path}")
@@ -225,17 +225,17 @@ def debug_zarr_path_creation():
                         print(f"   ✗ Error testing paths: {e}")
 
 
-def debug_zarr_open_group():
-    """Debug the zarr.open_group call specifically."""
-    print(f"\n=== Zarr Open Group Debug ===")
+def debug_open_group():
+    """Debug the s3fs call specifically."""
+    print(f"\n=== Open Group Debug ===")
     
     if not _AWS_S3_STORAGE_OPTIONS:
-        print("   ✗ No AWS configuration - cannot test zarr.open_group")
+        print("   ✗ No AWS configuration - cannot test s3fs")
         return
     
-    import zarr
+
     
-    # Test zarr.open_group with different scenarios
+    # Test s3fs with different scenarios
     test_scenarios = [
         {
             "name": "Simple path (should work)",
@@ -252,9 +252,9 @@ def debug_zarr_open_group():
         print(f"   Path: {scenario['path']}")
         
         try:
-            # Try to open zarr group
-            zg = zarr.open_group(scenario['path'], mode="w", storage_options=_AWS_S3_STORAGE_OPTIONS)
-            print(f"   ✓ zarr.open_group succeeded")
+            # Try to open Parquet partition
+            zg = s3fs(scenario['path'], mode="w", storage_options=_AWS_S3_STORAGE_OPTIONS)
+            print(f"   ✓ s3fs succeeded")
             
             # Try to create a simple array
             arr = zg.empty('test_array', shape=(10,), dtype='f4')
@@ -272,7 +272,7 @@ def debug_zarr_open_group():
                 print(f"   Warning: Cleanup failed: {cleanup_error}")
                 
         except Exception as e:
-            print(f"   ✗ zarr.open_group failed: {e}")
+            print(f"   ✗ s3fs failed: {e}")
             print(f"   Error type: {type(e).__name__}")
 
 
@@ -290,11 +290,11 @@ def main():
     # Debug directory creation
     debug_directory_creation()
     
-    # Debug zarr path creation
-    debug_zarr_path_creation()
+    # Debug partition path creation
+    debug_partition_path_creation()
     
-    # Debug zarr.open_group
-    debug_zarr_open_group()
+    # Debug s3fs
+    debug_open_group()
     
     print("\n" + "=" * 60)
     print("Debug Summary:")

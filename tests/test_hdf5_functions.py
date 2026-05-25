@@ -1,8 +1,8 @@
 """
-Tests for STAREDataFrame.to_hdf5() and reconstitute_hdf5_from_zarr().
+Tests for STAREDataFrame.to_hdf5() and reconstitute_hdf5_from_s3().
 
-These tests exercise the zarr → HDF5 reconstitution pipeline introduced in
-plan.md ("Reconstitute HDF5 from Zarr").
+These tests exercise the Parquet → HDF5 reconstitution pipeline introduced in
+plan.md ("Reconstitute HDF5 from Parquet").
 
 Test inventory
 --------------
@@ -11,8 +11,8 @@ TestToHdf5DataFidelity       — lat/lon/Tc values preserved; Tc column order; r
 TestToHdf5ScanTime           — 7 int16 1D fields; values correct
 TestToHdf5EdgeCases          — missing params, truncation, no Tc, no timestamp
 TestToHdf5OutputDirectory    — auto-creates parent directory
-TestToZarrLocalPixelWidth    — pixel_width stored/absent in zarr group attrs
-TestReconstituteFromZarr     — full integration round-trips (area_sids & bbox),
+TestToLocalPixelWidth    — pixel_width stored/absent in Parquet kv-metadata
+TestReconstituteFromParquet     — full integration round-trips (area_sids & bbox),
                                pixel_width resolution chain, error cases
 TestReconstituteScanNameExtraction — dataset → scan group name for each instrument
 TestScanPixelWidths          — SCAN_PIXEL_WIDTHS constant values
@@ -27,7 +27,7 @@ import pandas as pd
 import pytest
 
 import starepandas
-from starepandas import STAREDataFrame, reconstitute_hdf5_from_zarr
+from starepandas import STAREDataFrame, reconstitute_hdf5_from_s3
 from starepandas.io.granules import SCAN_PIXEL_WIDTHS
 
 
@@ -262,20 +262,20 @@ class TestToHdf5EdgeCases:
 
 
 # ---------------------------------------------------------------------------
-# reconstitute_hdf5_from_zarr() — integration tests (local zarr only)
+# reconstitute_hdf5_from_s3() — integration tests (local Parquet only)
 # ---------------------------------------------------------------------------
 
-class TestReconstituteFromZarr:
-    """Integration: write zarr locally, reconstitute HDF5, verify structure.
+class TestReconstituteFromParquet:
+    """Integration: write Parquet locally, reconstitute HDF5, verify structure.
 
     Note: many tests in this class produce a UserWarning about truncation.
     This is expected: STARE level-6 partitioning splits rows across groups, so
-    the spatial subset recovered by ``reconstitute_hdf5_from_zarr`` is rarely an
+    the spatial subset recovered by ``reconstitute_hdf5_from_s3`` is rarely an
     exact multiple of ``pixel_width``.  The truncation warning fires inside
     ``to_hdf5()`` and is correct behaviour; it does not indicate a test failure.
     """
 
-    def _write_local_zarr(self, tmp_path, n_scans=3, pixel_width=5, n_tc=2):
+    def _write_local_parquet(self, tmp_path, n_scans=3, pixel_width=5, n_tc=2):
         import pystare
         N = n_scans * pixel_width
         lats = np.random.uniform(33, 41, N)
@@ -297,21 +297,21 @@ class TestReconstituteFromZarr:
         sdf = STAREDataFrame(data)
         sdf._sid_column_name = 'sids'
 
-        zarr_root = str(tmp_path / "zarr_root")
-        sdf.to_zarr_local(zarr_root, level=6, pixel_width=pixel_width)
-        return zarr_root, sdf, n_scans, pixel_width
+        parquet_root = str(tmp_path / "parquet_root")
+        sdf.to_local(parquet_root, level=6, pixel_width=pixel_width)
+        return parquet_root, sdf, n_scans, pixel_width
 
     def test_reconstitute_with_area_sids(self, tmp_path):
         import h5py, pystare
-        zarr_root, _, n_scans, pw = self._write_local_zarr(tmp_path)
+        parquet_root, _, n_scans, pw = self._write_local_parquet(tmp_path)
         out_hdf5 = str(tmp_path / "out.h5")
 
         # Broad area SIDs covering California coast
         area_sids = pystare.cover_from_hull(
             [33, 33, 41, 41], [-124, -116, -116, -124], 6
         )
-        reconstitute_hdf5_from_zarr(
-            zarr_path=zarr_root,
+        reconstitute_hdf5_from_s3(
+            s3_root=parquet_root,
             dataset="GMI_S1",
             output_hdf5_path=out_hdf5,
             area_sids=area_sids,
@@ -325,11 +325,11 @@ class TestReconstituteFromZarr:
 
     def test_reconstitute_with_bbox(self, tmp_path):
         import h5py
-        zarr_root, _, n_scans, pw = self._write_local_zarr(tmp_path)
+        parquet_root, _, n_scans, pw = self._write_local_parquet(tmp_path)
         out_hdf5 = str(tmp_path / "out_bbox.h5")
 
-        reconstitute_hdf5_from_zarr(
-            zarr_path=zarr_root,
+        reconstitute_hdf5_from_s3(
+            s3_root=parquet_root,
             dataset="GMI_S1",
             output_hdf5_path=out_hdf5,
             bbox=(-124, 33, -116, 41),
@@ -341,11 +341,11 @@ class TestReconstituteFromZarr:
 
     def test_reconstitute_scantime_structure(self, tmp_path):
         import h5py
-        zarr_root, _, n_scans, pw = self._write_local_zarr(tmp_path)
+        parquet_root, _, n_scans, pw = self._write_local_parquet(tmp_path)
         out_hdf5 = str(tmp_path / "out_st.h5")
 
-        reconstitute_hdf5_from_zarr(
-            zarr_root, "GMI_S1", out_hdf5,
+        reconstitute_hdf5_from_s3(
+            parquet_root, "GMI_S1", out_hdf5,
             bbox=(-124, 33, -116, 41),
             pixel_width=pw,
         )
@@ -358,11 +358,11 @@ class TestReconstituteFromZarr:
     def test_reconstitute_tc_3d(self, tmp_path):
         import h5py
         n_tc = 2
-        zarr_root, _, n_scans, pw = self._write_local_zarr(tmp_path, n_tc=n_tc)
+        parquet_root, _, n_scans, pw = self._write_local_parquet(tmp_path, n_tc=n_tc)
         out_hdf5 = str(tmp_path / "out_tc.h5")
 
-        reconstitute_hdf5_from_zarr(
-            zarr_root, "GMI_S1", out_hdf5,
+        reconstitute_hdf5_from_s3(
+            parquet_root, "GMI_S1", out_hdf5,
             bbox=(-124, 33, -116, 41),
             pixel_width=pw,
         )
@@ -371,26 +371,25 @@ class TestReconstituteFromZarr:
             assert f['S1']['Tc'].ndim == 3
             assert f['S1']['Tc'].shape[2] == n_tc
 
-    def test_pixel_width_from_zarr_attrs(self, tmp_path):
-        """pixel_width stored in zarr attrs → no need to pass explicitly."""
+    def test_pixel_width_attrs(self, tmp_path):
+        """pixel_width stored in Parquet kv-metadata → no need to pass explicitly."""
         import h5py
-        zarr_root, _, _, pw = self._write_local_zarr(tmp_path, pixel_width=5)
+        parquet_root, _, _, pw = self._write_local_parquet(tmp_path, pixel_width=5)
         out_hdf5 = str(tmp_path / "out_pw.h5")
 
-        # Do NOT pass pixel_width — should be read from zarr attrs
-        reconstitute_hdf5_from_zarr(
-            zarr_root, "GMI_S1", out_hdf5,
+        # Do NOT pass pixel_width — should be read from Parquet kv-metadata
+        reconstitute_hdf5_from_s3(
+            parquet_root, "GMI_S1", out_hdf5,
             bbox=(-124, 33, -116, 41),
         )
         with h5py.File(out_hdf5, 'r') as f:
             assert f['S1']['Latitude'].ndim == 2
 
     def test_pixel_width_from_scan_pixel_widths_table(self, tmp_path):
-        """Fallback: pixel_width from SCAN_PIXEL_WIDTHS when zarr attrs absent."""
+        """Fallback: pixel_width from SCAN_PIXEL_WIDTHS when Parquet kv-metadata absent."""
         import h5py
-        import zarr as zarr_mod
-        # Write zarr WITHOUT pixel_width in attrs by using STAREDataFrame directly
-        # (without pixel_width param so attrs are not set)
+        # Write Parquet WITHOUT pixel_width in kv-metadata by using STAREDataFrame directly
+        # (without pixel_width param so kv-metadata is not set)
         import pystare
         N = 3 * 221
         lats = np.random.uniform(33, 41, N)
@@ -403,14 +402,14 @@ class TestReconstituteFromZarr:
             'timestamp': timestamps,
         })
         sdf._sid_column_name = 'sids'
-        zarr_root = str(tmp_path / "zarr_no_pw")
-        # pixel_width=None → attrs not written
-        sdf.to_zarr_local(zarr_root, level=6)
+        parquet_root = str(tmp_path / "no_pw")
+        # pixel_width=None → kv-metadata not written
+        sdf.to_local(parquet_root, level=6)
 
         out_hdf5 = str(tmp_path / "out_fallback.h5")
         # SCAN_PIXEL_WIDTHS["GMI_S1"] == 221 → used as fallback
-        reconstitute_hdf5_from_zarr(
-            zarr_root, "GMI_S1", out_hdf5,
+        reconstitute_hdf5_from_s3(
+            parquet_root, "GMI_S1", out_hdf5,
             bbox=(-124, 33, -116, 41),
         )
         with h5py.File(out_hdf5, 'r') as f:
@@ -418,7 +417,7 @@ class TestReconstituteFromZarr:
 
     def test_reconstitute_no_area_sids_or_bbox_raises(self, tmp_path):
         with pytest.raises(ValueError, match="exactly one"):
-            reconstitute_hdf5_from_zarr(
+            reconstitute_hdf5_from_s3(
                 str(tmp_path), "GMI_S1", str(tmp_path / "out.h5"),
             )
 
@@ -426,27 +425,27 @@ class TestReconstituteFromZarr:
         import pystare
         area_sids = pystare.cover_from_hull([33, 33, 41, 41], [-124, -116, -116, -124], 6)
         with pytest.raises(ValueError, match="exactly one"):
-            reconstitute_hdf5_from_zarr(
+            reconstitute_hdf5_from_s3(
                 str(tmp_path), "GMI_S1", str(tmp_path / "out.h5"),
                 area_sids=area_sids, bbox=(-124, 33, -116, 41),
             )
 
     def test_reconstitute_no_matching_data_raises(self, tmp_path):
         import pystare
-        zarr_root, _, _, pw = self._write_local_zarr(tmp_path)
+        parquet_root, _, _, pw = self._write_local_parquet(tmp_path)
         # Query an area far from the data (South Pacific)
         with pytest.raises(ValueError):
-            reconstitute_hdf5_from_zarr(
-                zarr_root, "GMI_S1", str(tmp_path / "out.h5"),
+            reconstitute_hdf5_from_s3(
+                parquet_root, "GMI_S1", str(tmp_path / "out.h5"),
                 bbox=(170, -50, 180, -40),
                 pixel_width=pw,
             )
 
     def test_reconstitute_bad_dataset_name_no_scan_suffix_raises(self, tmp_path):
-        zarr_root, _, _, pw = self._write_local_zarr(tmp_path)
+        parquet_root, _, _, pw = self._write_local_parquet(tmp_path)
         with pytest.raises(ValueError, match="scan group name"):
-            reconstitute_hdf5_from_zarr(
-                zarr_root, "GMI",  # no _S1 suffix
+            reconstitute_hdf5_from_s3(
+                parquet_root, "GMI",  # no _S1 suffix
                 str(tmp_path / "out.h5"),
                 bbox=(-124, 33, -116, 41),
                 pixel_width=pw,
@@ -570,70 +569,70 @@ class TestToHdf5OutputDirectory:
 
 
 # ---------------------------------------------------------------------------
-# to_zarr_local() pixel_width attr persistence
+# to_local() pixel_width attr persistence
 # ---------------------------------------------------------------------------
 
-class TestToZarrLocalPixelWidth:
-    """Verify that pixel_width is correctly stored/absent in zarr group attrs."""
+def _walk_parquet_leaves(root):
+    """Yield every ``*.parquet`` path under ``root``."""
+    for d, _, files in os.walk(root):
+        for f in files:
+            if f.endswith('.parquet'):
+                yield os.path.join(d, f)
+
+
+class TestToLocalPixelWidth:
+    """Verify that pixel_width is correctly stored/absent in Parquet kv-metadata."""
 
     def test_pixel_width_stored_in_attrs(self, tmp_path):
-        import zarr
+        import pyarrow.parquet as pq
         sdf, _, _ = _make_sdf(n_scans=2, pixel_width=5)
-        zarr_root = str(tmp_path / "zarr_pw")
-        sdf.to_zarr_local(zarr_root, level=6, pixel_width=5)
+        parquet_root = str(tmp_path / "with_pw")
+        sdf.to_local(parquet_root, level=6, pixel_width=5)
 
-        # Every group directory should have pixel_width in its attrs
         found_any = False
-        for entry in os.listdir(zarr_root):
-            entry_path = os.path.join(zarr_root, entry)
-            if os.path.isdir(entry_path):
-                zg = zarr.open_group(entry_path, mode='r')
-                assert 'pixel_width' in zg.attrs, (
-                    f"pixel_width missing from zarr group attrs in {entry_path}"
-                )
-                assert zg.attrs['pixel_width'] == 5
-                found_any = True
-        assert found_any, "No zarr groups were written"
+        for pq_path in _walk_parquet_leaves(parquet_root):
+            md = pq.ParquetFile(pq_path).schema_arrow.metadata or {}
+            assert b'pixel_width' in md, (
+                f"pixel_width missing from Parquet kv-metadata in {pq_path}"
+            )
+            assert int(md[b'pixel_width'].decode()) == 5
+            found_any = True
+        assert found_any, "No Parquet leaves were written"
 
     def test_pixel_width_absent_when_not_passed(self, tmp_path):
-        import zarr
+        import pyarrow.parquet as pq
         sdf, _, _ = _make_sdf(n_scans=2, pixel_width=5)
-        zarr_root = str(tmp_path / "zarr_no_pw")
-        sdf.to_zarr_local(zarr_root, level=6)  # no pixel_width
+        parquet_root = str(tmp_path / "no_pw")
+        sdf.to_local(parquet_root, level=6)  # no pixel_width
 
-        for entry in os.listdir(zarr_root):
-            entry_path = os.path.join(zarr_root, entry)
-            if os.path.isdir(entry_path):
-                zg = zarr.open_group(entry_path, mode='r')
-                assert 'pixel_width' not in zg.attrs, (
-                    f"pixel_width unexpectedly found in {entry_path}"
-                )
+        for pq_path in _walk_parquet_leaves(parquet_root):
+            md = pq.ParquetFile(pq_path).schema_arrow.metadata or {}
+            assert b'pixel_width' not in md, (
+                f"pixel_width unexpectedly found in {pq_path}"
+            )
 
     def test_columns_and_row_positions_written(self, tmp_path):
-        """Sanity: all data columns + __row_positions__ appear in each group."""
-        import zarr
+        """Sanity: all data columns + __row_positions__ appear in each Parquet leaf."""
+        import pyarrow.parquet as pq
         sdf, _, _ = _make_sdf(n_scans=2, pixel_width=5, n_tc=2)
-        zarr_root = str(tmp_path / "zarr_cols")
-        sdf.to_zarr_local(zarr_root, level=6, pixel_width=5)
+        parquet_root = str(tmp_path / "cols")
+        sdf.to_local(parquet_root, level=6, pixel_width=5)
 
-        for entry in os.listdir(zarr_root):
-            entry_path = os.path.join(zarr_root, entry)
-            if os.path.isdir(entry_path):
-                zg = zarr.open_group(entry_path, mode='r')
-                keys = set(zg.array_keys())
-                assert '__row_positions__' in keys
-                for col in sdf.columns:
-                    assert col in keys, f"Column '{col}' missing from zarr group"
+        for pq_path in _walk_parquet_leaves(parquet_root):
+            names = set(pq.ParquetFile(pq_path).schema.names)
+            assert '__row_positions__' in names
+            for col in sdf.columns:
+                assert col in names, f"Column '{col}' missing from {pq_path}"
 
 
 # ---------------------------------------------------------------------------
-# reconstitute_hdf5_from_zarr() return value and data fidelity
+# reconstitute_hdf5_from_s3() return value and data fidelity
 # ---------------------------------------------------------------------------
 
 class TestReconstituteReturnAndFidelity:
-    """Return value and that lat/lon round-trip through zarr → HDF5."""
+    """Return value and that lat/lon round-trip through Parquet → HDF5."""
 
-    def _write_local_zarr(self, tmp_path, n_scans=3, pixel_width=5):
+    def _write_local_parquet(self, tmp_path, n_scans=3, pixel_width=5):
         import pystare
         N = n_scans * pixel_width
         lats = np.random.uniform(33, 41, N)
@@ -649,25 +648,25 @@ class TestReconstituteReturnAndFidelity:
             'timestamp': timestamps,
         })
         sdf._sid_column_name = 'sids'
-        zarr_root = str(tmp_path / "zarr_root")
-        sdf.to_zarr_local(zarr_root, level=6, pixel_width=pixel_width)
-        return zarr_root, sdf, n_scans, pixel_width
+        parquet_root = str(tmp_path / "parquet_root")
+        sdf.to_local(parquet_root, level=6, pixel_width=pixel_width)
+        return parquet_root, sdf, n_scans, pixel_width
 
     def test_return_value_is_output_path(self, tmp_path):
-        zarr_root, _, _, pw = self._write_local_zarr(tmp_path)
+        parquet_root, _, _, pw = self._write_local_parquet(tmp_path)
         out = str(tmp_path / "out.h5")
-        result = reconstitute_hdf5_from_zarr(
-            zarr_root, "GMI_S1", out, bbox=(-124, 33, -116, 41), pixel_width=pw
+        result = reconstitute_hdf5_from_s3(
+            parquet_root, "GMI_S1", out, bbox=(-124, 33, -116, 41), pixel_width=pw
         )
         assert result == out
 
     def test_lat_lon_values_in_valid_range(self, tmp_path):
         """Reconstituted lat/lon should stay within the original write range."""
         import h5py
-        zarr_root, _, _, pw = self._write_local_zarr(tmp_path)
+        parquet_root, _, _, pw = self._write_local_parquet(tmp_path)
         out = str(tmp_path / "out.h5")
-        reconstitute_hdf5_from_zarr(
-            zarr_root, "GMI_S1", out, bbox=(-124, 33, -116, 41), pixel_width=pw
+        reconstitute_hdf5_from_s3(
+            parquet_root, "GMI_S1", out, bbox=(-124, 33, -116, 41), pixel_width=pw
         )
         with h5py.File(out, 'r') as f:
             lats = f['S1']['Latitude'][:]
@@ -678,25 +677,25 @@ class TestReconstituteReturnAndFidelity:
     def test_tc_values_uniform_ones_preserved(self, tmp_path):
         """Tc1=1.0 everywhere → all values in reconstituted HDF5 must be 1.0."""
         import h5py
-        zarr_root, _, _, pw = self._write_local_zarr(tmp_path)
+        parquet_root, _, _, pw = self._write_local_parquet(tmp_path)
         out = str(tmp_path / "out.h5")
-        reconstitute_hdf5_from_zarr(
-            zarr_root, "GMI_S1", out, bbox=(-124, 33, -116, 41), pixel_width=pw
+        reconstitute_hdf5_from_s3(
+            parquet_root, "GMI_S1", out, bbox=(-124, 33, -116, 41), pixel_width=pw
         )
         with h5py.File(out, 'r') as f:
             np.testing.assert_allclose(f['S1']['Tc'][:], 1.0, rtol=1e-6)
 
     def test_output_file_created(self, tmp_path):
-        zarr_root, _, _, pw = self._write_local_zarr(tmp_path)
+        parquet_root, _, _, pw = self._write_local_parquet(tmp_path)
         out = str(tmp_path / "created.h5")
-        reconstitute_hdf5_from_zarr(
-            zarr_root, "GMI_S1", out, bbox=(-124, 33, -116, 41), pixel_width=pw
+        reconstitute_hdf5_from_s3(
+            parquet_root, "GMI_S1", out, bbox=(-124, 33, -116, 41), pixel_width=pw
         )
         assert os.path.isfile(out)
 
 
 # ---------------------------------------------------------------------------
-# reconstitute_hdf5_from_zarr() scan group name extraction
+# reconstitute_hdf5_from_s3() scan group name extraction
 # ---------------------------------------------------------------------------
 
 class TestReconstituteScanNameExtraction:
@@ -733,12 +732,12 @@ class TestReconstituteScanNameExtraction:
             'timestamp': timestamps,
         })
         sdf._sid_column_name = 'sids'
-        zarr_root = str(tmp_path / f"zarr_{dataset}")
-        sdf.to_zarr_local(zarr_root, level=6, pixel_width=pw)
+        parquet_root = str(tmp_path / f"pq_{dataset}")
+        sdf.to_local(parquet_root, level=6, pixel_width=pw)
 
         out = str(tmp_path / f"out_{dataset}.h5")
-        reconstitute_hdf5_from_zarr(
-            zarr_root, dataset, out,
+        reconstitute_hdf5_from_s3(
+            parquet_root, dataset, out,
             bbox=(-124, 33, -116, 41),
             pixel_width=pw,
         )
@@ -749,9 +748,9 @@ class TestReconstituteScanNameExtraction:
                 f"for dataset '{dataset}'. Groups present: {list(f.keys())}"
             )
 
-    def test_nonexistent_local_zarr_path_raises(self, tmp_path):
+    def test_nonexistent_local_path_raises(self, tmp_path):
         with pytest.raises(ValueError, match="does not exist"):
-            reconstitute_hdf5_from_zarr(
+            reconstitute_hdf5_from_s3(
                 str(tmp_path / "nonexistent"), "GMI_S1",
                 str(tmp_path / "out.h5"),
                 bbox=(-124, 33, -116, 41),

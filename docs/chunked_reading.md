@@ -1,34 +1,34 @@
-# Reading Chunked Zarr Data from S3
+# Reading Chunked Parquet Data from S3
 
-This document explains how to read zarr data stored in a chunked format from S3, which is different from the grouped format expected by `STAREDataFrame.from_zarr_s3()`.
+This document explains how to read Parquet data stored in a chunked format from S3, which is different from the grouped format expected by `STAREDataFrame.from_s3()`.
 
 ## Problem
 
-When trying to read zarr data from S3 using `STAREDataFrame.from_zarr_s3()`, you might get an empty DataFrame even though the data exists. This happens when the data is stored in a **chunked format** rather than the **grouped format** that `from_zarr_s3()` expects.
+When trying to read Parquet data from S3 using `STAREDataFrame.from_s3()`, you might get an empty DataFrame even though the data exists. This happens when the data is stored in a **chunked format** rather than the **grouped format** that `from_s3()` expects.
 
 ## Data Format Differences
 
-### Chunked Zarr Format
-- **Structure**: Single zarr group at root level
+### Chunked Parquet Format
+- **Structure**: Single Parquet partition at root level
 - **Storage**: All arrays stored as chunked arrays in the root directory
 - **Efficiency**: More efficient for large datasets
 - **Use case**: When data is stored as a single large dataset
 
-### Grouped Zarr Format
+### Grouped Parquet Format
 - **Structure**: Root contains multiple group directories
 - **Storage**: Each group directory contains arrays for that STARE group
 - **Efficiency**: Better for partitioned data access
 - **Use case**: When data is partitioned by STARE groups
 
-## Solution: `from_zarr_s3_chunked()`
+## Solution: `from_s3()`
 
-Use the `from_zarr_s3_chunked()` function to read chunked zarr data:
+Use the `from_s3()` function to read chunked Parquet data:
 
 ```python
-from starepandas.io.granules import from_zarr_s3_chunked
+from starepandas.io.granules import from_s3
 
-# Read chunked zarr data
-df = from_zarr_s3_chunked('s3://my-bucket/granule_data/')
+# Read chunked Parquet data
+df = from_s3('s3://my-bucket/granule_data/')
 ```
 
 ## Examples
@@ -36,13 +36,13 @@ df = from_zarr_s3_chunked('s3://my-bucket/granule_data/')
 ### Basic Usage
 
 ```python
-from starepandas.io.granules import from_zarr_s3_chunked
+from starepandas.io.granules import from_s3
 
-# S3 path to chunked zarr data
+# S3 path to chunked Parquet data
 s3_path = "s3://zarrpods/MOD09.A2020032.1940.006.2020034015024/"
 
 # Read the data
-df = from_zarr_s3_chunked(s3_path)
+df = from_s3(s3_path)
 
 print(f"Loaded data: {df.shape}")
 print(f"Columns: {list(df.columns)}")
@@ -51,7 +51,7 @@ print(f"Columns: {list(df.columns)}")
 ### With Custom Storage Options
 
 ```python
-from starepandas.io.granules import from_zarr_s3_chunked
+from starepandas.io.granules import from_s3
 
 # Custom storage options
 storage_options = {
@@ -61,30 +61,30 @@ storage_options = {
 }
 
 # Read with custom options
-df = from_zarr_s3_chunked(s3_path, storage_options=storage_options)
+df = from_s3(s3_path, storage_options=storage_options)
 ```
 
 ### Using AWS Configuration
 
 ```python
-from starepandas.io.granules import from_zarr_s3_chunked
+from starepandas.io.granules import from_s3
 from starepandas.staredataframe import _load_config_from_default_locations
 
 # Load AWS configuration
 _load_config_from_default_locations()
 
 # Read data (will use loaded config)
-df = from_zarr_s3_chunked(s3_path)
+df = from_s3(s3_path)
 ```
 
 ## Function Reference
 
-### `from_zarr_s3_chunked(s3_path, storage_options=None)`
+### `from_s3(s3_path, storage_options=None)`
 
-Read STAREDataFrame from S3 chunked zarr store.
+Read STAREDataFrame from S3 chunked Parquet store.
 
 **Parameters:**
-- `s3_path` (str): S3 path to the zarr root directory containing chunked arrays
+- `s3_path` (str): S3 path to the storage root directory containing chunked Parquet data
 - `storage_options` (dict, optional): S3 storage options including credentials and region
 
 **Returns:**
@@ -95,12 +95,12 @@ Read STAREDataFrame from S3 chunked zarr store.
 
 ## Troubleshooting
 
-### Empty DataFrame from `from_zarr_s3()`
+### Empty DataFrame from `from_s3()`
 
-If `STAREDataFrame.from_zarr_s3()` returns an empty DataFrame:
+If `STAREDataFrame.from_s3()` returns an empty DataFrame:
 
 1. **Check the data format**: Your data might be in chunked format
-2. **Use `from_zarr_s3_chunked()`**: Try the chunked version instead
+2. **Use `from_s3()`**: Try the chunked version instead
 3. **Verify the path**: Make sure you're using the root path, not a group-specific path
 
 ### Missing S3 Configuration
@@ -114,7 +114,7 @@ If you get a "Missing S3 configuration" error:
        'secret': 'your-secret',
        'client_kwargs': {'region_name': 'your-region'}
    }
-   df = from_zarr_s3_chunked(s3_path, storage_options=storage_options)
+   df = from_s3(s3_path, storage_options=storage_options)
    ```
 
 2. **Use AWS configuration file**:
@@ -133,10 +133,10 @@ If you get a "Missing S3 configuration" error:
 ## Data Analysis Example
 
 ```python
-from starepandas.io.granules import from_zarr_s3_chunked
+from starepandas.io.granules import from_s3
 
 # Read the data
-df = from_zarr_s3_chunked(s3_path)
+df = from_s3(s3_path)
 
 # Basic information
 print(f"Data shape: {df.shape}")
@@ -168,14 +168,14 @@ for col in df.columns:
 
 ## Reading Specific Groups
 
-For even more efficiency, you can read only specific STARE groups using `from_zarr_s3_chunked_groups()`:
+For even more efficiency, you can read only specific STARE groups using `from_s3_groups()`:
 
 ```python
-from starepandas.io.granules import from_zarr_s3_chunked_groups
+from starepandas.io.granules import from_s3_groups
 
 # Read specific groups
 group_ids = [3447505514752114692, 3445253714938429444]
-df = from_zarr_s3_chunked_groups(s3_path, group_ids)
+df = from_s3_groups(s3_path, group_ids)
 
 print(f"Loaded {len(df)} rows from {len(group_ids)} groups")
 ```
@@ -195,13 +195,13 @@ This function:
 
 ## Related Functions
 
-- `STAREDataFrame.from_zarr_s3()`: For grouped zarr format
-- `STAREDataFrame.to_zarr_s3()`: For writing grouped zarr format
-- `from_zarr_s3_chunked()`: For reading chunked zarr format
-- `from_zarr_s3_chunked_groups()`: For reading specific STARE groups
+- `STAREDataFrame.from_s3()`: For grouped Parquet format
+- `STAREDataFrame.to_s3()`: For writing grouped Parquet format
+- `from_s3()`: For reading chunked Parquet format
+- `from_s3_groups()`: For reading specific STARE groups
 
 ## See Also
 
-- [Generic to_zarr_s3 Function](generic_to_zarr_s3_api.md)
-- [Zarr Metadata API](zarr_metadata_api.md)
+- [Generic to_s3 Function](generic_to_s3_api.md)
+- [Metadata API](metadata_api.md)
 - [SSMIS HDF5 Support](ssmis_hdf5_support.md)

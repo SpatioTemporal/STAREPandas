@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Example script demonstrating the convenience functions for zarr path operations.
+Example script demonstrating the convenience functions for partition path operations.
 
 This script shows how to use the module-level convenience functions
-starepandas.generate_zarr_path() and starepandas.parse_zarr_path()
+starepandas.generate_partition_path() and starepandas.parse_partition_path()
 for easy access without creating STAREDataFrame instances.
 """
 
@@ -35,11 +35,11 @@ def example_basic_usage():
         print(f"   Dataset: '{dataset}'")
         
         # Generate path using convenience function
-        path = sp.generate_zarr_path(sid, dataset)
+        path = sp.generate_partition_path(sid, dataset)
         print(f"   Generated path: {path}")
         
         # Parse path back using convenience function
-        reconstructed_sid, reconstructed_dataset = sp.parse_zarr_path(path)
+        reconstructed_sid, reconstructed_dataset = sp.parse_partition_path(path)
         print(f"   Parsed SID: {reconstructed_sid}")
         print(f"   Parsed dataset: '{reconstructed_dataset}'")
         
@@ -72,15 +72,15 @@ def example_storage_workflow():
         dataset_name = f"{granule['dataset']}_{granule['processing_level']}"
         
         # Generate storage path
-        path = sp.generate_zarr_path(sid, dataset_name)
+        path = sp.generate_partition_path(sid, dataset_name)
         
         storage_info = {
             "granule_id": i + 1,
             "sid": sid,
             "dataset": dataset_name,
-            "zarr_path": path,
-            "full_s3_path": f"s3://my-zarr-bucket/{path}",
-            "local_path": f"/data/zarr/{path}"
+            "partition_path": path,
+            "full_s3_path": f"s3://my-parquet-bucket/{path}",
+            "local_path": f"/data/parquet/{path}"
         }
         
         storage_manifest.append(storage_info)
@@ -88,7 +88,7 @@ def example_storage_workflow():
         print(f"   Granule {i+1}:")
         print(f"     SID: {sid}")
         print(f"     Dataset: {dataset_name}")
-        print(f"     Zarr path: {path}")
+        print(f"     Partition path: {path}")
         print(f"     S3 location: {storage_info['full_s3_path']}")
     
     print(f"\n2. Storage manifest created with {len(storage_manifest)} entries")
@@ -96,10 +96,10 @@ def example_storage_workflow():
     print(f"\n3. Later: Reading back from storage paths:")
     
     for storage_info in storage_manifest:
-        path = storage_info["zarr_path"]
+        path = storage_info["partition_path"]
         
         # Parse path to extract information
-        parsed_sid, parsed_dataset = sp.parse_zarr_path(path)
+        parsed_sid, parsed_dataset = sp.parse_partition_path(path)
         
         print(f"   Path: {path}")
         print(f"     Original SID: {storage_info['sid']}")
@@ -131,7 +131,7 @@ def example_spatial_organization():
     
     paths = []
     for sid, dataset in spatial_data:
-        path = sp.generate_zarr_path(sid, dataset)
+        path = sp.generate_partition_path(sid, dataset)
         paths.append(path)
         print(f"  SID {sid}, Dataset {dataset}:")
         print(f"    → {path}")
@@ -175,7 +175,7 @@ def example_error_handling():
     for path, description in invalid_paths:
         print(f"\n  Testing: '{path}' ({description})")
         try:
-            result = sp.parse_zarr_path(path)
+            result = sp.parse_partition_path(path)
             print(f"    ✗ Unexpected success: {result}")
         except ValueError as e:
             print(f"    ✓ Properly caught error: {e}")
@@ -195,27 +195,27 @@ def example_api_comparison():
     # Method 1: Using convenience functions (recommended)
     print("\n1. Using convenience functions (recommended):")
     print("   import starepandas as sp")
-    print(f"   path = sp.generate_zarr_path({sid}, '{dataset}')")
+    print(f"   path = sp.generate_partition_path({sid}, '{dataset}')")
     
-    path1 = sp.generate_zarr_path(sid, dataset)
+    path1 = sp.generate_partition_path(sid, dataset)
     print(f"   # Result: {path1}")
     
-    print(f"   sid, dataset = sp.parse_zarr_path('{path1}')")
-    result1 = sp.parse_zarr_path(path1)
+    print(f"   sid, dataset = sp.parse_partition_path('{path1}')")
+    result1 = sp.parse_partition_path(path1)
     print(f"   # Result: {result1}")
     
     # Method 2: Using class methods
     print("\n2. Using class methods (more verbose):")
     print("   from starepandas import STAREDataFrame")
     print("   sdf = STAREDataFrame()")
-    print(f"   path = sdf.generate_zarr_path({sid}, '{dataset}')")
+    print(f"   path = sdf.generate_partition_path({sid}, '{dataset}')")
     
     sdf = sp.STAREDataFrame()
-    path2 = sdf.generate_zarr_path(sid, dataset)
+    path2 = sdf.generate_partition_path(sid, dataset)
     print(f"   # Result: {path2}")
     
-    print(f"   sid, dataset = sdf.parse_zarr_path('{path2}')")
-    result2 = sdf.parse_zarr_path(path2)
+    print(f"   sid, dataset = sdf.parse_partition_path('{path2}')")
+    result2 = sdf.parse_partition_path(path2)
     print(f"   # Result: {result2}")
     
     # Compare results
@@ -229,7 +229,7 @@ def example_api_comparison():
 
 def main():
     """Run all examples."""
-    print("STARE Zarr Path Convenience Functions Examples")
+    print("STARE Partition Path Convenience Functions Examples")
     print("=" * 60)
     
     # Run examples
@@ -248,13 +248,13 @@ def main():
     print("✓ Perfect for storage organization and spatial analysis")
     
     print("\nAvailable Functions:")
-    print("- starepandas.generate_zarr_path(sid, dataset_name)")
-    print("- starepandas.parse_zarr_path(zarr_path)")
+    print("- starepandas.generate_partition_path(sid, dataset_name)")
+    print("- starepandas.parse_partition_path(partition_path)")
     
     print("\nTypical Usage Pattern:")
     print("import starepandas as sp")
-    print("path = sp.generate_zarr_path(your_sid, 'your_dataset')")
-    print("sid, dataset = sp.parse_zarr_path(path)")
+    print("path = sp.generate_partition_path(your_sid, 'your_dataset')")
+    print("sid, dataset = sp.parse_partition_path(path)")
 
 
 if __name__ == "__main__":

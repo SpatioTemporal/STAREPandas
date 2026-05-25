@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Example script demonstrating how to read specific STARE groups from chunked zarr data.
+Example script demonstrating how to read specific STARE groups from chunked Parquet data.
 
-This script shows how to use the from_zarr_s3_chunked_groups function to read
-only specific STARE group SIDs from a chunked zarr store, which is much more
+This script shows how to use the from_s3_groups function to read
+only specific STARE group SIDs from a chunked Parquet store, which is much more
 efficient than loading the entire dataset.
 """
 
@@ -13,14 +13,14 @@ import sys
 # Add the parent directory to the path so we can import starepandas
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from starepandas.io.granules import from_zarr_s3_chunked_groups, from_zarr_s3_chunked
+from starepandas.io.granules import from_s3_groups, from_s3
 
 
 def example_read_specific_groups():
-    """Example of reading specific STARE groups from chunked zarr data."""
-    print("=== Reading Specific STARE Groups from Chunked Zarr Data ===")
+    """Example of reading specific STARE groups from chunked Parquet data."""
+    print("=== Reading Specific STARE Groups from Chunked Parquet Data ===")
     
-    # S3 path to the chunked zarr data
+    # S3 path to the chunked Parquet data
     s3_path = "s3://zarrpods/MOD09.A2020032.1940.006.2020034015024/"
     
     # Storage options - use None to load from config file or environment
@@ -37,7 +37,7 @@ def example_read_specific_groups():
     
     try:
         # Read only the specified groups
-        df = from_zarr_s3_chunked_groups(s3_path, group_ids, storage_options=storage_options)
+        df = from_s3_groups(s3_path, group_ids, storage_options=storage_options)
         
         print(f"✓ Successfully loaded specific groups: {df.shape}")
         print(f"✓ Data type: {type(df)}")
@@ -85,7 +85,7 @@ def example_compare_efficiency():
         print("Reading specific groups...")
         import time
         start_time = time.time()
-        df_groups = from_zarr_s3_chunked_groups(s3_path, group_ids, storage_options=storage_options)
+        df_groups = from_s3_groups(s3_path, group_ids, storage_options=storage_options)
         groups_time = time.time() - start_time
         
         print(f"✓ Specific groups: {df_groups.shape} in {groups_time:.2f} seconds")
@@ -191,7 +191,7 @@ def main():
     print("\n" + "=" * 50)
     print("Examples completed!")
     print("\nKey Points:")
-    print("- Use from_zarr_s3_chunked_groups() to read specific STARE groups")
+    print("- Use from_s3_groups() to read specific STARE groups")
     print("- Much more efficient than loading the entire dataset")
     print("- Supports both group directory names and individual SIDs")
     print("- Ideal for spatial analysis, quality control, and research")

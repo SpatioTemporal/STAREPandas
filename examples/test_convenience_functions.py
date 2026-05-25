@@ -2,8 +2,8 @@
 """
 Test script for the convenience functions in starepandas.__init__.py
 
-This script demonstrates and tests the convenience functions generate_zarr_path()
-and parse_zarr_path() that can be called directly from the starepandas module.
+This script demonstrates and tests the convenience functions generate_partition_path()
+and parse_partition_path() that can be called directly from the starepandas module.
 """
 
 import os
@@ -34,12 +34,12 @@ def test_convenience_functions():
         print(f"\nTest {i+1}: SID {original_sid}, Dataset '{dataset}'")
         
         try:
-            # Test generate_zarr_path convenience function
-            path = sp.generate_zarr_path(original_sid, dataset)
+            # Test generate_partition_path convenience function
+            path = sp.generate_partition_path(original_sid, dataset)
             print(f"  Generated path: {path}")
             
-            # Test parse_zarr_path convenience function
-            reconstructed_sid, reconstructed_dataset = sp.parse_zarr_path(path)
+            # Test parse_partition_path convenience function
+            reconstructed_sid, reconstructed_dataset = sp.parse_partition_path(path)
             print(f"  Reconstructed SID: {reconstructed_sid}")
             print(f"  Reconstructed dataset: '{reconstructed_dataset}'")
             
@@ -83,8 +83,8 @@ def test_comparison_with_class_methods():
         print(f"\nTest {i+1}: SID {sid}")
         
         # Generate paths using both methods
-        convenience_path = sp.generate_zarr_path(sid, dataset)
-        class_path = sdf.generate_zarr_path(sid, dataset)
+        convenience_path = sp.generate_partition_path(sid, dataset)
+        class_path = sdf.generate_partition_path(sid, dataset)
         
         print(f"  Convenience function: {convenience_path}")
         print(f"  Class method:         {class_path}")
@@ -97,8 +97,8 @@ def test_comparison_with_class_methods():
             all_match = False
         
         # Parse paths using both methods
-        convenience_result = sp.parse_zarr_path(convenience_path)
-        class_result = sdf.parse_zarr_path(class_path)
+        convenience_result = sp.parse_partition_path(convenience_path)
+        class_result = sdf.parse_partition_path(class_path)
         
         print(f"  Convenience parse: {convenience_result}")
         print(f"  Class parse:       {class_result}")
@@ -118,7 +118,7 @@ def test_error_handling():
     """Test error handling in convenience functions."""
     print("\n=== Testing Error Handling ===")
     
-    # Test invalid paths for parse_zarr_path
+    # Test invalid paths for parse_partition_path
     invalid_paths = [
         "",
         "DATASET_ONLY",
@@ -130,12 +130,12 @@ def test_error_handling():
     expected_errors = len(invalid_paths)
     actual_errors = 0
     
-    print("Testing parse_zarr_path error handling:")
+    print("Testing parse_partition_path error handling:")
     for i, path in enumerate(invalid_paths):
         print(f"  Test {i+1}: '{path}'")
         
         try:
-            result = sp.parse_zarr_path(path)
+            result = sp.parse_partition_path(path)
             print(f"    ✗ Unexpected success: {result}")
         except ValueError as e:
             print(f"    ✓ Expected error: {e}")
@@ -153,18 +153,18 @@ def test_usage_examples():
     print("\n=== Testing Docstring Examples ===")
     
     try:
-        # Test generate_zarr_path example
-        print("Testing generate_zarr_path example:")
-        path = sp.generate_zarr_path(3445253714938429444, "MOD09")
+        # Test generate_partition_path example
+        print("Testing generate_partition_path example:")
+        path = sp.generate_partition_path(3445253714938429444, "MOD09")
         expected_path = "Q00_5/Q01_3/Q02_3/Q03_2/Q04_2/MOD09"
         print(f"  Generated: {path}")
         print(f"  Expected:  {expected_path}")
         generate_match = path == expected_path
         print(f"  Result: {'✓ MATCH' if generate_match else '✗ DIFFER'}")
         
-        # Test parse_zarr_path example
-        print("\nTesting parse_zarr_path example:")
-        sid, dataset = sp.parse_zarr_path("Q00_5/Q01_3/Q02_3/Q03_2/Q04_2/MOD09")
+        # Test parse_partition_path example
+        print("\nTesting parse_partition_path example:")
+        sid, dataset = sp.parse_partition_path("Q00_5/Q01_3/Q02_3/Q03_2/Q04_2/MOD09")
         expected_sid = 3445253714938429444
         expected_dataset = "MOD09"
         print(f"  Parsed SID: {sid} (expected: {expected_sid})")
@@ -188,8 +188,8 @@ def demonstrate_usage():
     
     print("1. Simple usage:")
     print("   import starepandas as sp")
-    print("   path = sp.generate_zarr_path(sid, dataset)")
-    print("   sid, dataset = sp.parse_zarr_path(path)")
+    print("   path = sp.generate_partition_path(sid, dataset)")
+    print("   sid, dataset = sp.parse_partition_path(path)")
     
     # Example workflow
     original_sid = 3445253714938429444
@@ -200,15 +200,15 @@ def demonstrate_usage():
     print(f"   Dataset: '{dataset}'")
     
     # Generate path
-    path = sp.generate_zarr_path(original_sid, dataset)
+    path = sp.generate_partition_path(original_sid, dataset)
     print(f"   Generated path: {path}")
     
     # Use path for storage
-    print(f"   Storage location: /data/zarr/{path}")
-    print(f"   S3 location: s3://my-bucket/zarr/{path}")
+    print(f"   Storage location: /data/parquet/{path}")
+    print(f"   S3 location: s3://my-bucket/parquet/{path}")
     
     # Later, parse path back
-    reconstructed_sid, reconstructed_dataset = sp.parse_zarr_path(path)
+    reconstructed_sid, reconstructed_dataset = sp.parse_partition_path(path)
     print(f"   Parsed SID: {reconstructed_sid}")
     print(f"   Parsed dataset: '{reconstructed_dataset}'")
     
@@ -225,7 +225,7 @@ def demonstrate_usage():
 
 def main():
     """Run all tests and demonstrations."""
-    print("STARE Zarr Path Convenience Functions Tests")
+    print("STARE Partition Path Convenience Functions Tests")
     print("=" * 60)
     
     # Run tests
@@ -264,8 +264,8 @@ def main():
     print(f"\nOverall Result: {'✓ ALL TESTS PASSED' if all_passed else '✗ SOME TESTS FAILED'}")
     
     print("\nConvenience Functions Available:")
-    print("- starepandas.generate_zarr_path(sid, dataset_name)")
-    print("- starepandas.parse_zarr_path(zarr_path)")
+    print("- starepandas.generate_partition_path(sid, dataset_name)")
+    print("- starepandas.parse_partition_path(partition_path)")
     print("\nThese provide the same functionality as the class methods but with")
     print("a more convenient module-level interface.")
 
