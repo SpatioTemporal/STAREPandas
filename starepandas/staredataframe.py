@@ -32,6 +32,12 @@ from starepandas.metadata import PartitionRow, RDSMetadataStore
 _AWS_S3_STORAGE_OPTIONS = {}
 _AWS_RDS_OPTIONS = {}
 
+# Task 12: default S3 prefix for ingest pipelines. Loaded from
+# .config's optional ``default_s3_prefix=...`` line. Empty string means
+# "not configured" — callers that omit s3_path will then have to fail
+# loudly rather than silently writing to an unexpected location.
+_DEFAULT_S3_PREFIX = ""
+
 # Maximum STARE level used for spatial partitioning when writing to S3.
 # Each level multiplies partition count by 4. Level 4 caps at ~256 partitions
 # per granule (vs ~4096 at level 6), keeping each Parquet partition file in
@@ -191,6 +197,12 @@ def _load_config_from_default_locations() -> bool:
                             region_name=kv.get('region_name') or kv.get('region'),
                             rds=rds_block
                         )
+                        # Task 12: optional default_s3_prefix lets ingest callers
+                        # omit s3_path and inherit the project's storage root.
+                        dp = kv.get('default_s3_prefix')
+                        if dp:
+                            global _DEFAULT_S3_PREFIX
+                            _DEFAULT_S3_PREFIX = dp.rstrip('/')
                 except Exception:
                     # Fallback to JSON loader if parsing failed unexpectedly
                     load_aws_configure(cfg)
@@ -1689,14 +1701,21 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
     def to_s3(self, s3_path, level, chunk_size=250000, storage_options=None,
                    dataset=None, data_level=None, raw_collected_time=None, metadata=None,
-                   conn=None):
+                   conn=None, granule_name=None):
         """
         Partition STAREDataFrame by SIDs at specified level and write to S3 as
         one Parquet file per partition.
 
-        Layout: s3_path/<hierarchical_path>.parquet, where ``hierarchical_path``
-        is produced by :meth:`generate_partition_path` (e.g.
-        ``s3_path/Q00_5/Q01_3/Q02_2/Q03_1/dataset_name.parquet``).
+        Layout (mirrors ``to_local`` — task 12 alignment, 2026-05-25):
+
+        * Without ``granule_name``::
+
+              s3_path/Q00_X/Q01_Y/.../QN_M/<dataset>.parquet
+
+        * With ``granule_name`` (recommended for ingest pipelines so multiple
+          granules covering the same trixel coexist as sibling files)::
+
+              s3_path/Q00_X/Q01_Y/.../QN_M/<granule_name>/<dataset>.parquet
 
         Each Parquet file contains all DataFrame columns for that partition
         plus a ``__row_positions__`` column that preserves original row order
@@ -1726,12 +1745,19 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         conn : psycopg2 connection, optional
             Existing database connection to reuse. If None, a new connection is created
             and closed at the end. If provided, the caller is responsible for closing it.
+        granule_name : str, optional
+            When set, splice this segment between the HTM partition path and the
+            dataset leaf so multiple granules covering the same partition coexist
+            as sibling Parquet files. Mirrors the layout produced by
+            :meth:`to_local`. Must not contain ``/``.
 
         Returns
         -------
         str
             The S3 path where data was written
         """
+        if granule_name is not None and '/' in granule_name:
+            raise ValueError(f"granule_name must not contain '/': {granule_name!r}")
         # Resolve storage options: use per-call options over configured defaults
         merged_opts = dict(_AWS_S3_STORAGE_OPTIONS)
         if not merged_opts:
@@ -1810,9 +1836,18 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             if written_count % 50 == 0:
                 print(f"  Progress: {written_count}/{num_groups} partitions written...")
 
-            # Generate hierarchical path for this partition; append .parquet suffix
-            hierarchical_path = self.generate_partition_path(group_id, dataset or "data")
-            group_path = f"{s3_path}/{hierarchical_path}.parquet"
+            # Build path: <s3_path>/Q00_X/.../QN_M/[<granule_name>/]<dataset>.parquet
+            # Mirrors to_local's splice logic (staredataframe.py:1973-1983) so
+            # multiple granules in the same partition coexist as siblings.
+            htm_path = self.generate_partition_path(group_id, dataset_name="")
+            htm_segments = [seg for seg in htm_path.split('/') if seg]
+            dataset_segment = f"{dataset or 'data'}.parquet"
+            if granule_name is not None:
+                path_segments = [*htm_segments, granule_name, dataset_segment]
+            else:
+                # Backward-compat path: no granule sub-dir.
+                path_segments = [*htm_segments, dataset_segment]
+            group_path = f"{s3_path}/{'/'.join(path_segments)}"
 
             # Build a Table containing every column plus __row_positions__ to
             # preserve original row order. Match the legacy coercion:

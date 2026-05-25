@@ -274,7 +274,7 @@ def read_granule(file_path,
     return df
 
 
-def to_s3(file_path, s3_path, level, chunk_size=250000, storage_options=None,
+def to_s3(file_path, s3_path=None, level=10, chunk_size=250000, storage_options=None,
                dataset=None, data_level=None, raw_collected_time=None, metadata=None,
                sidecar_path=None, add_sids=True, adapt_resolution=True, read_timestamp=False,
                keep_na_sids=False, nom_res=None, scan=None, **kwargs):
@@ -366,6 +366,27 @@ def to_s3(file_path, s3_path, level, chunk_size=250000, storage_options=None,
         from starepandas.io.granules._timestamps import derive_timestamp_from_path
         raw_collected_time = derive_timestamp_from_path(file_path)
 
+    # Task 12: derive granule basename to splice into the partition path so
+    # the S3 layout matches to_local — HTM tree → granule → dataset leaf.
+    granule_basename = os.path.splitext(os.path.basename(file_path))[0]
+
+    # Task 12: fall back to .config's default_s3_prefix when caller didn't
+    # provide one. Loader populates _DEFAULT_S3_PREFIX during config load.
+    if s3_path is None:
+        from starepandas.staredataframe import (
+            _DEFAULT_S3_PREFIX, _load_config_from_default_locations,
+        )
+        if not _DEFAULT_S3_PREFIX:
+            _load_config_from_default_locations()
+        from starepandas.staredataframe import _DEFAULT_S3_PREFIX as _resolved
+        if not _resolved:
+            raise ValueError(
+                "s3_path not provided and no default_s3_prefix is set in "
+                ".config. Either pass s3_path explicitly or add a line "
+                "'default_s3_prefix=s3://your-bucket/storage' to .config."
+            )
+        s3_path = _resolved
+
     # Read the granule
     result = read_granule(
         file_path=file_path,
@@ -406,7 +427,8 @@ def to_s3(file_path, s3_path, level, chunk_size=250000, storage_options=None,
                     data_level=data_level,
                     raw_collected_time=raw_collected_time,
                     metadata=single_meta,
-                    conn=conn
+                    conn=conn,
+                    granule_name=granule_basename,
                 )
             else:
                 # Process all scans
@@ -429,7 +451,8 @@ def to_s3(file_path, s3_path, level, chunk_size=250000, storage_options=None,
                         data_level=data_level,
                         raw_collected_time=raw_collected_time,
                         metadata=scan_metadata,
-                        conn=conn
+                        conn=conn,
+                        granule_name=granule_basename,
                     )
                     s3_paths.append(scan_result)
                 return s3_paths
@@ -444,7 +467,8 @@ def to_s3(file_path, s3_path, level, chunk_size=250000, storage_options=None,
                  data_level=data_level,
                  raw_collected_time=raw_collected_time,
                  metadata=metadata,
-                 conn=conn
+                 conn=conn,
+                 granule_name=granule_basename,
              )
     finally:
         try:

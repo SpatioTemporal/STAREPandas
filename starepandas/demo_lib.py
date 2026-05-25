@@ -116,7 +116,8 @@ class StarePodsDemo:
         )
         return {'rds_rows_deleted': rds_deleted, 's3_objects_deleted': s3_deleted}
 
-    def ingest_granules(self, data_path: str, instrument: str, s3_prefix: str,
+    def ingest_granules(self, data_path: str, instrument: str,
+                     s3_prefix: Optional[str] = None,
                      scan: Optional[str] = None, level: int = 10,
                      clean_before_run: bool = False, **kwargs) -> List[str]:
         """
@@ -128,15 +129,17 @@ class StarePodsDemo:
             Path to granule files (supports glob patterns)
         instrument : str
             Instrument name (GMI, AMSR2, SSMIS, ATMS)
-        s3_prefix : str
-            S3 prefix for storage (e.g., "s3://zarrpods/instrument-data")
+        s3_prefix : str, optional
+            S3 prefix for storage (e.g., ``"s3://zarrpods/storage"``). When
+            omitted, ``io.granules.to_s3`` falls back to the
+            ``default_s3_prefix`` from the loaded ``.config`` (task 12).
         scan : str, optional
             Specific scan to process (e.g., "S1", "S2")
         clean_before_run : bool, optional
             If True, call :meth:`clean_s3_prefix` on ``s3_prefix`` before
             ingesting. Mirrors the local pipeline's ``CLEAN_BEFORE_RUN``
             flag — prevents duplicate RDS metadata rows when re-running.
-            Default False.
+            Default False. Requires ``s3_prefix`` to be set.
         **kwargs
             Additional arguments for to_s3()
 
@@ -146,15 +149,20 @@ class StarePodsDemo:
             List of S3 paths where data was stored
         """
         if clean_before_run:
+            if s3_prefix is None:
+                raise ValueError(
+                    "clean_before_run=True requires s3_prefix to be set explicitly "
+                    "(refusing to wipe the entire default_s3_prefix)."
+                )
             logger.info(f"clean_before_run=True → wiping {s3_prefix} on S3 + RDS first")
             self.clean_s3_prefix(s3_prefix)
 
         logger.info(f"Ingesting {instrument} granules from {data_path}")
-        
+
         # Find granule files
         import glob
         import os
-        
+
         if os.path.isdir(data_path):
             pattern = f"{data_path}/**/*.HDF5"
             granule_files = glob.glob(pattern, recursive=True)
@@ -162,27 +170,25 @@ class StarePodsDemo:
             granule_files = glob.glob(data_path)
         else:
             granule_files = [data_path] if os.path.exists(data_path) else []
-        
+
         if not granule_files:
             logger.warning(f"No granule files found in {data_path}")
             return []
-        
+
         logger.info(f"Found {len(granule_files)} {instrument} files")
-        
-        # Process each granule
+
+        # Process each granule. NOTE: as of task 12, the granule basename is
+        # spliced into each HTM partition by io.granules.to_s3, not appended
+        # to s3_prefix here. Final layout (matching to_local):
+        #   <s3_prefix>/Q00_X/.../QN_M/<granule_basename>/<dataset>.parquet
         s3_paths = []
         for granule_file in granule_files:
             try:
                 logger.info(f"Processing {os.path.basename(granule_file)}")
-                
-                # Generate S3 path
-                base_name = os.path.splitext(os.path.basename(granule_file))[0]
-                s3_path = f"{s3_prefix}/{base_name}"
-                
                 kwargs.setdefault('read_timestamp', True)
                 s3_result = starepandas.io.granules.to_s3(
                     file_path=granule_file,
-                    s3_path=s3_path,
+                    s3_path=s3_prefix,   # None → default_s3_prefix from .config
                     level=level,
                     dataset=instrument,
                     scan=scan,
