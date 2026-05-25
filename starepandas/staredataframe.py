@@ -1771,7 +1771,20 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         if conn is None:
             conn = _ensure_rds_db_and_table('StarePodsMetadata')
         bucket_name = _parse_s3_bucket(s3_path)
-        ts = raw_collected_time if raw_collected_time is not None else datetime.datetime.utcnow()
+        # §C10 #2 fix: refuse the silent utcnow() default. Per-granule
+        # callers (io.granules.to_s3) derive the timestamp from the
+        # filename. Direct STAREDataFrame.to_s3 callers must pass an
+        # explicit timestamp — without one, retries produce divergent
+        # rows that the §C10 #1 UNIQUE constraint cannot dedup.
+        if raw_collected_time is None:
+            raise ValueError(
+                "raw_collected_time is required for STAREDataFrame.to_s3. "
+                "For granule ingest, use starepandas.io.granules.to_s3 which "
+                "derives a per-granule timestamp from the filename. For "
+                "custom DataFrames, pass an explicit datetime — defaulting "
+                "to utcnow() would break idempotency under retries (§C10 #2)."
+            )
+        ts = raw_collected_time
         base_meta = dict(metadata or {})
 
         # Collect metadata rows for batch insert at the end

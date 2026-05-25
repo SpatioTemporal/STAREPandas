@@ -24,10 +24,36 @@ from __future__ import annotations
 
 import datetime
 import json
+import logging
 from dataclasses import dataclass
 from typing import Any, Iterable, Optional, Protocol, runtime_checkable
 
 import pandas as pd
+from tenacity import (
+    before_sleep_log,
+    retry,
+    retry_if_exception,
+    stop_after_attempt,
+    wait_exponential,
+)
+
+logger = logging.getLogger(__name__)
+
+
+def _is_transient_db_error(exc: BaseException) -> bool:
+    """True if ``exc`` is a transient psycopg2 error worth retrying.
+
+    Retried: ``OperationalError`` (connection lost, deadlock, lock
+    timeout, server too busy) and ``InterfaceError`` (connection closed).
+    Not retried: ``IntegrityError`` (UNIQUE/FK violation — deterministic),
+    ``ProgrammingError`` (SQL syntax), ``DataError`` (bad data) — all
+    fall through to the row-by-row fallback unchanged.
+    """
+    try:
+        import psycopg2
+    except ImportError:
+        return False
+    return isinstance(exc, (psycopg2.OperationalError, psycopg2.InterfaceError))
 
 
 @dataclass(frozen=True)
@@ -107,6 +133,11 @@ _INSERT_ONE_SQL = (
 class RDSMetadataStore:
     """PostgreSQL/RDS implementation backing ``PodsMetadata``."""
 
+    #: Class-level counter of batch-insert failures that fell through to
+    #: row-by-row. Surfaces as a local CloudWatch-friendly metric line in
+    #: the worker log; CloudWatch wiring lands in C-3.
+    rds_write_failures: int = 0
+
     def __init__(self, conn=None, db_name: str = "StarePodsMetadata"):
         """If ``conn`` is given, the caller owns its lifecycle. Otherwise
         the store opens one lazily and closes it in :meth:`close`."""
@@ -133,6 +164,32 @@ class RDSMetadataStore:
         if not tuples:
             return 0
 
+        try:
+            return self._batch_insert_with_retry(tuples)
+        except Exception as exc:
+            # Either retries exhausted on a transient error, or a non-transient
+            # error happened (IntegrityError, ProgrammingError, etc.) and was
+            # not retried. Either way: fall back to row-by-row.
+            type(self).rds_write_failures += 1
+            logger.warning(
+                "RDSWriteFailures count=%d error=%s "
+                "— falling back to row-by-row insert",
+                type(self).rds_write_failures, exc,
+            )
+            return self._write_one_by_one(tuples)
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=4),
+        retry=retry_if_exception(_is_transient_db_error),
+        before_sleep=before_sleep_log(logger, logging.WARNING),
+        reraise=True,
+    )
+    def _batch_insert_with_retry(self, tuples: list) -> int:
+        """Batch INSERT with 3-attempt exponential backoff on transient
+        psycopg2 errors. Non-transient errors bubble up immediately so the
+        outer write_partitions can fall back to row-by-row.
+        """
         conn = self._get_conn()
         try:
             from psycopg2.extras import execute_values
@@ -140,13 +197,12 @@ class RDSMetadataStore:
                 execute_values(cur, _INSERT_SQL, tuples)
             conn.commit()
             return len(tuples)
-        except Exception as e:
-            print(f"Warning: Batch insert failed ({e}), falling back to row-by-row insert...")
+        except Exception:
             try:
                 conn.rollback()
             except Exception:
                 pass
-            return self._write_one_by_one(tuples)
+            raise
 
     def _write_one_by_one(self, tuples: list[tuple]) -> int:
         """Fallback for batch failure — preserves current behaviour."""

@@ -358,6 +358,14 @@ def to_s3(file_path, s3_path, level, chunk_size=250000, storage_options=None,
     ...     data_level="L1C"
     ... )
     """
+    # §C10 #2 fix: derive a deterministic per-granule timestamp from the
+    # filename when the caller didn't supply one. Required so retries
+    # (SQS visibility-timeout redelivery) produce the same row identity
+    # and the §C10 #1 UNIQUE constraint can actually dedup.
+    if raw_collected_time is None:
+        from starepandas.io.granules._timestamps import derive_timestamp_from_path
+        raw_collected_time = derive_timestamp_from_path(file_path)
+
     # Read the granule
     result = read_granule(
         file_path=file_path,
@@ -369,7 +377,7 @@ def to_s3(file_path, s3_path, level, chunk_size=250000, storage_options=None,
         nom_res=nom_res,
         **kwargs
     )
-    
+
     # Share a single DB connection across all scans to avoid repeated connection setup
     from starepandas.staredataframe import _ensure_rds_db_and_table
     conn = _ensure_rds_db_and_table('StarePodsMetadata')

@@ -6,6 +6,7 @@ This script tests the actual scenario that was failing - creating Parquet partit
 in hierarchical directory structures on S3.
 """
 
+import datetime
 import os
 import sys
 import pandas as pd
@@ -106,7 +107,10 @@ def test_hierarchical_storage():
             s3_path=s3_path,
             level=level,
             dataset=dataset,
-            chunk_size=1000
+            chunk_size=1000,
+            # §C10 #2: direct STAREDataFrame.to_s3 callers must supply a
+            # timestamp explicitly (no silent utcnow default).
+            raw_collected_time=datetime.datetime(2024, 1, 1),
         )
         
         print(f"✅ SUCCESS! to_s3 completed without FileNotFoundError")
