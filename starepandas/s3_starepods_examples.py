@@ -83,9 +83,17 @@ def main():
 
     demo = StarePodsDemo(aws_config_path=CONFIG_PATH)
 
-    # Granule-specific S3 prefix so reconstitution can scope to just this granule.
+    # Granule basename — used as a substring filter on group_path. Note:
+    # as of task 12 (2026-05-25) the S3 layout puts <granule_basename>
+    # INSIDE the HTM tree, not at the top:
+    #
+    #   <S3_PREFIX>/Q00_X/Q01_Y/.../QN_M/<granule_basename>/<dataset>.parquet
+    #
+    # So the old "granule_s3_prefix = S3_PREFIX + '/' + basename" scoping
+    # would no longer match any rows. We now scope by substring match on
+    # the basename (which is unique within the bucket).
     granule_basename = os.path.splitext(os.path.basename(GRANULE_FILE))[0]
-    granule_s3_prefix = f"{S3_PREFIX}/{granule_basename}"
+    granule_path_marker = f"/{granule_basename}/"   # matches the HTM-buried segment
 
     # ── Step 1: Ingest ────────────────────────────────────────────────────────
     print("=" * 60)
@@ -119,11 +127,12 @@ def main():
     intersecting = demo.find_intersecting_data(location_sids, instruments=["GMI"]) \
         if location_sids else None
     if intersecting is not None:
-        # Scope to our s3_prefix so duplicate prior runs (e.g. legacy data
-        # under another prefix) don't pollute the result.
+        # Scope to our granule so other ingests' data doesn't pollute the
+        # result. Substring match handles the task-12 layout where the
+        # granule basename sits inside the HTM tree (not at the top).
         if not intersecting.empty and "group_path" in intersecting.columns:
             intersecting = intersecting[
-                intersecting["group_path"].str.startswith(granule_s3_prefix)
+                intersecting["group_path"].str.contains(granule_path_marker, regex=False)
             ]
         print(f"Find wall: {time.perf_counter() - t0:.2f} s")
         print(f"Found {len(intersecting)} intersecting metadata row(s).")
@@ -151,11 +160,14 @@ def main():
     print("Step 4: Reconstitute HDF5 (S1 + S2)")
     print("=" * 60)
     t0 = time.perf_counter()
+    # s3_prefix scope: with CLEAN_BEFORE_RUN=True the bucket only holds this
+    # granule's data, so passing the broad S3_PREFIX is correct and avoids
+    # the task-12 layout mismatch the old granule_s3_prefix would create.
     recon_path = demo.reconstitute_hdf5(
         dataset=DATASETS,
         output_hdf5_path=OUTPUT_HDF5,
         bbox=BBOX,
-        s3_prefix=granule_s3_prefix,
+        s3_prefix=S3_PREFIX,
     )
     print(f"Reconstitute wall: {time.perf_counter() - t0:.2f} s")
     print(f"Written to: {recon_path}")
@@ -177,15 +189,17 @@ def main():
     conn = _ensure_rds_db_and_table("StarePodsMetadata")
     try:
         with conn.cursor() as cur:
+            # Task-12 layout: the basename sits inside the HTM tree, so
+            # use a LIKE substring match instead of a startswith prefix.
             cur.execute(
                 'SELECT "Dataset", COUNT(*) '
                 'FROM "PodsMetadata" '
                 'WHERE "MetadataJson"->>%s LIKE %s '
                 'GROUP BY "Dataset" ORDER BY "Dataset"',
-                ("group_path", f"{granule_s3_prefix}/%"),
+                ("group_path", f"%{granule_path_marker}%"),
             )
             rows = cur.fetchall()
-        print(f"RDS prefix: {granule_s3_prefix}")
+        print(f"RDS scope: group_path contains '{granule_path_marker}'")
         for ds, cnt in rows:
             print(f"  {ds}: {cnt} partition(s)")
     finally:

@@ -20,25 +20,56 @@ This file captures Claude's understanding of the STAREPandas and pystare codebas
 
 ```
 starepandas/
-├── __init__.py              # Main package imports
-├── staredataframe.py         # Core STAREDataFrame class
-├── demo.py                  # High-level STARE-PODS demonstration API
+├── __init__.py              # Main package imports + Path-C top-level re-exports
+├── staredataframe.py         # Core STAREDataFrame class + to_s3 / to_local
+├── demo_lib.py              # Demo classes (StarePodsDemo, LocalStarePodsDemo)
+│                            # → thin shims over starepandas/ingest.py
+├── ingest.py                # Path C C-1 — module-level ingest functions
+│                            # (ingest_granules_s3, ingest_granules_local,
+│                            #  clean_s3_prefix). Imports the cloud worker
+│                            # uses directly without the demo classes.
+├── metadata.py              # Path C C-1 — MetadataStore protocol +
+│                            # RDSMetadataStore adapter (§C9 M4 hedge).
+│                            # Single point that all PodsMetadata I/O
+│                            # flows through; future DynamoDB swap is local
+│                            # to one adapter implementation.
+├── cloud/                   # Path C cloud-service package (C-2 onward)
+│   ├── __init__.py
+│   ├── ticket_sizing.py    # §C2 pure functions (split_into_tickets)
+│   └── config.py           # placeholder for cloud client config (C-6)
 ├── io/
 │   ├── granules/
-│   │   ├── __init__.py      # Granule factory and readers
+│   │   ├── __init__.py     # Granule factory, to_s3, to_local, reconstitute
+│   │   ├── _timestamps.py  # NEW (§C10 #2) — derive raw_collected_time
+│   │   │                   # from filename (GMI/SSMIS/ATMS/AMSR2/MODIS)
 │   │   ├── gmi.py          # GMI instrument reader
-│   │   ├── amsr2.py        # AMSR2 instrument reader  
-│   │   ├── ssmis.py         # SSMIS instrument reader
-│   │   ├── atms.py          # ATMS instrument reader (updated for 2025 format)
-│   │   └── utils.py         # Granule utilities
-│   └── s3.py                # S3 Parquet storage functions
+│   │   ├── amsr2.py        # AMSR2 instrument reader
+│   │   ├── ssmis.py        # SSMIS instrument reader
+│   │   ├── atms.py         # ATMS instrument reader (updated for 2025 format)
+│   │   └── utils.py        # Granule utilities
+│   └── s3.py               # S3 Parquet storage functions
 ├── tools/
 │   ├── __init__.py
-│   ├── stare_join.py           # STARE-based spatial joins
-│   ├── intersections.py        # STARE intersection operations
-│   └── ...                    # Other spatial tools
-├── tests/                     # pytest test suite
-└── examples/                   # Example notebooks and scripts
+│   ├── stare_join.py       # STARE-based spatial joins
+│   ├── intersections.py    # STARE intersection operations
+│   └── ...                 # Other spatial tools
+├── tests/                  # pytest test suite (+test_metadata_store,
+│                           #  test_cloud_ticket_sizing, test_s3_layout,
+│                           #  test_granule_timestamps, test_ingest_module)
+└── examples/               # Example notebooks and scripts
+```
+
+### Unified Parquet layout (post task-12, 2026-05-25)
+
+Both `to_local` and `to_s3` now produce the same layout — HTM tree first,
+then granule basename, then dataset leaf. Spatial queries walk **one** tree
+regardless of provenance; multiple granules in the same trixel coexist as
+sibling subdirectories.
+
+```
+LOCAL: <root>/Q00_X/Q01_Y/.../QN_M/<granule_basename>/<dataset>.parquet
+S3:    s3://zarrpods/storage/Q00_X/Q01_Y/.../QN_M/<granule_basename>/<dataset>.parquet
+                            └─ default_s3_prefix (new .config field) ─┘
 ```
 
 ### Key Components
@@ -58,15 +89,30 @@ starepandas/
   - **SSMIS**: Special Sensor Microwave Imager/Sounder (24 channels)
   - **ATMS**: Advanced Technology Microwave Sounder (updated 2025 format)
 
-#### STARE-PODS Demo (`demo.py`)
-- **High-level API**: Complete workflow demonstration
+#### STARE-PODS Demo (`demo_lib.py`)
+- **High-level API**: Complete workflow demonstration. As of task 7
+  (2026-05-25) the ingest + clean methods are thin shims over the
+  module-level callables in `starepandas/ingest.py` — keeps existing
+  notebooks working while letting the cloud worker (C-2) import the
+  functions directly.
 - **Key Methods**:
   - `get_sids_for_bbox()`: Convert bounding box to STARE SIDs
-  - `ingest_granules()`: Partition granules into S3 Parquet partitions
+  - `ingest_granules()` (shim → `starepandas.ingest.ingest_granules_s3`)
+  - `clean_s3_prefix()` (shim → `starepandas.ingest.clean_s3_prefix`)
   - `find_intersecting_data()`: Find intersecting data across instruments
   - `download_and_analyze()`: Selective chunk download and analysis
+  - `reconstitute_hdf5()`: Build HDF5 from intersecting partitions
   - `plot_comparison()`: Multi-instrument visualization
-  - `run_full_demo()`: End-to-end workflow
+
+#### Top-level convenience imports (`starepandas/__init__.py`)
+The cloud worker (and any script that doesn't need the demo classes)
+imports these directly:
+```python
+import starepandas
+starepandas.ingest_granules_s3(...)     # → ingest.ingest_granules_s3
+starepandas.ingest_granules_local(...)  # → ingest.ingest_granules_local
+starepandas.clean_s3_prefix(...)        # → ingest.clean_s3_prefix
+```
 
 ---
 
@@ -213,27 +259,37 @@ Re-run the relevant verification skill to confirm nothing is broken. If you adde
 All skills run exclusively inside the `starepandas_3.12_v3` conda environment.
 
 ### Verification scripts (permanent, do not rewrite)
-- `~/.claude/scripts/starepandas_verify.py` — basic verification (8 checks)
-- `~/.claude/scripts/starepods_verify.py` — STARE-PODS pipeline verification (11 checks)
+- `~/.claude/scripts/starepandas_verify.py` — basic verification (6 checks)
+- `~/.claude/scripts/starepods_verify.py` — STARE-PODS pipeline verification (10 checks)
 
 ### When to update the verification scripts
 - New public function added → add a callable check and a functional test
 - Function signature changed → update the corresponding test
 - New S3/RDS behavior → add or update the pipeline test
 - Bug fixed → add a regression test asserting the fix
+- New pytest file under `tests/` → add it to the unit-test check's `test_files` list
 
-### Verified checks (as of last run: all 11/11 PASS)
+### Verified checks (basic, 6/6 PASS as of 2026-05-25)
+1. `import starepandas` (core package loads + headline symbols present)
+2. `import pystare` (dependency, with `from_latlon` / `to_latlon`)
+3. `STAREDataFrame` instantiable + `set_sids` + `make_trixels`
+4. `sids_from_xy` → `to_latlon` round-trips within tolerance
+5. `stare_join` on synthetic STAREDataFrames returns matches
+6. Task-7 ingest module + task-1 cloud package reachable at top level
+
+### Verified checks (STARE-PODS, 10/10 PASS as of 2026-05-25)
 1. `import starepandas`
-2. AWS config loaded from `starepandas/.config`
-3. S3 connectivity (`s3://zarrpods`)
-4. RDS connectivity + `PodsMetadata` table
-5. `generate_partition_path` produces correct hierarchical path
-6. `parse_partition_path` round-trips correctly
-7. `StarePodsDemo.get_sids_for_bbox` (California bbox, level 7)
-8. `STAREDataFrame.to_s3` writes to `s3://zarrpods/testing-s3`
-9. `load_s3_metadata` confirms RDS entry after write
-10. `from_s3` reads back each group via `group_path`
-11. `StarePodsDemo.find_intersecting_data` runs end-to-end
+2. `MAX_PARTITION_LEVEL == 4` (locks in the post-ba3028d level-4 partitioning)
+3. `to_local` writes Parquet leaves (no zarr artifacts)
+4. Parquet partition carries every column + `__row_positions__` + kv-metadata
+5. `reconstitute_hdf5_from_local` round-trips through Parquet
+6. `reconstitute_hdf5_from_s3` (local path) walks HTM tree
+7. `local_starepods_examples.py` end-to-end against the real GMI granule
+8. `pods_unique` UNIQUE constraint exists on `PodsMetadata` (§C10 #1 gate)
+9. `PodsMetadata` insert is idempotent (§C10 #1 live regression —
+   double-insert keeps row count stable, DO UPDATE refreshes MetadataJson)
+10. C-1 unit tests pass (cloud.ticket_sizing + metadata + granule_timestamps
+    + s3_layout + ingest_module — currently 56 unit tests)
 
 ---
 
@@ -285,5 +341,7 @@ pip install -e .
 
 ---
 
-*Last Updated: 2026-03-07*
+*Last Updated: 2026-05-25 (Path C C-1 phase complete — see
+`stare_pods_aws_parallel_plan.html` §C and `docs/path_c_implementation.md`
+for the cloud-service design.)*
 *Generated by Claude for STAREPandas/pystare development*
