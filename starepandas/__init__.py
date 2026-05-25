@@ -15,6 +15,15 @@ import starepandas.io.granules
 
 from .staredataframe import STAREDataFrame
 
+# Task 7: ingest functions live in their own module so the cloud worker
+# (Path C, C-2) can import them without pulling in the demo classes.
+import starepandas.ingest
+from starepandas.ingest import (
+    ingest_granules_local,
+    ingest_granules_s3,
+    clean_s3_prefix,
+)
+
 from ._version import get_versions
 
 __version__ = get_versions()["version"]

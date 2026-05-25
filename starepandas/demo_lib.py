@@ -50,164 +50,35 @@ class StarePodsDemo:
         starepandas.staredataframe._load_config_from_default_locations()
         
     def clean_s3_prefix(self, s3_prefix: str) -> Dict[str, int]:
+        """Thin shim — delegates to :func:`starepandas.ingest.clean_s3_prefix`.
+
+        See that function for full docs. Preserved here so existing
+        notebooks calling ``StarePodsDemo().clean_s3_prefix(...)`` keep
+        working post-task-7 extraction.
         """
-        Remove every S3 object under ``s3_prefix`` and every RDS
-        ``PodsMetadata`` row whose ``MetadataJson.group_path`` starts with it.
-
-        Mirrors the local pipeline's ``CLEAN_BEFORE_RUN`` behaviour for the
-        S3+RDS path, so re-ingesting the same granule does not accumulate
-        duplicate metadata rows.
-
-        Parameters
-        ----------
-        s3_prefix : str
-            S3 URI prefix to clean (e.g. ``"s3://zarrpods/gmi-demo-parquet"``).
-            Matched as a string prefix against ``group_path`` values, so
-            granule subkeys under it are also removed.
-
-        Returns
-        -------
-        dict
-            ``{'rds_rows_deleted': int, 's3_objects_deleted': int}``
-        """
-        import s3fs
-        from starepandas.staredataframe import (
-            _AWS_S3_STORAGE_OPTIONS, _ensure_rds_db_and_table,
-            _load_config_from_default_locations,
-        )
-
-        merged_opts = dict(_AWS_S3_STORAGE_OPTIONS)
-        if not merged_opts:
-            _load_config_from_default_locations()
-            merged_opts = dict(starepandas.staredataframe._AWS_S3_STORAGE_OPTIONS)
-
-        normalized_prefix = s3_prefix.rstrip('/')
-
-        # 1) RDS cleanup — delete metadata rows whose group_path is under
-        #    the prefix. Routed through MetadataStore so the SQL stays in
-        #    one place (§C9 M4 hedge).
-        from starepandas.metadata import RDSMetadataStore
-        store = RDSMetadataStore()
-        try:
-            rds_deleted = store.delete_by_prefix(normalized_prefix)
-        finally:
-            store.close()
-
-        # 2) S3 cleanup — recursively remove objects under the prefix.
-        s3_deleted = 0
-        try:
-            fs = s3fs.S3FileSystem(**merged_opts) if merged_opts else s3fs.S3FileSystem()
-            bare = normalized_prefix[len('s3://'):] if normalized_prefix.startswith('s3://') else normalized_prefix
-            if fs.exists(bare):
-                # Count first so we can report a number; rm(recursive=True) is the cleanup.
-                try:
-                    s3_deleted = sum(1 for _ in fs.find(bare))
-                except Exception:
-                    s3_deleted = -1
-                fs.rm(bare, recursive=True)
-        except FileNotFoundError:
-            pass
-        except Exception as e:
-            logger.warning(f"S3 cleanup of {s3_prefix} encountered: {e}")
-
-        logger.info(
-            f"clean_s3_prefix({s3_prefix}): "
-            f"deleted {rds_deleted} RDS row(s), {s3_deleted} S3 object(s)"
-        )
-        return {'rds_rows_deleted': rds_deleted, 's3_objects_deleted': s3_deleted}
+        from starepandas.ingest import clean_s3_prefix as _clean
+        return _clean(s3_prefix)
 
     def ingest_granules(self, data_path: str, instrument: str,
                      s3_prefix: Optional[str] = None,
                      scan: Optional[str] = None, level: int = 10,
                      clean_before_run: bool = False, **kwargs) -> List[str]:
+        """Thin shim — delegates to :func:`starepandas.ingest.ingest_granules_s3`.
+
+        Preserved so existing notebooks calling
+        ``StarePodsDemo().ingest_granules(...)`` keep working unchanged
+        after the task-7 extraction.
         """
-        Partition granules into Parquet files and store in S3.
-
-        Parameters
-        ----------
-        data_path : str
-            Path to granule files (supports glob patterns)
-        instrument : str
-            Instrument name (GMI, AMSR2, SSMIS, ATMS)
-        s3_prefix : str, optional
-            S3 prefix for storage (e.g., ``"s3://zarrpods/storage"``). When
-            omitted, ``io.granules.to_s3`` falls back to the
-            ``default_s3_prefix`` from the loaded ``.config`` (task 12).
-        scan : str, optional
-            Specific scan to process (e.g., "S1", "S2")
-        clean_before_run : bool, optional
-            If True, call :meth:`clean_s3_prefix` on ``s3_prefix`` before
-            ingesting. Mirrors the local pipeline's ``CLEAN_BEFORE_RUN``
-            flag — prevents duplicate RDS metadata rows when re-running.
-            Default False. Requires ``s3_prefix`` to be set.
-        **kwargs
-            Additional arguments for to_s3()
-
-        Returns
-        -------
-        List[str]
-            List of S3 paths where data was stored
-        """
-        if clean_before_run:
-            if s3_prefix is None:
-                raise ValueError(
-                    "clean_before_run=True requires s3_prefix to be set explicitly "
-                    "(refusing to wipe the entire default_s3_prefix)."
-                )
-            logger.info(f"clean_before_run=True → wiping {s3_prefix} on S3 + RDS first")
-            self.clean_s3_prefix(s3_prefix)
-
-        logger.info(f"Ingesting {instrument} granules from {data_path}")
-
-        # Find granule files
-        import glob
-        import os
-
-        if os.path.isdir(data_path):
-            pattern = f"{data_path}/**/*.HDF5"
-            granule_files = glob.glob(pattern, recursive=True)
-        elif '*' in data_path or '?' in data_path:
-            granule_files = glob.glob(data_path)
-        else:
-            granule_files = [data_path] if os.path.exists(data_path) else []
-
-        if not granule_files:
-            logger.warning(f"No granule files found in {data_path}")
-            return []
-
-        logger.info(f"Found {len(granule_files)} {instrument} files")
-
-        # Process each granule. NOTE: as of task 12, the granule basename is
-        # spliced into each HTM partition by io.granules.to_s3, not appended
-        # to s3_prefix here. Final layout (matching to_local):
-        #   <s3_prefix>/Q00_X/.../QN_M/<granule_basename>/<dataset>.parquet
-        s3_paths = []
-        for granule_file in granule_files:
-            try:
-                logger.info(f"Processing {os.path.basename(granule_file)}")
-                kwargs.setdefault('read_timestamp', True)
-                s3_result = starepandas.io.granules.to_s3(
-                    file_path=granule_file,
-                    s3_path=s3_prefix,   # None → default_s3_prefix from .config
-                    level=level,
-                    dataset=instrument,
-                    scan=scan,
-                    **kwargs
-                )
-                
-                if isinstance(s3_result, list):
-                    s3_paths.extend(s3_result)
-                else:
-                    s3_paths.append(s3_result)
-                    
-                logger.info(f"✓ Stored {os.path.basename(granule_file)} to {s3_result}")
-                
-            except Exception as e:
-                logger.error(f"✗ Failed to process {granule_file}: {e}")
-                continue
-        
-        logger.info(f"Ingested {len(s3_paths)} Parquet dataset(s)")
-        return s3_paths
+        from starepandas.ingest import ingest_granules_s3
+        return ingest_granules_s3(
+            data_path=data_path,
+            instrument=instrument,
+            s3_prefix=s3_prefix,
+            scan=scan,
+            level=level,
+            clean_before_run=clean_before_run,
+            **kwargs,
+        )
     
     def find_intersecting_data(self, location_sids: List[int], instruments: List[str],
                            time_range: Optional[Tuple[str, str]] = None,
@@ -716,73 +587,23 @@ class LocalStarePodsDemo:
         level: int = 10,
         **kwargs,
     ) -> List[str]:
+        """Thin shim — delegates to :func:`starepandas.ingest.ingest_granules_local`.
+
+        Forwards ``self.local_root`` and ``self.db_path`` so the function-
+        level callable knows where the SQLite catalog lives. Preserved so
+        existing notebooks calling ``LocalStarePodsDemo().ingest_granules(...)``
+        keep working unchanged after the task-7 extraction.
         """
-        Ingest granule files into local Parquet storage and record metadata.
-
-        Parameters
-        ----------
-        data_path : str
-            Path to a single granule file, a directory, or a glob pattern.
-        instrument : str
-            Instrument / dataset name (e.g. ``"GMI"``).
-        scan : str, optional
-            Specific scan to process (e.g. ``"S1"``); ``None`` processes all.
-        level : int, optional
-            STARE partitioning level (default 10).
-        **kwargs
-            Forwarded to :func:`~starepandas.io.granules.to_local`.
-
-        Returns
-        -------
-        list of str
-            Local paths written for each processed granule.
-        """
-        import glob
-
-        if os.path.isdir(data_path):
-            granule_files = glob.glob(f"{data_path}/**/*.HDF5", recursive=True)
-        elif '*' in data_path or '?' in data_path:
-            granule_files = glob.glob(data_path)
-        else:
-            granule_files = [data_path] if os.path.exists(data_path) else []
-
-        if not granule_files:
-            logger.warning(f"No granule files found in {data_path}")
-            return []
-
-        logger.info(f"Found {len(granule_files)} {instrument} file(s)")
-        local_paths = []
-
-        for granule_file in granule_files:
-            try:
-                logger.info(f"Processing {os.path.basename(granule_file)}")
-                base_name = os.path.splitext(os.path.basename(granule_file))[0]
-
-                kwargs.setdefault('read_timestamp', True)
-                result = starepandas.io.granules.to_local(
-                    file_path=granule_file,
-                    local_path=self.local_root,
-                    level=level,
-                    db_path=self.db_path,
-                    dataset=instrument,
-                    scan=scan,
-                    granule_name=base_name,
-                    **kwargs,
-                )
-
-                if isinstance(result, list):
-                    local_paths.extend(result)
-                else:
-                    local_paths.append(result)
-
-                logger.info(f"✓ Stored {os.path.basename(granule_file)} (granule={base_name}) → {self.local_root}")
-
-            except Exception as e:
-                logger.error(f"✗ Failed to process {granule_file}: {e}")
-                continue
-
-        logger.info(f"Ingested {len(local_paths)} Parquet dataset(s)")
-        return local_paths
+        from starepandas.ingest import ingest_granules_local
+        return ingest_granules_local(
+            data_path=data_path,
+            instrument=instrument,
+            local_root=self.local_root,
+            scan=scan,
+            level=level,
+            db_path=self.db_path,
+            **kwargs,
+        )
 
     # ── Spatial query ─────────────────────────────────────────────────────────
 
