@@ -23,6 +23,12 @@ import warnings
 
 from pathlib import Path
 
+# MetadataStore abstraction (§C9 M4) — RDSMetadataStore wraps the
+# psycopg2 INSERT/SELECT/DELETE paths so a future DynamoDB swap is a
+# localised change. ``metadata.py`` lazy-imports ``_ensure_rds_db_and_table``
+# from this module so no circular import.
+from starepandas.metadata import PartitionRow, RDSMetadataStore
+
 _AWS_S3_STORAGE_OPTIONS = {}
 _AWS_RDS_OPTIONS = {}
 
@@ -1840,51 +1846,22 @@ class STAREDataFrame(geopandas.GeoDataFrame):
                 'num_rows': int(len(gdf)),
                 'columns': list(arrays.keys()),
             })
-            metadata_rows.append((
-                dataset, data_level, ts, group_id, bucket_name, int(partition_level), json.dumps(meta_row)
+            metadata_rows.append(PartitionRow(
+                dataset=dataset,
+                data_level=data_level,
+                raw_collected_time=ts,
+                grouped_id=group_id,
+                s3_bucket=bucket_name,
+                resolution_level=int(partition_level),
+                metadata_json=meta_row,
             ))
 
-        # Batch insert all metadata rows into RDS in a single transaction
+        # Persist metadata via the MetadataStore abstraction (§C9 M4 hedge —
+        # localises the RDS↔DynamoDB swap point).
         if metadata_rows:
-            try:
-                from psycopg2.extras import execute_values
-                with conn.cursor() as cur:
-                    execute_values(
-                        cur,
-                        'INSERT INTO "PodsMetadata" '
-                        '("Dataset", "DataLevel", "RawData Collected Time", grouped_id, '
-                        '"S3 bucket", "Resolution level", "MetadataJson") '
-                        'VALUES %s',
-                        metadata_rows,
-                    )
-                conn.commit()
-                print(f"✓ Inserted {len(metadata_rows)} metadata rows into RDS")
-            except Exception as e:
-                print(f"Warning: Batch insert failed ({e}), falling back to row-by-row insert...")
-                try:
-                    conn.rollback()
-                except Exception:
-                    pass
-                # Fallback: insert rows individually so partial success is possible
-                inserted = 0
-                for row in metadata_rows:
-                    try:
-                        with conn.cursor() as cur:
-                            cur.execute(
-                                'INSERT INTO "PodsMetadata" '
-                                '("Dataset", "DataLevel", "RawData Collected Time", grouped_id, '
-                                '"S3 bucket", "Resolution level", "MetadataJson") '
-                                'VALUES (%s, %s, %s, %s, %s, %s, %s)',
-                                row
-                            )
-                        conn.commit()
-                        inserted += 1
-                    except Exception:
-                        try:
-                            conn.rollback()
-                        except Exception:
-                            pass
-                print(f"  Inserted {inserted}/{len(metadata_rows)} metadata rows via fallback")
+            store = RDSMetadataStore(conn=conn)
+            inserted = store.write_partitions(metadata_rows)
+            print(f"✓ Inserted {inserted} metadata rows into RDS")
         else:
             print("Warning: No valid STARE groups found to write")
 

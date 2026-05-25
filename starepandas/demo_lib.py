@@ -82,25 +82,16 @@ class StarePodsDemo:
             merged_opts = dict(starepandas.staredataframe._AWS_S3_STORAGE_OPTIONS)
 
         normalized_prefix = s3_prefix.rstrip('/')
-        like_pattern = f"{normalized_prefix}/%"
 
-        # 1) RDS cleanup — delete metadata rows whose group_path is under the prefix.
-        rds_deleted = 0
-        conn = _ensure_rds_db_and_table('StarePodsMetadata')
+        # 1) RDS cleanup — delete metadata rows whose group_path is under
+        #    the prefix. Routed through MetadataStore so the SQL stays in
+        #    one place (§C9 M4 hedge).
+        from starepandas.metadata import RDSMetadataStore
+        store = RDSMetadataStore()
         try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    'DELETE FROM "PodsMetadata" '
-                    'WHERE "MetadataJson"->>%s LIKE %s',
-                    ('group_path', like_pattern),
-                )
-                rds_deleted = cur.rowcount or 0
-            conn.commit()
+            rds_deleted = store.delete_by_prefix(normalized_prefix)
         finally:
-            try:
-                conn.close()
-            except Exception:
-                pass
+            store.close()
 
         # 2) S3 cleanup — recursively remove objects under the prefix.
         s3_deleted = 0
