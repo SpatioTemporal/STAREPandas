@@ -168,3 +168,33 @@ def test_retry_config_matches_spec():
     # stop_after_attempt(3) → max_attempt_number = 3
     assert getattr(deco.stop, 'max_attempt_number', None) == 3, \
         f"expected 3 attempts, got {deco.stop}"
+
+
+# ----- ON CONFLICT DO UPDATE (§C10 #1) ------------------------------------
+
+
+def test_insert_sql_uses_on_conflict_do_update():
+    """The batch INSERT must end with ON CONFLICT DO UPDATE so retries are
+    idempotent against the pods_unique constraint (§C10 #1)."""
+    from starepandas.metadata import _INSERT_SQL
+    assert 'ON CONFLICT' in _INSERT_SQL
+    assert '"Dataset", "RawData Collected Time", grouped_id' in _INSERT_SQL
+    assert 'DO UPDATE' in _INSERT_SQL
+    assert 'EXCLUDED."MetadataJson"' in _INSERT_SQL
+
+
+def test_insert_one_sql_also_uses_on_conflict():
+    """The row-by-row fallback must also be idempotent — it's reached when
+    the batch dies mid-transaction, so partial-success retries hit the
+    same UNIQUE constraint."""
+    from starepandas.metadata import _INSERT_ONE_SQL
+    assert 'ON CONFLICT' in _INSERT_ONE_SQL
+    assert 'DO UPDATE' in _INSERT_ONE_SQL
+
+
+def test_on_conflict_targets_constraint_columns_in_order():
+    """The ON CONFLICT target must list exactly the columns of the
+    pods_unique constraint in the same order, otherwise PostgreSQL won't
+    recognise the inference and will raise."""
+    from starepandas.metadata import _ON_CONFLICT_CLAUSE
+    assert '("Dataset", "RawData Collected Time", grouped_id)' in _ON_CONFLICT_CLAUSE

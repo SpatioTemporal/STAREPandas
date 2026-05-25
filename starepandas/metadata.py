@@ -116,17 +116,32 @@ class MetadataStore(Protocol):
         ...
 
 
+# §C10 #1 fix: ON CONFLICT DO UPDATE makes the INSERT idempotent under
+# retries. The (Dataset, "RawData Collected Time", grouped_id) tuple is
+# enforced by the ``pods_unique`` UNIQUE constraint added 2026-05-25.
+# On conflict we refresh ``MetadataJson`` from the new row (its non-key
+# fields like ``num_rows`` or ``columns`` may legitimately differ if the
+# upstream granule was re-cut). This pairs with §C10 #2 (deterministic
+# per-granule timestamp via _timestamps.py); without #2, retries land on
+# different timestamps and the conflict path never fires.
+_ON_CONFLICT_CLAUSE = (
+    ' ON CONFLICT ("Dataset", "RawData Collected Time", grouped_id) '
+    'DO UPDATE SET "MetadataJson" = EXCLUDED."MetadataJson"'
+)
+
 _INSERT_SQL = (
     'INSERT INTO "PodsMetadata" '
     '("Dataset", "DataLevel", "RawData Collected Time", grouped_id, '
     '"S3 bucket", "Resolution level", "MetadataJson") '
     'VALUES %s'
+    + _ON_CONFLICT_CLAUSE
 )
 _INSERT_ONE_SQL = (
     'INSERT INTO "PodsMetadata" '
     '("Dataset", "DataLevel", "RawData Collected Time", grouped_id, '
     '"S3 bucket", "Resolution level", "MetadataJson") '
     'VALUES (%s, %s, %s, %s, %s, %s, %s)'
+    + _ON_CONFLICT_CLAUSE
 )
 
 
