@@ -1,0 +1,28 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AssumeCdkBootstrapRoles",
+      "Effect": "Allow",
+      "Action": "sts:AssumeRole",
+      "Resource": "arn:aws:iam::637388276731:role/cdk-hnb659fds-*"
+    },
+    {
+      "Sid": "ReadBootstrapVersionParam",
+      "Effect": "Allow",
+      "Action": ["ssm:GetParameter", "ssm:GetParameters"],
+      "Resource": "arn:aws:ssm:us-west-2:637388276731:parameter/cdk-bootstrap/hnb659fds/*"
+    },
+    {
+      "Sid": "ReadStackStatusForFeedback",
+      "Effect": "Allow",
+      "Action": [
+        "cloudformation:DescribeStacks",
+        "cloudformation:DescribeStackEvents",
+        "cloudformation:GetTemplate",
+        "cloudformation:ListStacks"
+      ],
+      "Resource": "arn:aws:cloudformation:us-west-2:637388276731:stack/StarePodsInfraStack/*"
+    }
+  ]
+}

@@ -1,0 +1,58 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "BootstrapCloudFormation",
+      "Effect": "Allow",
+      "Action": "cloudformation:*",
+      "Resource": "arn:aws:cloudformation:us-west-2:637388276731:stack/CDKToolkit/*"
+    },
+    {
+      "Sid": "BootstrapStagingBucket",
+      "Effect": "Allow",
+      "Action": "s3:*",
+      "Resource": [
+        "arn:aws:s3:::cdk-hnb659fds-assets-637388276731-us-west-2",
+        "arn:aws:s3:::cdk-hnb659fds-assets-637388276731-us-west-2/*"
+      ]
+    },
+    {
+      "Sid": "BootstrapAssetsEcrRepo",
+      "Effect": "Allow",
+      "Action": "ecr:*",
+      "Resource": "arn:aws:ecr:us-west-2:637388276731:repository/cdk-hnb659fds-container-assets-637388276731-us-west-2"
+    },
+    {
+      "Sid": "BootstrapVersionParam",
+      "Effect": "Allow",
+      "Action": [
+        "ssm:PutParameter",
+        "ssm:DeleteParameter",
+        "ssm:AddTagsToResource",
+        "ssm:RemoveTagsFromResource"
+      ],
+      "Resource": "arn:aws:ssm:us-west-2:637388276731:parameter/cdk-bootstrap/hnb659fds/*"
+    },
+    {
+      "Sid": "BootstrapCdkRoles",
+      "Effect": "Allow",
+      "Action": [
+        "iam:CreateRole",
+        "iam:DeleteRole",
+        "iam:GetRole",
+        "iam:TagRole",
+        "iam:UntagRole",
+        "iam:PutRolePolicy",
+        "iam:DeleteRolePolicy",
+        "iam:GetRolePolicy",
+        "iam:AttachRolePolicy",
+        "iam:DetachRolePolicy",
+        "iam:ListRolePolicies",
+        "iam:ListAttachedRolePolicies",
+        "iam:UpdateAssumeRolePolicy",
+        "iam:PassRole"
+      ],
+      "Resource": "arn:aws:iam::637388276731:role/cdk-hnb659fds-*"
+    }
+  ]
+}

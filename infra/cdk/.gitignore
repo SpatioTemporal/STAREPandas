@@ -1,0 +1,7 @@
+.venv/
+cdk.out/
+*.pyc
+__pycache__/
+
+# requirements.txt must be tracked despite root *.txt rule
+!requirements.txt

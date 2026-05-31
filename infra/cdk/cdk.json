@@ -1,0 +1,32 @@
+{
+  "app": ".venv/bin/python3 app.py",
+  "watch": {
+    "include": ["**"],
+    "exclude": [
+      "README.md",
+      "cdk*.json",
+      "requirements*.txt",
+      ".venv",
+      "**/__pycache__",
+      "**/*.pyc"
+    ]
+  },
+  "context": {
+    "@aws-cdk/aws-ecr-assets:dockerIgnoreSupport": true,
+    "@aws-cdk/core:checkSecretUsage": true,
+    "@aws-cdk/core:target-partitions": ["aws"],
+    "@aws-cdk/aws-iam:minimizePolicies": true,
+
+    "starepods:workerImageTag": "dev",
+    "starepods:natGateways": 0,
+    "starepods:vpcCidr": "10.0.0.0/16",
+    "starepods:sourceBuckets": ["zarrpods"],
+    "starepods:storageBucket": "zarrpods",
+    "starepods:logRetentionDays": 30,
+    "starepods:taskCpu": 2048,
+    "starepods:taskMemoryMiB": 8192,
+    "starepods:queueVisibilityTimeoutSeconds": 3600,
+    "starepods:queueMaxReceiveCount": 3,
+    "starepods:ddbTtlDays": 30
+  }
+}
