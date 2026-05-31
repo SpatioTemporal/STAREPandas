@@ -1,0 +1,29 @@
+# Keep the worker build context small and never bake secrets into the image.
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+.tox/
+.git/
+.github/
+build/
+docs/
+examples/
+figures/
+tests/
+# infra/worker/dist/ holds the wheel the Dockerfile installs; keep it.
+infra/cdk/
+infra/iam/
+infra/scripts/
+infra/worker/Dockerfile
+infra/worker/.dockerignore
+notebooks/
+*.ipynb
+*.html
+stare_pods_aws_parallel_plan.*
+*.HDF5
+*.h5
+# Real AWS / RDS creds live next to the package; the ECS task definition
+# injects them at runtime via Secrets Manager (§C4).
+starepandas/.config
