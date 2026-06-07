@@ -37,10 +37,13 @@ from aws_cdk import (
     Stack,
     aws_apigateway as apigw,
     aws_budgets as budgets,
+    aws_cloudwatch as cloudwatch,
     aws_dynamodb as dynamodb,
     aws_ec2 as ec2,
     aws_ecr as ecr,
     aws_ecs as ecs,
+    aws_events as events,
+    aws_events_targets as targets,
     aws_iam as iam,
     aws_lambda as lambda_,
     aws_logs as logs,
@@ -91,6 +94,7 @@ class StarePodsInfraStack(Stack):
         self._build_compute()
         self._seed_jobs_control()
         self._build_api()
+        self._build_watcher()
         self._build_budget()
         self._outputs()
 
@@ -602,6 +606,81 @@ class StarePodsInfraStack(Stack):
         plan.add_api_key(self.api_key)
         plan.add_api_stage(stage=self.api.deployment_stage)
 
+    # ── §C5 Completion watcher ────────────────────────────────────────────────
+    def _build_watcher(self) -> None:
+        """The C-5 completion watcher: a Lambda fired every 30 s that closes
+        drained jobs (state→complete/failed), decrements the shared-worker
+        ``JobsControl.active_jobs`` counter, scales the fleet to 0 when the
+        last job finishes, and POSTs the job's ``callback_url`` (→ callbacks
+        DLQ on exhaustion).
+
+        Ships from the same ``infra/cdk/lambdas`` asset as the control plane;
+        the handler string selects the ``watcher`` entrypoint. Reuses the §C6
+        ``starepods-completion-watcher-role`` (created in ``_build_iam_roles``)
+        and runs OUTSIDE the VPC (§C10 #8) — it only touches DynamoDB, ECS,
+        SQS, and the public-internet callback URL via public IAM endpoints, so
+        it needs no NAT.
+        """
+        self.watcher_fn = lambda_.Function(
+            self, "WatcherFn",
+            function_name="starepods-completion-watcher",
+            runtime=lambda_.Runtime.PYTHON_3_12,
+            handler="watcher.handler.handler",
+            code=lambda_.Code.from_asset(_LAMBDAS_DIR),
+            role=self.watcher_role,
+            timeout=Duration.seconds(60),
+            memory_size=128,
+            log_group=logs.LogGroup(
+                self, "WatcherLogs",
+                log_group_name="/aws/lambda/starepods-completion-watcher",
+                retention=logs.RetentionDays.ONE_MONTH,
+                removal_policy=RemovalPolicy.DESTROY,
+            ),
+            environment={
+                "JOBS_TABLE_NAME": self.jobs_table.table_name,
+                "ECS_CLUSTER": self.cluster.cluster_name,
+                "ECS_SERVICE": self.worker_service.service_name,
+                "CALLBACKS_DLQ_URL": self.callbacks_dlq.queue_url,
+                "TTL_DAYS": str(self.ddb_ttl_days),
+            },
+        )
+
+        # Always-on tick. A single rule that gates on state in the scan is
+        # simpler than per-job rules (§C5 note) — the role's events:Disable/
+        # EnableRule grant on this exact name is kept for future use but unused.
+        # NOTE: classic EventBridge Rules have a 1-minute floor on rate(), so
+        # the plan's "30 s" tick becomes 1 minute here (a true 30 s cadence
+        # would require EventBridge Scheduler + a different ARN than the
+        # pre-granted rule/ permission). Job detection latency is therefore up
+        # to ~60 s, which still meets the §C5 DoD ("within 30-60 s"). The
+        # watcher is cheap + idempotent, so finer granularity buys little.
+        self.completion_tick = events.Rule(
+            self, "CompletionTick",
+            rule_name="starepods-completion-tick",
+            description="Fires the C-5 completion watcher every minute.",
+            schedule=events.Schedule.rate(Duration.minutes(1)),
+            targets=[targets.LambdaFunction(self.watcher_fn)],
+        )
+
+        # DLQ-depth alarm (§C5 DoD): visible messages on the callbacks DLQ mean
+        # a callback exhausted its retries. Actionless for v1 (the ALARM-state
+        # transition is the signal, matching the budget's no-SNS philosophy);
+        # wire an SNS action later if paging is wanted.
+        self.callbacks_dlq_alarm = cloudwatch.Alarm(
+            self, "CallbacksDlqAlarm",
+            alarm_name="starepods-callbacks-dlq-depth",
+            alarm_description="A completion callback exhausted its retries and "
+                              "landed on starepods-callbacks-dlq.",
+            metric=self.callbacks_dlq.metric_approximate_number_of_messages_visible(
+                period=Duration.minutes(1),
+                statistic="Maximum",
+            ),
+            threshold=0,
+            comparison_operator=cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+            evaluation_periods=1,
+            treat_missing_data=cloudwatch.TreatMissingData.NOT_BREACHING,
+        )
+
     # ── §C9 Budgets cost alarm ────────────────────────────────────────────────
     def _build_budget(self) -> None:
         """Monthly cost budget scoped to ``Project=starepods`` (§C9).
@@ -677,3 +756,6 @@ class StarePodsInfraStack(Stack):
                               "--api-key <id> --include-value --query value")
         CfnOutput(self, "SchedulerFnName", value=self.scheduler_fn.function_name)
         CfnOutput(self, "StatusFnName", value=self.status_fn.function_name)
+        # C-5 completion watcher.
+        CfnOutput(self, "WatcherFnName", value=self.watcher_fn.function_name)
+        CfnOutput(self, "CompletionTickRuleName", value=self.completion_tick.rule_name)
