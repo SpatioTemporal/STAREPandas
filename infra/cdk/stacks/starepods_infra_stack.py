@@ -27,23 +27,31 @@ Design notes baked in here (see docs/path_c_implementation.md §C-3):
 """
 from __future__ import annotations
 
+import os
+
 from aws_cdk import (
     Aws,
     CfnOutput,
     Duration,
     RemovalPolicy,
     Stack,
+    aws_apigateway as apigw,
+    aws_budgets as budgets,
     aws_dynamodb as dynamodb,
     aws_ec2 as ec2,
     aws_ecr as ecr,
     aws_ecs as ecs,
     aws_iam as iam,
+    aws_lambda as lambda_,
     aws_logs as logs,
     aws_secretsmanager as secretsmanager,
     aws_sqs as sqs,
     custom_resources as cr,
 )
 from constructs import Construct
+
+# Directory holding the Lambda source (common/ + scheduler/ + status/).
+_LAMBDAS_DIR = os.path.join(os.path.dirname(__file__), "..", "lambdas")
 
 
 class StarePodsInfraStack(Stack):
@@ -65,8 +73,16 @@ class StarePodsInfraStack(Stack):
         )
         self.max_receive_count: int = int(ctx("starepods:queueMaxReceiveCount") or 3)
         self.ddb_ttl_days: int = int(ctx("starepods:ddbTtlDays") or 30)
+        # C-4 Part B — control plane knobs.
+        self.worker_cap: int = int(ctx("starepods:workerCap") or 4)        # §C9 cost cap
+        self.max_ticket_size: int = int(ctx("starepods:maxTicketSize") or 40)  # §C2
+        self.api_rate_limit: int = int(ctx("starepods:apiRateLimit") or 10)    # req/s
+        self.api_burst_limit: int = int(ctx("starepods:apiBurstLimit") or 20)
+        self.api_daily_quota: int = int(ctx("starepods:apiDailyQuota") or 1000)
+        self.budget_email: str = ctx("starepods:budgetEmail") or ""
+        self.budget_monthly_usd: int = int(ctx("starepods:budgetMonthlyUsd") or 200)
 
-        # Build order matters: network → data → roles → compute → seed.
+        # Build order matters: network → data → roles → compute → seed → api.
         self._build_network()
         self._build_messaging()
         self._build_tables()
@@ -74,6 +90,8 @@ class StarePodsInfraStack(Stack):
         self._build_iam_roles()
         self._build_compute()
         self._seed_jobs_control()
+        self._build_api()
+        self._build_budget()
         self._outputs()
 
     # ── §C6 Network ─────────────────────────────────────────────────────────
@@ -475,6 +493,168 @@ class StarePodsInfraStack(Stack):
             install_latest_aws_sdk=False,
         )
 
+    # ── §C4 Part B — Scheduler + Status Lambdas + API Gateway ─────────────────
+    def _build_api(self) -> None:
+        """The C-4 control plane: two Lambdas behind a REST API.
+
+        Both Lambdas ship from one asset (``infra/cdk/lambdas`` — common/ +
+        scheduler/ + status/); the handler string selects which entrypoint
+        runs. The functions reuse the §C6 scheduler/status roles created in
+        ``_build_iam_roles``. Only added grant: the scheduler needs
+        ``s3:GetObject`` on the ``_jobs/`` prefix for the >5 MB granule-list
+        pointer escape hatch (§C10 Lambda 6 MB workaround).
+        """
+        # Extra grant for the scheduler's granule_uris_s3 pointer.
+        self.scheduler_role.add_to_policy(
+            iam.PolicyStatement(
+                actions=["s3:GetObject"],
+                resources=[f"arn:aws:s3:::{self.storage_bucket}/_jobs/*"],
+            )
+        )
+
+        code = lambda_.Code.from_asset(_LAMBDAS_DIR)
+
+        def _log_group(cid: str, fn_name: str) -> logs.LogGroup:
+            return logs.LogGroup(
+                self, cid,
+                log_group_name=f"/aws/lambda/{fn_name}",
+                retention=logs.RetentionDays.ONE_MONTH,  # cross-cutting: 30-day
+                removal_policy=RemovalPolicy.DESTROY,
+            )
+
+        self.scheduler_fn = lambda_.Function(
+            self, "SchedulerFn",
+            function_name="starepods-scheduler",
+            runtime=lambda_.Runtime.PYTHON_3_12,
+            handler="scheduler.handler.handler",
+            code=code,
+            role=self.scheduler_role,
+            timeout=Duration.seconds(30),
+            memory_size=256,
+            log_group=_log_group("SchedulerLogs", "starepods-scheduler"),
+            environment={
+                "TICKETS_QUEUE_URL": self.tickets_queue.queue_url,
+                "JOBS_TABLE_NAME": self.jobs_table.table_name,
+                "ECS_CLUSTER": self.cluster.cluster_name,
+                "ECS_SERVICE": self.worker_service.service_name,
+                "WORKER_CAP": str(self.worker_cap),
+                "MAX_TICKET_SIZE": str(self.max_ticket_size),
+                "TTL_DAYS": str(self.ddb_ttl_days),
+            },
+        )
+
+        self.status_fn = lambda_.Function(
+            self, "StatusFn",
+            function_name="starepods-status",
+            runtime=lambda_.Runtime.PYTHON_3_12,
+            handler="status.handler.handler",
+            code=code,
+            role=self.status_role,
+            timeout=Duration.seconds(15),
+            memory_size=128,
+            log_group=_log_group("StatusLogs", "starepods-status"),
+            environment={
+                "JOBS_TABLE_NAME": self.jobs_table.table_name,
+                "FAILURES_TABLE_NAME": self.failures_table.table_name,
+            },
+        )
+
+        # REST API with a single 'v1' stage; per-key throttling is the
+        # defence-in-depth knob (not a cost control — §C9).
+        self.api = apigw.RestApi(
+            self, "Api",
+            rest_api_name="starepods-api",
+            description="STARE-PODS cloud ingest control plane (C-4).",
+            deploy_options=apigw.StageOptions(stage_name="v1"),
+            cloud_watch_role=False,
+        )
+
+        sched_int = apigw.LambdaIntegration(self.scheduler_fn)
+        status_int = apigw.LambdaIntegration(self.status_fn)
+
+        # POST /ingest → scheduler
+        ingest = self.api.root.add_resource("ingest")
+        ingest.add_method("POST", sched_int, api_key_required=True)
+
+        # /jobs/{id} → status (GET) + 501 (DELETE); /jobs/{id}/failures → status
+        jobs = self.api.root.add_resource("jobs")
+        job = jobs.add_resource("{id}")
+        job.add_method("GET", status_int, api_key_required=True)
+        job.add_method("DELETE", status_int, api_key_required=True)  # handler returns 501
+        failures = job.add_resource("failures")
+        failures.add_method("GET", status_int, api_key_required=True)
+
+        # API key + usage plan (x-api-key required on every method).
+        self.api_key = self.api.add_api_key(
+            "ApiKey", api_key_name="starepods-default-key"
+        )
+        plan = self.api.add_usage_plan(
+            "UsagePlan",
+            name="starepods-usage-plan",
+            throttle=apigw.ThrottleSettings(
+                rate_limit=self.api_rate_limit,
+                burst_limit=self.api_burst_limit,
+            ),
+            quota=apigw.QuotaSettings(
+                limit=self.api_daily_quota, period=apigw.Period.DAY
+            ),
+        )
+        plan.add_api_key(self.api_key)
+        plan.add_api_stage(stage=self.api.deployment_stage)
+
+    # ── §C9 Budgets cost alarm ────────────────────────────────────────────────
+    def _build_budget(self) -> None:
+        """Monthly cost budget scoped to ``Project=starepods`` (§C9).
+
+        Filters spend by the ``Project`` cost-allocation tag, so it tracks only
+        the resources this stack creates+tags (NAT, Fargate, Lambda, SQS, DDB,
+        Secrets, logs, API Gateway) — NOT the pre-existing, untagged ``zarrpods``
+        S3 bucket or the external RDS. That's the right thing to watch: those
+        were already paid for; the new runaway risk is workers that don't scale
+        back down, which IS tagged.
+
+        IMPORTANT: tag-filtered budgets only populate once the ``Project``
+        cost-allocation tag is ACTIVATED in Billing → Cost allocation tags
+        (account-level, ~24h lag, not retroactive). Until then this budget
+        reads $0. Notifications are delivered straight to email (no SNS) at
+        80% forecast + 100% actual.
+        """
+        if not self.budget_email:
+            return  # no email configured → skip (e.g. offline synth in CI)
+
+        def _notify(ntype: str, threshold: int):
+            return budgets.CfnBudget.NotificationWithSubscribersProperty(
+                notification=budgets.CfnBudget.NotificationProperty(
+                    notification_type=ntype,            # ACTUAL | FORECASTED
+                    comparison_operator="GREATER_THAN",
+                    threshold=threshold,
+                    threshold_type="PERCENTAGE",
+                ),
+                subscribers=[
+                    budgets.CfnBudget.SubscriberProperty(
+                        subscription_type="EMAIL", address=self.budget_email
+                    )
+                ],
+            )
+
+        budgets.CfnBudget(
+            self, "MonthlyBudget",
+            budget=budgets.CfnBudget.BudgetDataProperty(
+                budget_name="starepods-monthly",
+                budget_type="COST",
+                time_unit="MONTHLY",
+                budget_limit=budgets.CfnBudget.SpendProperty(
+                    amount=self.budget_monthly_usd, unit="USD"
+                ),
+                # Format: "user:<TagKey>$<TagValue>".
+                cost_filters={"TagKeyValue": ["user:Project$starepods"]},
+            ),
+            notifications_with_subscribers=[
+                _notify("FORECASTED", 80),   # heads-up before we get there
+                _notify("ACTUAL", 100),      # we've actually hit the cap
+            ],
+        )
+
     # ── Stack outputs (consumed by C-4/C-5/C-6 + the runbook) ─────────────────
     def _outputs(self) -> None:
         CfnOutput(self, "VpcId", value=self.vpc.vpc_id)
@@ -490,3 +670,10 @@ class StarePodsInfraStack(Stack):
         CfnOutput(self, "StatusRoleArn", value=self.status_role.role_arn)
         CfnOutput(self, "CompletionWatcherRoleArn", value=self.watcher_role.role_arn)
         CfnOutput(self, "WorkerTaskRoleArn", value=self.worker_task_role.role_arn)
+        # C-4 Part B control plane.
+        CfnOutput(self, "ApiEndpoint", value=self.api.url)
+        CfnOutput(self, "ApiKeyId", value=self.api_key.key_id,
+                  description="Fetch the value with: aws apigateway get-api-key "
+                              "--api-key <id> --include-value --query value")
+        CfnOutput(self, "SchedulerFnName", value=self.scheduler_fn.function_name)
+        CfnOutput(self, "StatusFnName", value=self.status_fn.function_name)

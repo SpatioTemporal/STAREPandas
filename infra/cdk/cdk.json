@@ -27,6 +27,15 @@
     "starepods:taskMemoryMiB": 8192,
     "starepods:queueVisibilityTimeoutSeconds": 3600,
     "starepods:queueMaxReceiveCount": 3,
-    "starepods:ddbTtlDays": 30
+    "starepods:ddbTtlDays": 30,
+
+    "starepods:workerCap": 4,
+    "starepods:maxTicketSize": 40,
+    "starepods:apiRateLimit": 10,
+    "starepods:apiBurstLimit": 20,
+    "starepods:apiDailyQuota": 1000,
+
+    "starepods:budgetEmail": "hai@bayesics.com",
+    "starepods:budgetMonthlyUsd": 200
   }
 }
