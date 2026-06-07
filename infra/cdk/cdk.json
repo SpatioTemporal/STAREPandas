@@ -18,7 +18,7 @@
     "@aws-cdk/aws-iam:minimizePolicies": true,
 
     "starepods:workerImageTag": "dev",
-    "starepods:natGateways": 0,
+    "starepods:natGateways": 1,
     "starepods:vpcCidr": "10.0.0.0/16",
     "starepods:sourceBuckets": ["zarrpods"],
     "starepods:storageBucket": "zarrpods",

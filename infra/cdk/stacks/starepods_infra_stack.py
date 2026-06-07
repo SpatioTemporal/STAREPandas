@@ -10,10 +10,15 @@ Design notes baked in here (see docs/path_c_implementation.md §C-3):
 * **Shared-workers model** (Decision 3): one SQS queue + one ECS service.
   The ``JobsControl`` counter item gates scale-down (decremented by the
   C-5 completion watcher).
-* **No NAT** (§C10 cost trap): workers run in PRIVATE_ISOLATED subnets and
-  reach AWS services through VPC endpoints only. ``natGateways`` context key
-  defaults to 0; bump it only to unblock RDS reachability (see the RDS note
-  on ``_build_network``).
+* **Single NAT** (C-4 decision, 2026-06-07): workers run in
+  ``PRIVATE_WITH_EGRESS`` subnets and reach the out-of-VPC ``zarrpods`` RDS
+  (and all public AWS APIs) through one NAT gateway. This superseded the
+  original no-NAT / 5-interface-endpoint design once a NAT became necessary
+  for RDS reachability — with a NAT present the interface endpoints were
+  redundant, so they were dropped (net idle ~\\$73/mo → ~\\$32/mo). The free
+  S3 + DDB *gateway* endpoints are kept so bulky traffic bypasses the NAT.
+  ``natGateways`` context key defaults to 1; set it to 0 only if you also
+  restore the interface endpoints + isolated subnets (see ``_build_network``).
 * **Visibility timeout 3600 s** (C-2 §C10 #5 Option A) — overrides the
   "15 min" figure in the §C6 table; the worker has no heartbeat, so a long
   visibility window plus the idempotent counter absorbs overruns.
@@ -48,7 +53,7 @@ class StarePodsInfraStack(Stack):
         # ── Context-driven knobs (overridable via cdk.json / -c flags) ──────
         ctx = self.node.try_get_context
         self.worker_image_tag: str = ctx("starepods:workerImageTag") or "dev"
-        self.nat_gateways: int = int(ctx("starepods:natGateways") or 0)
+        self.nat_gateways: int = int(ctx("starepods:natGateways") or 1)
         self.vpc_cidr: str = ctx("starepods:vpcCidr") or "10.0.0.0/16"
         self.source_buckets: list[str] = ctx("starepods:sourceBuckets") or ["zarrpods"]
         self.storage_bucket: str = ctx("starepods:storageBucket") or "zarrpods"
@@ -73,16 +78,20 @@ class StarePodsInfraStack(Stack):
 
     # ── §C6 Network ─────────────────────────────────────────────────────────
     def _build_network(self) -> None:
-        """VPC with two PRIVATE_ISOLATED subnets and the endpoints workers need.
+        """VPC with a public subnet (hosting one NAT) + private-egress subnets
+        for the workers.
 
-        RDS reachability caveat: the existing ``zarrpods`` RDS Postgres lives
-        outside this VPC and is reached over its wire protocol (not an AWS API),
-        so it cannot be fronted by an interface endpoint. With ``natGateways=0``
-        an isolated worker cannot reach a public RDS endpoint. Resolve before
-        the first live ECS run by ONE of: (a) set ``-c starepods:natGateways=1``
-        (single NAT, ~\\$32/mo — simplest), (b) VPC-peer this VPC to the RDS VPC,
-        or (c) move the RDS into a private subnet of this VPC. Tracked as the
-        C-3 "RDS connectivity" open item.
+        RDS reachability: the existing ``zarrpods`` RDS Postgres lives outside
+        this VPC and is reached over its wire protocol (not an AWS API), so it
+        cannot be fronted by an interface endpoint. Workers therefore run in
+        ``PRIVATE_WITH_EGRESS`` subnets and reach RDS — and every other public
+        AWS API (ECR, Logs, Secrets, SQS) — through a single NAT gateway. This
+        replaces the earlier no-NAT design (C-4 decision, 2026-06-07): once a
+        NAT exists the 5 interface endpoints are redundant, so they were dropped
+        — net idle cost ~\\$73/mo (5 interface endpoints) → ~\\$32/mo (1 NAT).
+        The two *gateway* endpoints (S3, DDB) are free and kept, so bulky S3
+        image-layer / Parquet I/O and DDB traffic still bypass the NAT (no
+        per-GB NAT data-processing charge on those).
         """
         self.vpc = ec2.Vpc(
             self,
@@ -91,16 +100,31 @@ class StarePodsInfraStack(Stack):
             ip_addresses=ec2.IpAddresses.cidr(self.vpc_cidr),
             max_azs=2,
             nat_gateways=self.nat_gateways,
+            # Order matters: ``private`` is FIRST so CDK preserves the existing
+            # isolated subnets' CIDRs (10.0.0.0/24, 10.0.1.0/24) when converting
+            # them in place to egress. Listing ``public`` first allocated it
+            # 10.0.0.0/26, which overlapped the live private /24 and failed the
+            # in-place migration with a CIDR conflict (2026-06-07). With private
+            # first, the new public subnets land in fresh space (10.0.2.x/26).
             subnet_configuration=[
+                # Workers run here — egress to RDS + AWS APIs via the NAT.
                 ec2.SubnetConfiguration(
                     name="private",
-                    subnet_type=ec2.SubnetType.PRIVATE_ISOLATED,
+                    subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS,
                     cidr_mask=24,
+                ),
+                # Public subnet hosts the NAT gateway (and the IGW route).
+                ec2.SubnetConfiguration(
+                    name="public",
+                    subnet_type=ec2.SubnetType.PUBLIC,
+                    cidr_mask=26,
                 ),
             ],
         )
 
         # Gateway endpoints (free) — S3 (also carries ECR image layers) + DDB.
+        # Kept even with a NAT: they route this bulky traffic off the NAT,
+        # avoiding the ~\\$0.045/GB NAT data-processing charge.
         self.vpc.add_gateway_endpoint(
             "S3Endpoint", service=ec2.GatewayVpcEndpointAwsService.S3
         )
@@ -108,17 +132,11 @@ class StarePodsInfraStack(Stack):
             "DynamoDbEndpoint", service=ec2.GatewayVpcEndpointAwsService.DYNAMODB
         )
 
-        # Interface endpoints (hourly + data) — required for image pull, secret
-        # injection, logs, and SQS from no-NAT isolated subnets.
-        interface_services = {
-            "EcrApiEndpoint": ec2.InterfaceVpcEndpointAwsService.ECR,
-            "EcrDockerEndpoint": ec2.InterfaceVpcEndpointAwsService.ECR_DOCKER,
-            "LogsEndpoint": ec2.InterfaceVpcEndpointAwsService.CLOUDWATCH_LOGS,
-            "SecretsManagerEndpoint": ec2.InterfaceVpcEndpointAwsService.SECRETS_MANAGER,
-            "SqsEndpoint": ec2.InterfaceVpcEndpointAwsService.SQS,
-        }
-        for cid, svc in interface_services.items():
-            self.vpc.add_interface_endpoint(cid, service=svc, private_dns_enabled=True)
+        # Interface endpoints intentionally REMOVED (C-4 decision): with a NAT
+        # in place, ECR (api+dkr), CloudWatch Logs, Secrets Manager, and SQS are
+        # all reachable over the NAT, so the hourly interface-endpoint ENIs were
+        # pure redundant cost (~\\$73/mo). Re-add them only if a future posture
+        # requires AWS-API traffic to stay on Amazon's private network.
 
     # ── §C6 SQS ─────────────────────────────────────────────────────────────
     def _build_messaging(self) -> None:
@@ -409,7 +427,8 @@ class StarePodsInfraStack(Stack):
             desired_count=0,  # scheduler scales up; watcher scales back to 0
             assign_public_ip=False,
             vpc_subnets=ec2.SubnetSelection(
-                subnet_type=ec2.SubnetType.PRIVATE_ISOLATED
+                # Egress subnets: workers reach RDS + AWS APIs via the NAT.
+                subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS
             ),
             min_healthy_percent=0,  # allow full scale-to-zero
             max_healthy_percent=100,

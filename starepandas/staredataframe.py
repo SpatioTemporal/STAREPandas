@@ -103,18 +103,33 @@ def aws_configure(key=None, secret=None, token=None, region_name=None, endpoint_
         _AWS_RDS_OPTIONS = rds_opts
     return _AWS_S3_STORAGE_OPTIONS
 
-def load_aws_configure(config_path):
+# Env var carrying the worker config as a JSON string. ECS injects the
+# Secrets-Manager secret this way (see infra/cdk task definition), so the
+# cloud worker needs no /etc/starepods/.config file mounted — the env-var
+# branch in _load_config_from_default_locations parses it directly.
+WORKER_SECRET_ENV_VAR = 'STAREPANDAS_WORKER_SECRET'
+
+# Keys consumed explicitly by _apply_config_data — these must NOT pass
+# through as s3fs.S3FileSystem kwargs (notably default_s3_prefix, which is
+# not a valid S3FileSystem argument and would raise at construction time).
+_RESERVED_CONFIG_KEYS = {
+    'key', 'secret', 'token', 'client_kwargs',
+    'aws_access_key_id', 'aws_secret_access_key', 'aws_session_token',
+    'region', 'region_name', 'endpoint_url', 'rds',
+    'host', 'port', 'username', 'password', 'database',
+    'default_s3_prefix',
+}
+
+
+def _apply_config_data(data):
+    """Apply a parsed config dict (JSON-shaped) to the module-level AWS/S3
+    and RDS defaults.
+
+    Shared by ``load_aws_configure`` (file path) and the
+    ``STAREPANDAS_WORKER_SECRET`` env-var path so both honour the same
+    schema. Crucially, ``default_s3_prefix`` is consumed here and routed to
+    the module constant rather than leaking into the s3fs kwargs.
     """
-    Load AWS/S3 configuration from a JSON file and set defaults for S3 Parquet helpers.
-
-    The JSON may contain either s3fs-style keys (key, secret, token, client_kwargs)
-    or AWS-style keys (aws_access_key_id, aws_secret_access_key, aws_session_token, region_name, endpoint_url).
-
-    It may also include an 'rds' block with {host, port, username, password, database}, or top-level aliases.
-    """
-    with open(config_path, 'r') as f:
-        data = json.load(f)
-
     key = data.get('key') or data.get('aws_access_key_id')
     secret = data.get('secret') or data.get('aws_secret_access_key')
     token = data.get('token') or data.get('aws_session_token')
@@ -123,10 +138,15 @@ def load_aws_configure(config_path):
     region_name = data.get('region_name') or data.get('region')
     endpoint_url = data.get('endpoint_url')
 
-    rds_block = data.get('rds') or {}
+    rds_block = dict(data.get('rds') or {})
     for k in ['host', 'port', 'username', 'password', 'database']:
         if k in data and k not in rds_block:
             rds_block[k] = data[k]
+
+    dp = data.get('default_s3_prefix')
+    if dp:
+        global _DEFAULT_S3_PREFIX
+        _DEFAULT_S3_PREFIX = str(dp).rstrip('/')
 
     return aws_configure(
         key=key,
@@ -136,18 +156,30 @@ def load_aws_configure(config_path):
         endpoint_url=endpoint_url,
         client_kwargs=client_kwargs,
         rds=rds_block,
-        **{k: v for k, v in data.items() if k not in {
-            'key', 'secret', 'token', 'client_kwargs',
-            'aws_access_key_id', 'aws_secret_access_key', 'aws_session_token',
-            'region', 'region_name', 'endpoint_url', 'rds',
-            'host', 'port', 'username', 'password', 'database'
-        }}
+        **{k: v for k, v in data.items() if k not in _RESERVED_CONFIG_KEYS}
     )
+
+
+def load_aws_configure(config_path):
+    """
+    Load AWS/S3 configuration from a JSON file and set defaults for S3 Parquet helpers.
+
+    The JSON may contain either s3fs-style keys (key, secret, token, client_kwargs)
+    or AWS-style keys (aws_access_key_id, aws_secret_access_key, aws_session_token, region_name, endpoint_url).
+
+    It may also include an 'rds' block with {host, port, username, password, database}, or top-level aliases,
+    and an optional 'default_s3_prefix'.
+    """
+    with open(config_path, 'r') as f:
+        data = json.load(f)
+    return _apply_config_data(data)
 
 def _load_config_from_default_locations() -> bool:
     """Try to load configuration from default file locations.
 
     Order of precedence:
+    - Env var STAREPANDAS_WORKER_SECRET (config JSON injected inline — the
+      ECS/Secrets-Manager path; no file on disk required)
     - Env var STAREPANDAS_AWS_CONFIG
     - ./.config (current working directory)
     - <package_root>/.config (project root next to this module)
@@ -155,6 +187,19 @@ def _load_config_from_default_locations() -> bool:
     - ~/.starepandas/aws.json
     Returns True if successfully loaded, else False.
     """
+    # Highest precedence: the config JSON injected directly as an env var.
+    # ECS populates STAREPANDAS_WORKER_SECRET from Secrets Manager, so the
+    # worker container reads its config without a mounted .config file.
+    secret_json = os.environ.get(WORKER_SECRET_ENV_VAR)
+    if secret_json:
+        try:
+            _apply_config_data(json.loads(secret_json))
+            return True
+        except Exception:
+            # A malformed inline secret must not mask the file-based
+            # fallback below — fall through and try the on-disk candidates.
+            pass
+
     candidates = []
     env_path = os.environ.get('STAREPANDAS_AWS_CONFIG')
     if env_path:
