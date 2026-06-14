@@ -96,7 +96,10 @@ Validation failures return `400 {"error":…}` (e.g. `workers>4`, undatable file
 ```bash
 curl -sS "$EP/jobs/<job_id>" -H "x-api-key: $KEY" | jq
 # states: enqueued -> running -> complete | failed
-curl -sS "$EP/jobs/<job_id>/failures" -H "x-api-key: $KEY" | jq   # per-granule failures (+ ?next= page)
+curl -sS "$EP/jobs/<job_id>/failures" -H "x-api-key: $KEY" | jq   # per-granule LEDGER (+ ?next= page)
+# NB: this returns one row per granule incl. successes (state="processed", also the
+# idempotency-dedupe record). Real failures = rows with state != "processed";
+# the job record's `failed` is the authoritative failure count.
 ```
 ```python
 sp.cloud.JobHandle("<job_id>", endpoint, api_key).status()
