@@ -19,9 +19,13 @@ Design notes baked in here (see docs/path_c_implementation.md §C-3):
   S3 + DDB *gateway* endpoints are kept so bulky traffic bypasses the NAT.
   ``natGateways`` context key defaults to 1; set it to 0 only if you also
   restore the interface endpoints + isolated subnets (see ``_build_network``).
-* **Visibility timeout 3600 s** (C-2 §C10 #5 Option A) — overrides the
-  "15 min" figure in the §C6 table; the worker has no heartbeat, so a long
-  visibility window plus the idempotent counter absorbs overruns.
+* **Visibility timeout 6 h / 21600 s** (raised from 3600 s after C-7 load test
+  #1; C-2 §C10 #5 Option A) — overrides the "15 min" figure in the §C6 table;
+  the worker has no heartbeat, so a long visibility window plus the idempotent
+  counter absorbs overruns. **Residual risk:** a ticket that runs past the
+  window (or a stalled worker) is still redelivered → two workers may process
+  the same ticket; safe only because the writes are idempotent (a heartbeat
+  would remove the risk — deferred).
 * **desiredCount=0** default — the scheduler (C-4) scales the service up;
   the completion watcher (C-5) scales it back to 0.
 """
@@ -71,8 +75,17 @@ class StarePodsInfraStack(Stack):
         self.log_retention_days: int = int(ctx("starepods:logRetentionDays") or 30)
         self.task_cpu: int = int(ctx("starepods:taskCpu") or 2048)
         self.task_mem: int = int(ctx("starepods:taskMemoryMiB") or 8192)
+        # Visibility timeout 6 h (was 3600 s). C-7 load test #1 measured
+        # ~77 s/granule for SSMIS, so a worst-case 40-granule ticket ≈ 51 min;
+        # 6 h leaves wide headroom for slow instruments / large tickets without a
+        # worker heartbeat. NOTE: this does NOT eliminate duplicate processing —
+        # a ticket that genuinely runs past 6 h (or a stalled worker) still gets
+        # redelivered, so two workers may process the same ticket. That's
+        # tolerated because the writes are idempotent (§C10 #1 RDS UNIQUE upsert
+        # + §C10 #3 idempotent processed-counter); a heartbeat would remove the
+        # risk entirely (deferred — see §C-7).
         self.visibility_timeout_s: int = int(
-            ctx("starepods:queueVisibilityTimeoutSeconds") or 3600
+            ctx("starepods:queueVisibilityTimeoutSeconds") or 21600
         )
         self.max_receive_count: int = int(ctx("starepods:queueMaxReceiveCount") or 3)
         self.ddb_ttl_days: int = int(ctx("starepods:ddbTtlDays") or 30)
@@ -169,7 +182,9 @@ class StarePodsInfraStack(Stack):
             queue_name="starepods-tickets-dlq",
             retention_period=Duration.days(14),
         )
-        # Main work queue. Visibility 3600 s per C-2 Option A.
+        # Main work queue. Visibility 6 h (21600 s) — raised from 3600 s after
+        # C-7 load test #1 (see _build_messaging docstring for the residual
+        # duplicate-processing caveat).
         self.tickets_queue = sqs.Queue(
             self,
             "TicketsQueue",

@@ -25,7 +25,7 @@
     "starepods:logRetentionDays": 30,
     "starepods:taskCpu": 2048,
     "starepods:taskMemoryMiB": 8192,
-    "starepods:queueVisibilityTimeoutSeconds": 3600,
+    "starepods:queueVisibilityTimeoutSeconds": 21600,
     "starepods:queueMaxReceiveCount": 3,
     "starepods:ddbTtlDays": 30,
 
