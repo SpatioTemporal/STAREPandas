@@ -24,6 +24,10 @@ from starepandas.ingest import (
     clean_s3_prefix,
 )
 
+# Path C C-6: client SDK. ``sp.cloud.ingest_granules(...).wait()`` submits an
+# ingest job to the deployed REST API and polls it to completion.
+import starepandas.cloud as cloud
+
 from ._version import get_versions
 
 __version__ = get_versions()["version"]

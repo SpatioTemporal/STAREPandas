@@ -41,7 +41,13 @@ starepandas/
 │   │                       # — Worker, WorkerConfig, §C10 #3 idempotent
 │   │                       #   counter, Decision-9 graceful exit on
 │   │                       #   RDS credential rotation
-│   └── config.py           # placeholder for cloud client config (C-6)
+│   ├── client.py           # C-6 client SDK — ingest_granules() -> JobHandle
+│   │                       #   (urllib POST, >4MB list → granule_uris_s3
+│   │                       #   escape hatch, IngestError/JobNotFound)
+│   ├── job_handle.py       # C-6 JobHandle.status/wait/failures/cancel
+│   ├── _http.py            # C-6 stdlib-urllib request helper + error types
+│   └── config.py           # C-6 get_cloud_config() — reads endpoint/api_key
+│                           #   from .config (or STAREPANDAS_CLOUD_* env)
 ├── io/
 │   ├── granules/
 │   │   ├── __init__.py     # Granule factory, to_s3, to_local, reconstitute
@@ -294,9 +300,15 @@ All skills run exclusively inside the `starepandas_3.12_v3` conda environment.
 8. `pods_unique` UNIQUE constraint exists on `PodsMetadata` (§C10 #1 gate)
 9. `PodsMetadata` insert is idempotent (§C10 #1 live regression —
    double-insert keeps row count stable, DO UPDATE refreshes MetadataJson)
-10. C-1..C-5 unit tests pass (cloud.ticket_sizing + metadata + granule_timestamps
+10. C-1..C-6 unit tests pass (cloud.ticket_sizing + metadata + granule_timestamps
     + s3_layout + ingest_module + config_env_secret + control_plane_lambdas
-    + completion_watcher — currently 88 unit tests)
+    + completion_watcher + cloud_client — currently 105 unit tests)
+
+### Verified checks (cloud SDK, env-gated — C-6)
+`~/.claude/scripts/starepods_cloud_verify.py` (run with `STAREPANDAS_CLOUD_VERIFY=1`;
+skips cleanly offline so CI never hits AWS):
+1. `starepandas.cloud.get_cloud_config()` resolves `endpoint` + `api_key`
+2. SDK reaches + authenticates against the live API — `GET /jobs/<bogus> → 404`
 
 ---
 
@@ -348,20 +360,34 @@ pip install -e .
 
 ---
 
-*Last Updated: 2026-06-07 (Path C C-5 COMPLETE — completion watcher. The
+*Last Updated: 2026-06-14 (Path C C-6 COMPLETE — client SDK. New
+`starepandas/cloud/{client,job_handle,_http,config}.py` give a pure client-side
+wrapper over the live REST API: `sp.cloud.ingest_granules(granule_uris,
+instrument, …) -> JobHandle` (stdlib-`urllib` POST — no new dependency; >4 MiB
+serialized list → `granule_uris_s3` S3 escape hatch; typed `IngestError`/
+`JobNotFound`) + `JobHandle.status()/wait()/failures()/cancel()` (501 →
+`NotImplementedError`). `endpoint`+`api_key` read via the existing `.config`
+loader and added to `_RESERVED_CONFIG_KEYS` so they don't leak into s3fs kwargs;
+`STAREPANDAS_CLOUD_{ENDPOINT,API_KEY}` env overrides. **Live smoke test** from
+the host (job `3b089a62-…`): `POST /ingest → 202 running`; `wait()` polled to
+`state=complete` in 137 s (`processed 1/1`); 514 Parquet objects written to
+`s3://zarrpods/storage/…`; success-callback POST received at a webhook.site
+receiver (closes C-5's never-exercised live success path). Verification: basic
+7/7, STARE-PODS 10/10 (105 unit tests, +17 `test_cloud_client.py`), new
+env-gated `starepods_cloud_verify.py` (2/2 live). C-7 (load test + tune +
+runbook) is next. See `docs/path_c_implementation.md` §C-6 for the record.
+
+Prior: C-5 COMPLETE (2026-06-07) — completion watcher. The
 `starepods-completion-watcher` Lambda (`infra/cdk/lambdas/watcher/handler.py`),
 fired every minute by EventBridge rule `starepods-completion-tick`
 (`rate(1 min)` — classic-Rules floor; built in `_build_watcher`), closes drained
 jobs hands-off: a conditional `running→complete/failed` flip (idempotency gate)
 + guarded `active_jobs -1` + scale-to-0 when the last job drains + `completed_at`
 /`expires_at` stamping. Callback POST → 3× backoff → `starepods-callbacks-dlq`,
-watched by a new `starepods-callbacks-dlq-depth` alarm (custom metrics deferred
+watched by a `starepods-callbacks-dlq-depth` alarm (custom metrics deferred
 to Observability). Live DoD: `POST /ingest` ran the whole pipeline hands-off
 (job `35293668-…`: `running→complete` one tick after `proc 1/1`, ECS `4→0`,
-514 Parquet objects); synthetic bad-callback run put a payload on the DLQ. All
-new resources `Project=starepods`-tagged (idle cost ≈ $0). Verification: basic
-7/7, STARE-PODS 10/10 (88 unit tests, +13 `test_completion_watcher.py`). C-6
-(client SDK) is next. See `docs/path_c_implementation.md` §C-5 for the record.
+514 Parquet objects); synthetic bad-callback run put a payload on the DLQ.
 
 Prior: C-4 COMPLETE — Part A "first light" (NAT topology replaced the
 no-NAT/5-interface-endpoint VPC, net idle ~$73→~$32/mo; `STAREPANDAS_WORKER_SECRET`

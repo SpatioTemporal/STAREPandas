@@ -38,6 +38,15 @@ _AWS_RDS_OPTIONS = {}
 # loudly rather than silently writing to an unexpected location.
 _DEFAULT_S3_PREFIX = ""
 
+# C-6: cloud client SDK config. The REST API base URL (``endpoint``) and the
+# API-Gateway key (``api_key``) are read from the same ``.config`` path as the
+# S3/RDS settings so cloud callers reuse one config mechanism. Empty string
+# means "not configured"; ``starepandas.cloud.config.get_cloud_config`` raises
+# a clear error in that case. These are consumed by ``_apply_config_data`` and
+# routed to these constants rather than leaking into s3fs storage-options.
+_CLOUD_ENDPOINT = ""
+_CLOUD_API_KEY = ""
+
 # Maximum STARE level used for spatial partitioning when writing to S3.
 # Each level multiplies partition count by 4. Level 4 caps at ~256 partitions
 # per granule (vs ~4096 at level 6), keeping each Parquet partition file in
@@ -118,6 +127,7 @@ _RESERVED_CONFIG_KEYS = {
     'region', 'region_name', 'endpoint_url', 'rds',
     'host', 'port', 'username', 'password', 'database',
     'default_s3_prefix',
+    'endpoint', 'api_key',
 }
 
 
@@ -147,6 +157,17 @@ def _apply_config_data(data):
     if dp:
         global _DEFAULT_S3_PREFIX
         _DEFAULT_S3_PREFIX = str(dp).rstrip('/')
+
+    # C-6: cloud SDK endpoint + API key. Routed to the module constants so the
+    # client SDK can read them without re-parsing the config file.
+    ep = data.get('endpoint')
+    if ep:
+        global _CLOUD_ENDPOINT
+        _CLOUD_ENDPOINT = str(ep).rstrip('/')
+    ak = data.get('api_key')
+    if ak:
+        global _CLOUD_API_KEY
+        _CLOUD_API_KEY = str(ak)
 
     return aws_configure(
         key=key,
@@ -248,6 +269,15 @@ def _load_config_from_default_locations() -> bool:
                         if dp:
                             global _DEFAULT_S3_PREFIX
                             _DEFAULT_S3_PREFIX = dp.rstrip('/')
+                        # C-6: cloud SDK endpoint + API key (key=value form).
+                        ep = kv.get('endpoint')
+                        if ep:
+                            global _CLOUD_ENDPOINT
+                            _CLOUD_ENDPOINT = ep.rstrip('/')
+                        ak = kv.get('api_key')
+                        if ak:
+                            global _CLOUD_API_KEY
+                            _CLOUD_API_KEY = ak
                 except Exception:
                     # Fallback to JSON loader if parsing failed unexpectedly
                     load_aws_configure(cfg)
