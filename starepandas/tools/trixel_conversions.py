@@ -634,6 +634,13 @@ def split_antimeridian(trixels, drop=False):
     outside = geopandas.tools.collect(outside)
 
     split = inside.union(outside)
+    # Normalise to a MultiPolygon. The split contract is a multi-geometry (the
+    # docstring example indexes ``.geoms[0]``); shapely 2.1's
+    # ``MultiPolygon.union(<empty>)`` collapses a single-part result back to a
+    # Polygon, so re-wrap to keep ``.geoms`` available for all callers.
+    if isinstance(split, shapely.geometry.Polygon):
+        split = shapely.geometry.MultiPolygon([split]) if not split.is_empty \
+            else shapely.geometry.MultiPolygon()
     return split
 
 def split_antimeridian_series(trixels, drop=False):

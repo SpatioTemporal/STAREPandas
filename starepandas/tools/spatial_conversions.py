@@ -499,9 +499,17 @@ def series_intersects(series, other, method='binsearch', n_partitions=1, num_wor
             intersects = numpy.array(intersects, dtype='bool')
     else:
         ddf = dask.dataframe.from_pandas(series, npartitions=n_partitions)
-        meta = {'intersects': 'bool'}
-        res = ddf.map_partitions(lambda df: numpy.array(series_intersects(df, other, method, 1)), meta=meta)
-        intersects = res.compute(scheduler='processes', num_workers=num_workers)
+        # Each partition must return a pandas Series (not a bare ndarray) so the
+        # Series meta matches — modern dask rejects the array/DataFrame-meta
+        # mismatch. Partitions stay in order, so .to_numpy() restores the
+        # original row order the caller aligns positionally.
+        res = ddf.map_partitions(
+            lambda part: pandas.Series(
+                series_intersects(part, other, method, 1), index=part.index
+            ),
+            meta=pandas.Series([], dtype='bool', name=series.name),
+        )
+        intersects = res.compute(scheduler='processes', num_workers=num_workers).to_numpy()
     return intersects
 
 

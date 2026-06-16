@@ -96,8 +96,9 @@ class TestToHdf5Structure:
         sdf.to_hdf5(out, scan="S1", pixel_width=pw)
 
         with h5py.File(out, 'r') as f:
-            assert f['S1']['Latitude'].dtype == np.float64
-            assert f['S1']['Longitude'].dtype == np.float64
+            # float32 matches the original GPM/SSMIS L1C granule dtype.
+            assert f['S1']['Latitude'].dtype == np.float32
+            assert f['S1']['Longitude'].dtype == np.float32
             assert f['S1']['Latitude'].shape == (n_scans, pw)
             assert f['S1']['Longitude'].shape == (n_scans, pw)
 
@@ -149,16 +150,23 @@ class TestToHdf5ScanTime:
             for field in ('Year', 'Month', 'DayOfMonth', 'Hour', 'Minute', 'Second', 'MilliSecond'):
                 assert field in st, f"Missing ScanTime field: {field}"
 
-    def test_scantime_dtype_int16(self, tmp_path):
+    def test_scantime_dtypes(self, tmp_path):
         import h5py
         sdf, n_scans, pw = _make_sdf(n_scans=2, pixel_width=5)
         out = str(tmp_path / "test.h5")
         sdf.to_hdf5(out, scan="S1", pixel_width=pw)
 
+        # dtypes match the original GPM/SSMIS L1C granule format: Year and
+        # MilliSecond are int16; the rest are int8.
+        expected = {
+            'Year': np.int16, 'Month': np.int8, 'DayOfMonth': np.int8,
+            'Hour': np.int8, 'Minute': np.int8, 'Second': np.int8,
+            'MilliSecond': np.int16,
+        }
         with h5py.File(out, 'r') as f:
             st = f['S1']['ScanTime']
-            for field in ('Year', 'Month', 'DayOfMonth', 'Hour', 'Minute', 'Second', 'MilliSecond'):
-                assert st[field].dtype == np.int16, f"Wrong dtype for ScanTime/{field}"
+            for field, dt in expected.items():
+                assert st[field].dtype == dt, f"Wrong dtype for ScanTime/{field}"
 
     def test_scantime_1d_length(self, tmp_path):
         import h5py
@@ -275,7 +283,8 @@ class TestReconstituteFromParquet:
     ``to_hdf5()`` and is correct behaviour; it does not indicate a test failure.
     """
 
-    def _write_local_parquet(self, tmp_path, n_scans=3, pixel_width=5, n_tc=2):
+    def _write_local_parquet(self, tmp_path, n_scans=3, pixel_width=5, n_tc=2,
+                             dataset="GMI_S1"):
         import pystare
         N = n_scans * pixel_width
         lats = np.random.uniform(33, 41, N)
@@ -298,7 +307,9 @@ class TestReconstituteFromParquet:
         sdf._sid_column_name = 'sids'
 
         parquet_root = str(tmp_path / "parquet_root")
-        sdf.to_local(parquet_root, level=6, pixel_width=pixel_width)
+        # Store under the dataset the tests reconstitute (the flat/local layout
+        # keys chunks by dataset; reconstitute filters on it).
+        sdf.to_local(parquet_root, level=6, pixel_width=pixel_width, dataset=dataset)
         return parquet_root, sdf, n_scans, pixel_width
 
     def test_reconstitute_with_area_sids(self, tmp_path):
@@ -351,9 +362,15 @@ class TestReconstituteFromParquet:
         )
         with h5py.File(out_hdf5, 'r') as f:
             st = f['S1']['ScanTime']
-            for field in ('Year', 'Month', 'DayOfMonth', 'Hour', 'Minute', 'Second', 'MilliSecond'):
+            # Year/MilliSecond int16, the rest int8 (original L1C granule format).
+            expected = {
+                'Year': np.int16, 'Month': np.int8, 'DayOfMonth': np.int8,
+                'Hour': np.int8, 'Minute': np.int8, 'Second': np.int8,
+                'MilliSecond': np.int16,
+            }
+            for field, dt in expected.items():
                 assert field in st
-                assert st[field].dtype == np.int16
+                assert st[field].dtype == dt
 
     def test_reconstitute_tc_3d(self, tmp_path):
         import h5py
@@ -404,7 +421,7 @@ class TestReconstituteFromParquet:
         sdf._sid_column_name = 'sids'
         parquet_root = str(tmp_path / "no_pw")
         # pixel_width=None → kv-metadata not written
-        sdf.to_local(parquet_root, level=6)
+        sdf.to_local(parquet_root, level=6, dataset="GMI_S1")
 
         out_hdf5 = str(tmp_path / "out_fallback.h5")
         # SCAN_PIXEL_WIDTHS["GMI_S1"] == 221 → used as fallback
@@ -415,8 +432,11 @@ class TestReconstituteFromParquet:
         with h5py.File(out_hdf5, 'r') as f:
             assert f['S1']['Latitude'].ndim == 2
 
-    def test_reconstitute_no_area_sids_or_bbox_raises(self, tmp_path):
-        with pytest.raises(ValueError, match="exactly one"):
+    def test_reconstitute_no_area_sids_or_bbox_is_full_granule(self, tmp_path):
+        """Neither area_sids nor bbox is now valid (task-13: full granule). With
+        no data present it raises a clear 'no partitions' error, not a
+        validation error."""
+        with pytest.raises(ValueError, match="No Parquet partitions"):
             reconstitute_hdf5_from_s3(
                 str(tmp_path), "GMI_S1", str(tmp_path / "out.h5"),
             )
@@ -424,7 +444,7 @@ class TestReconstituteFromParquet:
     def test_reconstitute_both_area_sids_and_bbox_raises(self, tmp_path):
         import pystare
         area_sids = pystare.cover_from_hull([33, 33, 41, 41], [-124, -116, -116, -124], 6)
-        with pytest.raises(ValueError, match="exactly one"):
+        with pytest.raises(ValueError, match="not both"):
             reconstitute_hdf5_from_s3(
                 str(tmp_path), "GMI_S1", str(tmp_path / "out.h5"),
                 area_sids=area_sids, bbox=(-124, 33, -116, 41),
@@ -442,7 +462,9 @@ class TestReconstituteFromParquet:
             )
 
     def test_reconstitute_bad_dataset_name_no_scan_suffix_raises(self, tmp_path):
-        parquet_root, _, _, pw = self._write_local_parquet(tmp_path)
+        # Store under "GMI" so the reconstitute finds the data and then fails at
+        # scan-group-name derivation (the behaviour under test), not earlier.
+        parquet_root, _, _, pw = self._write_local_parquet(tmp_path, dataset="GMI")
         with pytest.raises(ValueError, match="scan group name"):
             reconstitute_hdf5_from_s3(
                 parquet_root, "GMI",  # no _S1 suffix
@@ -649,7 +671,9 @@ class TestReconstituteReturnAndFidelity:
         })
         sdf._sid_column_name = 'sids'
         parquet_root = str(tmp_path / "parquet_root")
-        sdf.to_local(parquet_root, level=6, pixel_width=pixel_width)
+        # Store under the dataset the tests reconstitute (the flat/local layout
+        # keys chunks by dataset; reconstitute filters on it).
+        sdf.to_local(parquet_root, level=6, pixel_width=pixel_width, dataset="GMI_S1")
         return parquet_root, sdf, n_scans, pixel_width
 
     def test_return_value_is_output_path(self, tmp_path):
@@ -733,7 +757,7 @@ class TestReconstituteScanNameExtraction:
         })
         sdf._sid_column_name = 'sids'
         parquet_root = str(tmp_path / f"pq_{dataset}")
-        sdf.to_local(parquet_root, level=6, pixel_width=pw)
+        sdf.to_local(parquet_root, level=6, pixel_width=pw, dataset=dataset)
 
         out = str(tmp_path / f"out_{dataset}.h5")
         reconstitute_hdf5_from_s3(

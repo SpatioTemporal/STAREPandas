@@ -117,12 +117,13 @@ def test_pickle_s3_functions():
 def test_pickle_with_real_granule_data():
     """Test pickle functions with actual granule data if available"""
     
-    # Check if we have test data available
-    test_data_path = "tests/data/granules/MOD05_L2.A2019336.0000.061.2019336211522_stare.nc"
-    
+    # Check if we have test data available. Pass the granule (.hdf); the
+    # _stare.nc sidecar is auto-discovered via sidecar=True.
+    test_data_path = "tests/data/granules/MOD05_L2.A2019336.0000.061.2019336211522.hdf"
+
     if os.path.exists(test_data_path):
         print(f"Testing with real granule data: {test_data_path}")
-        
+
         # Read granule with starepandas
         sdf = sp.read_granule(test_data_path, sidecar=True, latlon=True, read_timestamp=False)
         
