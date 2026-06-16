@@ -85,16 +85,17 @@ def main():
     demo = StarePodsDemo(aws_config_path=CONFIG_PATH)
 
     # Granule basename — used as a substring filter on group_path. Note:
-    # as of task 12 (2026-05-25) the S3 layout puts <granule_basename>
-    # INSIDE the HTM tree, not at the top:
+    # as of the quaternary pod-code layout (2026-06-14) the S3 layout is FLAT
+    # and the granule basename is embedded in the chunk *filename*, bracketed
+    # by '-':
     #
-    #   <S3_PREFIX>/Q00_X/Q01_Y/.../QN_M/<granule_basename>/<dataset>.parquet
+    #   <S3_PREFIX>/<podcode>-<granule_basename>-<dataset>.parquet
     #
     # So the old "granule_s3_prefix = S3_PREFIX + '/' + basename" scoping
     # would no longer match any rows. We now scope by substring match on
     # the basename (which is unique within the bucket).
     granule_basename = os.path.splitext(os.path.basename(GRANULE_FILE))[0]
-    granule_path_marker = f"/{granule_basename}/"   # matches the HTM-buried segment
+    granule_path_marker = f"-{granule_basename}-"   # matches the filename-embedded span
 
     # ── Step 1: Ingest ────────────────────────────────────────────────────────
     print("=" * 60)

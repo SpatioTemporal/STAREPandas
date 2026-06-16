@@ -112,14 +112,17 @@ def test_config_without_default_s3_prefix_leaves_constant_empty(monkeypatch):
 # ----- Path-construction shape (via to_local, which uses the same splice) -
 
 
-def test_to_local_layout_matches_target_with_granule_name(tmp_path):
-    """to_local already produces HTM → granule → dataset. The task-12 fix
-    to to_s3 is the same logic. Verifying to_local locks in the contract
-    that both sides now follow.
-    """
+def test_to_local_layout_is_podcode_hierarchy_with_granule_name(tmp_path):
+    """to_local writes the cumulative pod-code dir tree with a self-describing
+    ``<podcode>-<granule>-<dataset>.parquet`` leaf (quaternary layout §2).
+    The granule basename may itself contain '-' (the filename grammar recovers
+    it as the span between the first and last '-')."""
     import numpy as np
     import pystare
     from starepandas import STAREDataFrame
+    from starepandas.staredataframe import (
+        parse_chunk_filename, podcode_to_local_dirs,
+    )
 
     # Tiny synthetic STAREDataFrame.
     rng = np.random.default_rng(0)
@@ -129,9 +132,10 @@ def test_to_local_layout_matches_target_with_granule_name(tmp_path):
     sdf = STAREDataFrame({'sids': sids, 'Latitude': lats, 'Longitude': lons})
     sdf.set_sids('sids', inplace=True)
 
+    granule = '1A.GPM.GMI.X.20240115-S000000-E001234.000.V07A'
     root = str(tmp_path)
     sdf.to_local(root, level=6, pixel_width=5, dataset='GMI_S1',
-                 granule_name='1A.GPM.GMI.X.20240115-S000000-E001234.000.V07A')
+                 granule_name=granule)
 
     # Walk the tree and assert every parquet leaf matches the expected layout.
     found = []
@@ -144,16 +148,18 @@ def test_to_local_layout_matches_target_with_granule_name(tmp_path):
 
     for rel in found:
         parts = rel.split(os.sep)
-        # Expect at least: Q00_X/.../<granule>/<dataset>.parquet → >=3 parts.
-        assert len(parts) >= 3, f"path too shallow: {rel}"
-        # All but the last two segments should be HTM (start with Q).
-        htm_segs = parts[:-2]
-        assert htm_segs, f"no HTM segments before granule: {rel}"
-        assert all(s.startswith('Q') for s in htm_segs), \
-            f"non-HTM segment in HTM zone of {rel}: {htm_segs}"
-        # Penultimate segment is the granule basename.
-        assert parts[-2] == '1A.GPM.GMI.X.20240115-S000000-E001234.000.V07A', \
-            f"granule segment wrong in {rel}: {parts[-2]}"
-        # Final segment is the dataset leaf.
-        assert parts[-1] == 'GMI_S1.parquet', \
-            f"dataset leaf wrong in {rel}: {parts[-1]}"
+        # Every path segment is a pod-code dir; the leaf is the chunk file.
+        dir_segs, leaf = parts[:-1], parts[-1]
+        assert dir_segs, f"no pod-code dirs before leaf: {rel}"
+        assert all(s.startswith('q') for s in dir_segs), \
+            f"non-pod-code segment in {rel}: {dir_segs}"
+
+        podcode, g, ds = parse_chunk_filename(leaf)
+        # Filename grammar recovers the three components, '-' in granule and all.
+        assert g == granule, f"granule mismatch in {rel}: {g}"
+        assert ds == 'GMI_S1', f"dataset mismatch in {rel}: {ds}"
+        # Leaf dir name == filename pod-code prefix (intentional redundancy).
+        assert dir_segs[-1] == podcode, f"leaf dir != pod code in {rel}"
+        # Dir chain is the cumulative pod-code chain for this code.
+        assert dir_segs == podcode_to_local_dirs(podcode), \
+            f"dir chain not cumulative pod-code chain in {rel}: {dir_segs}"

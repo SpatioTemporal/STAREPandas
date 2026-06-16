@@ -70,18 +70,40 @@ starepandas/
 └── examples/               # Example notebooks and scripts
 ```
 
-### Unified Parquet layout (post task-12, 2026-05-25)
+### Quaternary pod-code layout (post 2026-06-14)
 
-Both `to_local` and `to_s3` now produce the same layout — HTM tree first,
-then granule basename, then dataset leaf. Spatial queries walk **one** tree
-regardless of provenance; multiple granules in the same trixel coexist as
-sibling subdirectories.
+Chunk storage uses **quaternary pod codes** — **flat in S3, hierarchical on
+local disk** — with self-describing filenames. This replaced the earlier
+"unified HTM-tree" layout (task-12, 2026-05-25); S3 and local now **diverge**.
+See `docs/quaternary_storage_plan.md` (local/uncommitted) for the full design.
+
+A **pod code** is a compact, dynamic-length base-4 string for a trixel:
+`q` + octant(0-7) + one quaternary digit(0-3) per level. Its length follows the
+trixel's actual STARE level (level-2 → `q132`; level-4 → `q13211`). It encodes
+the same address the old `Q00_1/Q01_3/Q02_2/Q03_1/Q04_1` chain did.
 
 ```
-LOCAL: <root>/Q00_X/Q01_Y/.../QN_M/<granule_basename>/<dataset>.parquet
-S3:    s3://zarrpods/storage/Q00_X/Q01_Y/.../QN_M/<granule_basename>/<dataset>.parquet
-                            └─ default_s3_prefix (new .config field) ─┘
+LOCAL (hierarchical — cumulative pod-code dir tree, self-describing leaf):
+  <root>/q13/q132/q1321/q13211/q13211-<granule_basename>-<dataset>.parquet
+
+S3 (FLAT — every chunk directly under the storage prefix; pod code IS the key prefix):
+  s3://zarrpods/storage/q13211-<granule_basename>-<dataset>.parquet
+                       └─ default_s3_prefix (.config field) ─┘
 ```
+
+**Filename grammar** (`<podcode>-<granule>-<dataset>.parquet`): pod code = before
+the first `-`; dataset = after the last `-` (datasets use `_`, never `-`); granule
+basename = the middle (may itself contain `-`). The flat S3 key's pod-code prefix
+doubles as a native spatial query — `list_objects_v2(Prefix="storage/q13")`
+returns the `q13` subtree, no tree walk.
+
+**Codec** (`starepandas/staredataframe.py`): `sid_to_podcode` / `podcode_to_sid` /
+`podcode_to_local_dirs` / `chunk_filename` / `parse_chunk_filename`. The writers
+(`STAREDataFrame.to_s3` flat, `to_local` hier) and readers
+(`reconstitute_hdf5_from_*`, which are metadata-driven via the stored
+`group_path` and fall back to a pod-code prefix list / dir walk) all flow through
+it. Old `Q00_*/…` data is **kept as-is** and not read by the new path (migration
+is a deferred TODO in the plan §8).
 
 ### Key Components
 

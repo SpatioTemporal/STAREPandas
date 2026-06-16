@@ -56,20 +56,25 @@ def test_parquet_local_functions():
             if col != 'geometry':
                 assert sdf[col].equals(sdf_read[col]), f"Column {col} data mismatch"
 
-        # Verify the HTM-subtree layout was actually created on disk
-        # (guards against silent regressions back to the flat layout).
+        # Verify the quaternary pod-code hierarchy was created on disk
+        # (guards against silent regressions of the local layout).
         from pathlib import Path
-        q00_dirs = list(Path(local_path).rglob("Q00_*"))
-        assert q00_dirs, f"Expected hierarchical Q00_* directories under {local_path}"
-        # Default fallback dataset_name="data" since this test passes no dataset.
-        # Each leaf is now a "data.parquet" file written by to_local.
-        parquet_leaves = list(Path(local_path).rglob("data.parquet"))
-        assert parquet_leaves, "Expected at least one Parquet partition at the dataset leaf"
+        pod_dirs = list(Path(local_path).glob("q*"))
+        assert pod_dirs, f"Expected top-level pod-code (q*) directories under {local_path}"
+        # Default fallback dataset_name="data" and granule="data" since this
+        # test passes neither. Each leaf is a self-describing pod-code file.
+        parquet_leaves = list(Path(local_path).rglob("q*-*-data.parquet"))
+        assert parquet_leaves, "Expected at least one pod-code Parquet chunk leaf"
+        # Leaf dir name and the filename's pod-code prefix are redundant.
+        for leaf in parquet_leaves:
+            assert leaf.name.startswith(leaf.parent.name + "-"), \
+                f"filename pod prefix must match leaf dir: {leaf}"
 
         print("✅ Local Parquet I/O test passed!")
 
 def test_parquet_local_with_granule_name():
-    """to_local inserts <granule_name>/<dataset>/ as the leaf when granule_name is provided."""
+    """to_local writes <podcode>-<granule>-<dataset>.parquet chunks under the
+    cumulative pod-code dir tree when granule_name is provided."""
     data = {'lat': [0, 1, 2, 3], 'lon': [0, 1, 2, 3], 'data': [1, 2, 3, 4]}
     sdf = sp.STAREDataFrame(data)
     sdf['geometry'] = [Point(lon, lat) for lon, lat in zip(sdf['lon'], sdf['lat'])]
@@ -85,16 +90,20 @@ def test_parquet_local_with_granule_name():
                           granule_name=granule)
 
         from pathlib import Path
-        # No granule directory directly under root — Q-tree comes first
+        # Top level is the pod-code dir tree (q<octant><digit>), not Q-dirs.
         top_level = [p.name for p in Path(local_path).iterdir() if p.is_dir()]
         assert top_level, f"Nothing written under {local_path}"
-        assert all(name.startswith("Q") for name in top_level), \
-            f"Expected only Q* dirs at root, got {top_level}"
+        assert all(name.startswith("q") for name in top_level), \
+            f"Expected only pod-code (q*) dirs at root, got {top_level}"
 
-        # Each leaf is <granule>/<dataset>.parquet (a single file per partition)
-        leaf_files = list(Path(local_path).rglob(f"{granule}/{dataset_name}.parquet"))
-        assert leaf_files, f"Expected <granule>/<dataset>.parquet leaves under the HTM tree"
+        # Each leaf is <podcode>-<granule>-<dataset>.parquet (one file per pod).
+        leaf_files = list(Path(local_path).rglob(f"q*-{granule}-{dataset_name}.parquet"))
+        assert leaf_files, "Expected pod-code chunk leaves under the dir tree"
         assert all(leaf.is_file() for leaf in leaf_files)
+        # Filename's pod-code prefix is redundant with the leaf dir name.
+        for leaf in leaf_files:
+            assert leaf.name.startswith(leaf.parent.name + "-"), \
+                f"filename pod prefix must match leaf dir: {leaf}"
 
         # Round-trip should still work (from_local is layout-agnostic)
         sdf_read = sp.STAREDataFrame.from_local(local_path)
@@ -142,12 +151,13 @@ def test_parquet_s3_functions():
 def test_parquet_with_real_granule_data():
     """Test Parquet I/O with actual granule data if available"""
     
-    # Check if we have test data available
-    test_data_path = "tests/data/granules/MOD05_L2.A2019336.0000.061.2019336211522_stare.nc"
-    
+    # Check if we have test data available. Pass the granule (.hdf); the
+    # _stare.nc sidecar is auto-discovered via sidecar=True.
+    test_data_path = "tests/data/granules/MOD05_L2.A2019336.0000.061.2019336211522.hdf"
+
     if os.path.exists(test_data_path):
         print(f"Testing with real granule data: {test_data_path}")
-        
+
         # Read granule with starepandas
         sdf = sp.read_granule(test_data_path, sidecar=True, latlon=True, read_timestamp=False)
         

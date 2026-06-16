@@ -565,13 +565,12 @@ class LocalStarePodsDemo:
     local filesystem and stores metadata in a SQLite database.  Useful for
     development, offline work, or environments without cloud access.
 
-    Directory layout (HTM-subtree, Parquet leaves)::
+    Directory layout (hierarchical quaternary pod-code tree, Parquet leaves)::
 
         <local_root>/
         ├── metadata.db                          # SQLite — PodsMetadata table
-        └── Q00_X/Q01_Y/.../QN_M/
-            └── <granule_basename>/
-                └── <dataset>.parquet            # one Parquet file per partition
+        └── q13/q132/q1321/q13211/
+            └── q13211-<granule_basename>-<dataset>.parquet  # one chunk per pod
 
     Parameters
     ----------

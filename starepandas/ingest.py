@@ -120,9 +120,10 @@ def ingest_granules_s3(
 ) -> List[str]:
     """Partition granules into Parquet files on S3 and record metadata in RDS.
 
-    Final S3 layout (matching :func:`ingest_granules_local`)::
+    Final S3 layout — flat quaternary pod-code keys (the local pipeline uses
+    the hierarchical variant; see :func:`ingest_granules_local`)::
 
-        <s3_prefix>/Q00_X/Q01_Y/.../QN_M/<granule_basename>/<dataset>.parquet
+        <s3_prefix>/<podcode>-<granule_basename>-<dataset>.parquet
 
     Parameters
     ----------
@@ -209,9 +210,10 @@ def ingest_granules_local(
     """Partition granules into Parquet files on the local filesystem and
     record metadata in a SQLite database. No AWS, no RDS.
 
-    Layout (mirrors :func:`ingest_granules_s3` — task 12 alignment)::
+    Layout — hierarchical quaternary pod-code dir tree with a self-describing
+    leaf (S3 uses the flat variant; see :func:`ingest_granules_s3`)::
 
-        <local_root>/Q00_X/Q01_Y/.../QN_M/<granule_basename>/<dataset>.parquet
+        <local_root>/q13/q132/q1321/q13211/q13211-<granule_basename>-<dataset>.parquet
 
     Parameters
     ----------

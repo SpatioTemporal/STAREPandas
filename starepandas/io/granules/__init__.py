@@ -960,77 +960,98 @@ def from_legacy_zarr_s3_groups(s3_path, group_sid_ids, storage_options=None):
         return STAREDataFrame()
 
 
-def generate_partition_path(sid, dataset_name):
+def generate_partition_path(sid, dataset_name=""):
     """
-    Generate relative partition path based on STARE SID structure.
-    
-    This is a convenience function that creates a temporary STAREDataFrame instance
-    and calls its generate_partition_path method.
-    
+    Generate the pod code for a STARE SID (quaternary storage layout).
+
+    Convenience wrapper around
+    :func:`starepandas.staredataframe.sid_to_podcode`.  Returns the compact,
+    dynamic-length pod code (``"q13211"``) — a single path segment.  See
+    ``docs/quaternary_storage_plan.md`` §2.
+
     Parameters
     ----------
     sid : int
-        8-byte STARE SID integer
-    dataset_name : str
-        Name of the dataset
-        
+        8-byte STARE SID integer.
+    dataset_name : str, optional
+        Ignored — datasets are carried in the chunk filename, not the path.
+
     Returns
     -------
     str
-        Relative partition path in format Q00_X/Q01_Y/.../QN_M/DatasetName
-        
+        The pod code (e.g. ``"q13211"``).
+
     Examples
     --------
+    >>> from starepandas.staredataframe import sid_to_podcode, podcode_to_sid
     >>> from starepandas.io.granules import generate_partition_path
-    >>> path = generate_partition_path(3445253714938429444, "MOD09")
-    >>> print(path)
-    Q00_5/Q01_3/Q02_3/Q03_2/Q04_2/MOD09
-    
+    >>> generate_partition_path(podcode_to_sid("q13211"))
+    'q13211'
+
     See Also
     --------
-    STAREDataFrame.generate_partition_path : The underlying method
-    parse_partition_path : Reverse operation to parse paths back to SIDs
-    to_s3 : Generic S3 Parquet writing function
+    sid_to_podcode : The underlying codec function.
+    parse_partition_path : Reverse operation to parse pod codes back to SIDs.
+    chunk_filename : Build a self-describing chunk filename.
     """
-    from starepandas import STAREDataFrame
-    sdf = STAREDataFrame()
-    return sdf.generate_partition_path(sid, dataset_name)
+    from starepandas.staredataframe import sid_to_podcode
+    return sid_to_podcode(sid)
 
 
 def parse_partition_path(partition_path):
     """
-    Parse hierarchical partition path and reconstruct STARE SID from path components.
+    Reconstruct a STARE SID from a pod code (quaternary storage layout).
 
-    This is a convenience function that creates a temporary STAREDataFrame instance
-    and calls its parse_partition_path method. This is the reverse operation of generate_partition_path.
+    Convenience wrapper around
+    :func:`starepandas.staredataframe.podcode_to_sid`.  Reverse of
+    :func:`generate_partition_path`.
 
     Parameters
     ----------
     partition_path : str
-        Hierarchical path in format Q00_X/Q01_Y/.../QN_M/DatasetName
+        A pod code (e.g. ``"q13211"``).  A ``/``-joined prefix is tolerated;
+        only the final segment is parsed.
 
     Returns
     -------
     tuple
-        (sid, dataset_name) where sid is the reconstructed STARE SID integer
-        and dataset_name is the extracted dataset name
+        ``(sid, None)`` — the dataset is no longer embedded in the path, so the
+        second element (kept for tuple-shape compatibility) is always ``None``.
 
     Examples
     --------
-    >>> from starepandas.io.granules import parse_partition_path
-    >>> sid, dataset = parse_partition_path("Q00_5/Q01_3/Q02_3/Q03_2/Q04_2/MOD09")
-    >>> print(f"SID: {sid}, Dataset: {dataset}")
-    SID: 3445253714938429444, Dataset: MOD09
+    >>> from starepandas.io.granules import parse_partition_path, generate_partition_path
+    >>> sid, _ = parse_partition_path("q13211")
+    >>> generate_partition_path(sid)
+    'q13211'
 
     See Also
     --------
-    STAREDataFrame.parse_partition_path : The underlying method
-    generate_partition_path : Reverse operation to generate paths from SIDs
-    from_s3 : Read Parquet partitions from S3
+    podcode_to_sid : The underlying codec function.
+    generate_partition_path : Reverse operation to generate pod codes from SIDs.
     """
-    from starepandas import STAREDataFrame
-    sdf = STAREDataFrame()
-    return sdf.parse_partition_path(partition_path)
+    from starepandas.staredataframe import podcode_to_sid
+    podcode = partition_path.rstrip('/').split('/')[-1]
+    return podcode_to_sid(podcode), None
+
+
+def _podcode_query_prefixes(podcode):
+    """S3 key prefixes that cover a query trixel's pod code in the flat layout.
+
+    Returns the query code itself (a prefix match catches it and any
+    finer-than-query descendants) plus, for each *coarser ancestor* code, the
+    ``<ancestor>-`` form (the trailing ``-`` restricts the match to chunks
+    stored exactly at that ancestor level rather than re-matching the query's
+    own subtree — the dynamic-length mixed-level caveat, plan §4.3 / Q4).
+
+    >>> _podcode_query_prefixes("q13211")
+    ['q13211', 'q1-', 'q13-', 'q132-', 'q1321-']
+    """
+    prefixes = [podcode]
+    body = podcode[1:]
+    for n in range(1, len(body)):
+        prefixes.append('q' + body[:n] + '-')
+    return prefixes
 
 
 def reconstitute_hdf5_from_s3(
@@ -1098,9 +1119,10 @@ def reconstitute_hdf5_from_s3(
     Raises
     ------
     ValueError
-        If neither or both of ``area_sids`` / ``bbox`` are provided, if no
-        matching partition files are found, or if ``pixel_width`` cannot be
-        determined.
+        If *both* ``area_sids`` and ``bbox`` are provided (passing *neither*
+        is allowed — it reconstitutes the full granule, task-13 parity with
+        :func:`reconstitute_hdf5_from_local`), if no matching partition files
+        are found, or if ``pixel_width`` cannot be determined.
     """
     import pyarrow.parquet as pq
     import pystare
@@ -1179,45 +1201,75 @@ def reconstitute_hdf5_from_s3(
             for _, row in matching.iterrows():
                 group_paths.append((row['group_path'], int(row['grouped_id'])))
         else:
-            # Fallback: construct paths directly from query SIDs.
+            # Fallback: no PodsMetadata rows — query the flat S3 layout directly
+            # via pod-code key prefixes (docs/quaternary_storage_plan.md §4/Q4).
             # Only valid when we actually have a query area — no_spatial_filter
-            # has no SIDs to construct from.
+            # has no SIDs to enumerate prefixes from.
             if no_spatial_filter:
                 raise ValueError(
                     f"No PodsMetadata rows for dataset '{dataset}' and no "
                     "spatial filter to enumerate partitions from. Pass bbox= "
                     "or area_sids=, or ensure the dataset has been ingested."
                 )
-            dummy = STAREDataFrame()
+            from starepandas.staredataframe import (
+                parse_chunk_filename, podcode_to_sid, sid_to_podcode, CHUNK_SUFFIX,
+            )
+            import s3fs
+            fs = s3fs.S3FileSystem(**merged_opts) if merged_opts else s3fs.S3FileSystem()
+            root_no_scheme = (s3_root[len('s3://'):] if s3_root.startswith('s3://')
+                              else s3_root).rstrip('/')
+            seen = set()
             for gid in query_group_ids:
-                rel = dummy.generate_partition_path(gid, dataset)
-                group_paths.append((f"{s3_root}/{rel}.parquet", gid))
+                for prefix in _podcode_query_prefixes(sid_to_podcode(gid)):
+                    try:
+                        keys = fs.glob(f"{root_no_scheme}/{prefix}*{CHUNK_SUFFIX}")
+                    except Exception:
+                        keys = []
+                    for k in keys:
+                        if k in seen:
+                            continue
+                        try:
+                            pc, _g, ds = parse_chunk_filename(k)
+                        except ValueError:
+                            continue
+                        if ds != dataset:
+                            continue
+                        seen.add(k)
+                        group_paths.append((f"s3://{k}", podcode_to_sid(pc)))
     else:
-        # Local: HTM-subtree layout — walk the tree for `<dataset>.parquet`
-        # leaves, decode the partition SID from HTM path segments, and keep
-        # only those that intersect the query.
+        # Local: hierarchical pod-code tree — walk for chunk files, parse each
+        # file's pod code + dataset from its (authoritative) filename, and keep
+        # only those whose dataset matches and whose SID intersects the query.
         if not os.path.isdir(s3_root):
             raise ValueError(f"Local root path does not exist: {s3_root}")
-        dummy = STAREDataFrame()
-        target_basename = f"{dataset}.parquet"
+        from starepandas.staredataframe import (
+            parse_chunk_filename, podcode_to_sid, CHUNK_SUFFIX,
+        )
         for root, _dirs, files in os.walk(s3_root):
-            if target_basename not in files:
-                continue
-            filepath = os.path.join(root, target_basename)
-            rel = os.path.relpath(filepath, s3_root)
-            parts = rel.split(os.sep)
-            htm_parts = [p for p in parts[:-1] if p.startswith('Q')]
-            if not htm_parts:
-                continue
-            try:
-                sid, _ = dummy.parse_partition_path('/'.join(htm_parts) + f'/{dataset}')
-            except Exception:
-                continue
-            # Task 13: no_spatial_filter ⇒ include every partition found.
-            if no_spatial_filter or sid in query_group_ids:
-                group_paths.append((filepath, sid))
+            for fn in files:
+                if not fn.endswith(CHUNK_SUFFIX):
+                    continue
+                try:
+                    podcode, _g, ds = parse_chunk_filename(fn)
+                except ValueError:
+                    continue
+                if ds != dataset:
+                    continue
+                try:
+                    sid = podcode_to_sid(podcode)
+                except ValueError:
+                    continue
+                filepath = os.path.join(root, fn)
+                # Task 13: no_spatial_filter ⇒ include every partition found.
+                if no_spatial_filter or sid in query_group_ids:
+                    group_paths.append((filepath, sid))
 
     if not group_paths:
+        if no_spatial_filter:
+            raise ValueError(
+                f"No Parquet partitions found for dataset '{dataset}' under "
+                f"'{s3_root}' (no spatial filter applied)."
+            )
         raise ValueError(
             f"No Parquet partitions found for dataset '{dataset}' intersecting "
             f"the requested area.  Queried {len(query_group_ids)} partition SIDs."

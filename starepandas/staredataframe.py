@@ -53,6 +53,154 @@ _CLOUD_API_KEY = ""
 # the multi-MB range — the regime PyArrow / S3 are optimised for.
 MAX_PARTITION_LEVEL = 4
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Quaternary pod-code codec (docs/quaternary_storage_plan.md §2)
+#
+# A pod code is a compact base-4 string for a level-N trixel:
+#
+#     "q" + octant-digit(0-7) + one quaternary-digit(0-3) per refinement level
+#
+# Its length is *dynamic* — it follows the trixel's actual STARE level (a
+# level-2 trixel → ``q132``; a level-4 trixel → ``q13211``). It encodes the
+# same address as the old ``Q00_1/Q01_3/Q02_2/Q03_1/Q04_1`` directory chain.
+#
+# Bit layout of a STARE SID (same as the old generate_partition_path decode):
+#   bits 0-4   : number of levels − 1  (so num_levels = (sid & 0x1F) + 1)
+#   bits 59-61 : octant value          (level 0, 3 bits, 0-7)
+#   bits 57-58 : level-1 quaternary value, 55-56 level-2, … (2 bits each)
+#
+# Chunk filenames are self-describing (``<podcode>-<granule>-<dataset>.parquet``)
+# so a flat S3 listing is fully traceable without any directory context.
+# ─────────────────────────────────────────────────────────────────────────────
+
+CHUNK_SUFFIX = '.parquet'
+
+
+def sid_to_podcode(sid: int) -> str:
+    """Encode a STARE SID as a compact, dynamic-length pod code.
+
+    The pod code is ``"q"`` + the octant digit + one quaternary digit per
+    refinement level; its length follows the SID's actual level.
+
+    Examples
+    --------
+    >>> sid_to_podcode(podcode_to_sid("q13211"))
+    'q13211'
+    """
+    sid = int(sid) & 0xFFFFFFFFFFFFFFFF
+    num_levels = (sid & 0x1F) + 1          # includes the octant level (level 0)
+    octant = (sid >> 59) & 0x7
+    digits = []
+    for level in range(1, num_levels):
+        if level <= 27:
+            bit_start = 59 - 2 * level
+            digits.append((sid >> bit_start) & 0x3)
+        else:                              # no more bits beyond level 27
+            digits.append(0)
+    return 'q' + str(octant) + ''.join(str(d) for d in digits)
+
+
+def podcode_to_sid(podcode: str) -> int:
+    """Decode a pod code back to a STARE SID at the code's own level.
+
+    Inverse of :func:`sid_to_podcode`. The reconstructed SID's level (bits
+    0-4) is set from the number of quaternary digits in the code.
+
+    Examples
+    --------
+    >>> podcode_to_sid("q13211") == podcode_to_sid("q13211")
+    True
+    """
+    if not isinstance(podcode, str) or not podcode.startswith('q'):
+        raise ValueError(f"Invalid pod code {podcode!r}: must start with 'q'")
+    body = podcode[1:]
+    if not body:
+        raise ValueError(f"Invalid pod code {podcode!r}: missing octant digit")
+    try:
+        octant = int(body[0])
+    except ValueError:
+        raise ValueError(f"Invalid octant digit in pod code {podcode!r}")
+    if not (0 <= octant <= 7):
+        raise ValueError(f"Octant {octant} out of range (0-7) in {podcode!r}")
+    digits = []
+    for ch in body[1:]:
+        try:
+            d = int(ch)
+        except ValueError:
+            raise ValueError(f"Invalid quaternary digit {ch!r} in pod code {podcode!r}")
+        if not (0 <= d <= 3):
+            raise ValueError(f"Quaternary digit {d} out of range (0-3) in {podcode!r}")
+        digits.append(d)
+
+    num_levels = 1 + len(digits)           # octant level + quaternary levels
+    if num_levels > 28:
+        raise ValueError(f"Pod code {podcode!r} encodes too many levels ({num_levels})")
+    sid = (num_levels - 1) & 0x1F          # bits 0-4
+    sid |= (octant & 0x7) << 59            # bits 59-61
+    for i, d in enumerate(digits, start=1):
+        bit_start = 59 - 2 * i
+        sid |= (d & 0x3) << bit_start
+    return sid
+
+
+def podcode_to_local_dirs(podcode: str) -> list:
+    """Cumulative pod-code directory chain for the local (hierarchical) layout.
+
+    The leaf directory equals the full pod code; its depth follows the level.
+
+    Examples
+    --------
+    >>> podcode_to_local_dirs("q13211")
+    ['q13', 'q132', 'q1321', 'q13211']
+    >>> podcode_to_local_dirs("q132")
+    ['q13', 'q132']
+    """
+    body = podcode[1:]
+    if len(body) <= 1:                     # octant-only (level-0) trixel
+        return [podcode]
+    return ['q' + body[:n] for n in range(2, len(body) + 1)]
+
+
+def chunk_filename(podcode: str, granule_basename: str, dataset: str) -> str:
+    """Build a self-describing chunk filename per the §2 grammar.
+
+    ``<podcode>-<granule_basename>-<dataset>.parquet``. The grammar relies on
+    datasets never containing ``-`` (they use ``_``: ``SSMIS_S1``, ``GMI_S1``).
+    ``granule_basename`` *may* contain ``-`` — it is recovered as the middle
+    span between the first and last ``-`` (see :func:`parse_chunk_filename`).
+    """
+    if '-' in dataset:
+        raise ValueError(
+            f"dataset name must not contain '-' (the filename grammar reserves "
+            f"'-' as a separator; datasets use '_'): {dataset!r}"
+        )
+    if '-' in podcode:
+        raise ValueError(f"pod code must not contain '-': {podcode!r}")
+    return f"{podcode}-{granule_basename}-{dataset}{CHUNK_SUFFIX}"
+
+
+def parse_chunk_filename(name: str):
+    """Parse a chunk filename / key into ``(podcode, granule_basename, dataset)``.
+
+    Inverse of :func:`chunk_filename`. Accepts a bare filename or a full path /
+    S3 key (only the basename is parsed). Pod code = before the first ``-``;
+    dataset = after the last ``-``; granule basename = everything between.
+    """
+    base = os.path.basename(name)
+    if base.endswith(CHUNK_SUFFIX):
+        base = base[:-len(CHUNK_SUFFIX)]
+    first = base.find('-')
+    last = base.rfind('-')
+    if first == -1 or first == last:
+        raise ValueError(
+            f"Not a pod-code chunk filename (need >=2 '-' separators): {name!r}"
+        )
+    podcode = base[:first]
+    dataset = base[last + 1:]
+    granule_basename = base[first + 1:last]
+    return podcode, granule_basename, dataset
+
 def aws_configure(key=None, secret=None, token=None, region_name=None, endpoint_url=None, client_kwargs=None,
                   rds=None, db_host=None, db_port=None, db_username=None, db_password=None, db_database=None,
                   **s3fs_kwargs):
@@ -1290,8 +1438,12 @@ class STAREDataFrame(geopandas.GeoDataFrame):
                 dissolved = pool.map(compress_sids_group, [group for group in sids_groups])
 
         sdf = STAREDataFrame(dissolved, columns=[by, self._sid_column_name])
-        sdf.set_index(by, inplace=True)
-        sdf.set_sids(self._sid_column_name, inplace=True)
+        # NB: set_index(inplace=True) downcasts the subclass back to a plain
+        # (Geo)DataFrame under current pandas, which would route set_sids to the
+        # inplace-rejecting fallback. Use the non-inplace forms; set_sids then
+        # re-wraps to a STAREDataFrame.
+        sdf = sdf.set_index(by)
+        sdf = sdf.set_sids(self._sid_column_name)
 
         aggregated = sdf.join(aggregated_data)
         aggregated.__class__ = STAREDataFrame
@@ -1781,16 +1933,17 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         Partition STAREDataFrame by SIDs at specified level and write to S3 as
         one Parquet file per partition.
 
-        Layout (mirrors ``to_local`` — task 12 alignment, 2026-05-25):
+        Quaternary layout (``docs/quaternary_storage_plan.md`` §2) — S3 is
+        **flat**: every chunk lands directly under ``s3_path`` with a
+        self-describing filename whose pod-code prefix doubles as the spatial
+        query prefix::
 
-        * Without ``granule_name``::
+            s3_path/<podcode>-<granule_name>-<dataset>.parquet
 
-              s3_path/Q00_X/Q01_Y/.../QN_M/<dataset>.parquet
-
-        * With ``granule_name`` (recommended for ingest pipelines so multiple
-          granules covering the same trixel coexist as sibling files)::
-
-              s3_path/Q00_X/Q01_Y/.../QN_M/<granule_name>/<dataset>.parquet
+        e.g. ``s3://zarrpods/storage/q13211-1C.GPM.GMI.…V07B-GMI_S1.parquet``.
+        When ``granule_name`` is omitted the granule component defaults to
+        ``"data"``.  (Local writes use the hierarchical pod-code dir tree — see
+        :meth:`to_local`.)
 
         Each Parquet file contains all DataFrame columns for that partition
         plus a ``__row_positions__`` column that preserves original row order
@@ -1911,18 +2064,15 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             if written_count % 50 == 0:
                 print(f"  Progress: {written_count}/{num_groups} partitions written...")
 
-            # Build path: <s3_path>/Q00_X/.../QN_M/[<granule_name>/]<dataset>.parquet
-            # Mirrors to_local's splice logic (staredataframe.py:1973-1983) so
-            # multiple granules in the same partition coexist as siblings.
-            htm_path = self.generate_partition_path(group_id, dataset_name="")
-            htm_segments = [seg for seg in htm_path.split('/') if seg]
-            dataset_segment = f"{dataset or 'data'}.parquet"
-            if granule_name is not None:
-                path_segments = [*htm_segments, granule_name, dataset_segment]
-            else:
-                # Backward-compat path: no granule sub-dir.
-                path_segments = [*htm_segments, dataset_segment]
-            group_path = f"{s3_path}/{'/'.join(path_segments)}"
+            # Quaternary layout (docs/quaternary_storage_plan.md §2): S3 is
+            # FLAT — every chunk lands directly under the storage root, keyed by
+            # a self-describing filename whose pod-code prefix doubles as the
+            # spatial query prefix:
+            #   <s3_path>/<podcode>-<granule_basename>-<dataset>.parquet
+            podcode = sid_to_podcode(group_id)
+            gbase = granule_name if granule_name is not None else "data"
+            fname = chunk_filename(podcode, gbase, dataset or 'data')
+            group_path = f"{s3_path}/{fname}"
 
             # Build a Table containing every column plus __row_positions__ to
             # preserve original row order. Match the legacy coercion:
@@ -2064,10 +2214,12 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         metadata_rows = []
         ts_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
-        # Layout (S3-parity HTM-subtree, with optional granule segment):
-        #   local_path/Q00_X/Q01_Y/.../QN_M/[<granule_name>/]<dataset_name>.parquet
-        # When granule_name is provided, multiple granules' contributions to the
-        # same HTM partition coexist as sibling Parquet files under the partition.
+        # Quaternary layout (docs/quaternary_storage_plan.md §2) — local disk is
+        # hierarchical (cumulative pod-code dir chain) with a self-describing
+        # filename in the leaf:
+        #   local_path/q13/q132/q1321/q13211/q13211-<granule_name>-<dataset>.parquet
+        # Multiple granules' contributions to the same partition coexist as
+        # sibling Parquet files differing only in their <granule_name> span.
         if granule_name is not None and '/' in granule_name:
             raise ValueError(f"granule_name must not contain '/': {granule_name!r}")
         dataset_name = dataset if dataset is not None else "data"
@@ -2079,18 +2231,19 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             if isinstance(group_id, (int, np.integer)) and group_id < 0:
                 continue
 
-            # generate_partition_path appends the dataset segment; pass an empty
-            # dataset_name and strip the trailing empty segment so we have just
-            # the HTM segments and can splice the optional granule segment in.
-            htm_path = self.generate_partition_path(group_id, dataset_name="")
-            htm_segments = [seg for seg in htm_path.split('/') if seg]
-            if granule_name is not None:
-                parent_segments = [*htm_segments, granule_name]
-            else:
-                parent_segments = htm_segments
-            parent_dir = os.path.join(local_path, *parent_segments)
+            # Quaternary layout (docs/quaternary_storage_plan.md §2): local disk
+            # is HIERARCHICAL — the cumulative pod-code dir chain
+            # (q13/q132/q1321/q13211/) with the same self-describing filename
+            # inside the leaf.  The leaf dir name and the filename's pod-code
+            # prefix are intentionally redundant so a chunk is identifiable from
+            # its filename alone.
+            podcode = sid_to_podcode(group_id)
+            local_dirs = podcode_to_local_dirs(podcode)
+            gbase = granule_name if granule_name is not None else "data"
+            parent_dir = os.path.join(local_path, *local_dirs)
             os.makedirs(parent_dir, exist_ok=True)
-            group_path = os.path.join(parent_dir, f"{dataset_name}.parquet")
+            fname = chunk_filename(podcode, gbase, dataset_name)
+            group_path = os.path.join(parent_dir, fname)
 
             # Build a Table containing every column plus __row_positions__ so
             # reconstitution can restore original row order. Match the legacy
@@ -2172,17 +2325,19 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
             file_path
             └── <scan>/            (e.g. "S1", "S2")
-                ├── Latitude       float64  (N_scans, pixel_width)
-                ├── Longitude      float64  (N_scans, pixel_width)
+                ├── Latitude       float32  (N_scans, pixel_width)
+                ├── Longitude      float32  (N_scans, pixel_width)
                 ├── Tc             float32  (N_scans, pixel_width, N_channels)
                 └── ScanTime/
                     ├── Year       int16  (N_scans,)
-                    ├── Month      int16  (N_scans,)
-                    ├── DayOfMonth int16  (N_scans,)
-                    ├── Hour       int16  (N_scans,)
-                    ├── Minute     int16  (N_scans,)
-                    ├── Second     int16  (N_scans,)
+                    ├── Month      int8   (N_scans,)
+                    ├── DayOfMonth int8   (N_scans,)
+                    ├── Hour       int8   (N_scans,)
+                    ├── Minute     int8   (N_scans,)
+                    ├── Second     int8   (N_scans,)
                     └── MilliSecond int16  (N_scans,)
+
+        (dtypes match the original GPM/SSMIS L1C granule format.)
 
         Parameters
         ----------
@@ -2396,193 +2551,77 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
         return file_path
 
-    def generate_partition_path(self, sid, dataset_name):
+    def generate_partition_path(self, sid, dataset_name=""):
         """
-        Generate relative partition path based on STARE SID structure.
-        
-        The path follows the pattern: Q00_0/Q01_2/Q02_3/.../QN_M/DatasetName
-        where:
-        - Q00, Q01, ..., QN are the levels of sids (N+1 nodes from root to leaf)
-        - _0, _1, ..._M are the values at each level of sids
-        - DatasetName is the input dataset name
-        
-        Bit layout:
-        - Bits 0-4: Number of levels (5 bits, values 0-31)
-        - Bits 5-6: Level 27 value (2 bits, values 0-3)
-        - Bits 7-8: Level 26 value (2 bits, values 0-3)
-        - ...
-        - Bits 57-58: Level 1 value (2 bits, values 0-3)
-        - Bits 59-61: Level 0 value (3 bits, values 0-7)
-        - Bits 62-63: Ignored
-        
+        Generate the pod code for a STARE SID (quaternary storage layout).
+
+        Returns the compact, dynamic-length pod code (``"q13211"``) for ``sid``
+        — see :func:`starepandas.staredataframe.sid_to_podcode` and
+        ``docs/quaternary_storage_plan.md`` §2.  This is a thin instance-method
+        wrapper kept for backward compatibility; new code should call
+        ``sid_to_podcode`` directly.
+
+        The pod code is a single path segment (no ``/``).  The S3 layout is
+        flat (the pod code is the key prefix) and the local layout is
+        hierarchical (the cumulative pod-code dir chain — see
+        :func:`podcode_to_local_dirs`).  The old ``Q00_X/Q01_Y/…`` directory
+        spelling is no longer emitted.
+
         Parameters
         ----------
         sid : int
-            8-byte STARE SID integer
-        dataset_name : str
-            Name of the dataset
-            
+            8-byte STARE SID integer.
+        dataset_name : str, optional
+            Ignored.  Datasets are now carried in the chunk *filename*
+            (``<podcode>-<granule>-<dataset>.parquet``), not the path; the
+            parameter is retained only so existing call sites keep working.
+
         Returns
         -------
         str
-            Relative partition path
-            
+            The pod code (e.g. ``"q13211"``).
+
         Examples
         --------
         >>> sdf = STAREDataFrame()
-        >>> path = sdf.generate_partition_path(12345678901234567890, "MOD09")
-        >>> print(path)
-        Q00_2/Q01_1/Q02_3/.../MOD09
+        >>> sdf.generate_partition_path(podcode_to_sid("q13211"))
+        'q13211'
         """
-        # Ensure sid is a 64-bit integer
-        sid = int(sid) & 0xFFFFFFFFFFFFFFFF
-        
-        # Extract the number of levels from bits 0-4 (first 5 bits)
-        num_levels = (sid & 0x1F) + 1  # +1 because we want N+1 nodes from root to leaf
-        
-        # Build path components
-        path_components = []
-        
-        # Process each level from 0 to num_levels-1
-        for level in range(num_levels):
-            if level == 0:
-                # Level 0: bits 59-61 (3 bits, values 0-7)
-                bit_start = 59
-                bit_width = 3
-                level_value = (sid >> bit_start) & ((1 << bit_width) - 1)
-            elif level <= 27:
-                # Levels 1-27: each uses 2 bits (values 0-3)
-                # Level 1: bits 57-58, Level 2: bits 55-56, etc.
-                # Level k: bits (59 - 2*k - 1) to (59 - 2*k)
-                bit_start = 59 - 2 * level
-                bit_width = 2
-                level_value = (sid >> bit_start) & ((1 << bit_width) - 1)
-            else:
-                # For levels > 27, we don't have more bits, so use 0
-                level_value = 0
-            
-            # Create path component: Q{level:02d}_{value}
-            component = f"Q{level:02d}_{level_value}"
-            path_components.append(component)
-        
-        # Add dataset name at the end
-        path_components.append(dataset_name)
-        
-        # Join with forward slashes
-        return '/'.join(path_components)
+        return sid_to_podcode(sid)
 
     def parse_partition_path(self, partition_path):
         """
-        Parse hierarchical partition path and reconstruct STARE SID from path components.
-        
-        This is the reverse operation of generate_partition_path. Takes a path in the format
-        Q00_X/Q01_Y/Q02_Z/.../QN_M/DatasetName and reconstructs the original STARE SID.
-        
+        Reconstruct a STARE SID from a pod code (quaternary storage layout).
+
+        Reverse of :meth:`generate_partition_path`.  Accepts a pod code such as
+        ``"q13211"`` and returns ``(sid, None)``.  The trailing ``None`` keeps
+        the old ``(sid, dataset_name)`` tuple shape; the dataset is no longer
+        embedded in the path (it lives in the chunk filename), so it is always
+        ``None`` here.
+
         Parameters
         ----------
         partition_path : str
-            Hierarchical path in format Q00_X/Q01_Y/.../QN_M/DatasetName
-            
+            A pod code (e.g. ``"q13211"``).  Any ``/``-joined prefix is
+            tolerated — only the final segment (the pod code) is parsed.
+
         Returns
         -------
         tuple
-            (sid, dataset_name) where sid is the reconstructed STARE SID integer
-            and dataset_name is the extracted dataset name
-            
+            ``(sid, None)`` where ``sid`` is the reconstructed STARE SID.
+
         Examples
         --------
         >>> sdf = STAREDataFrame()
-        >>> sid, dataset = sdf.parse_partition_path("Q00_5/Q01_3/Q02_2/Q03_1/MOD09")
-        >>> print(f"SID: {sid}, Dataset: {dataset}")
-        SID: 12345678901234567890, Dataset: MOD09
+        >>> sid, _ = sdf.parse_partition_path("q13211")
+        >>> sdf.generate_partition_path(sid)
+        'q13211'
         """
         if not partition_path:
             raise ValueError("partition_path cannot be empty")
-        
-        # Split path into components
-        components = partition_path.split('/')
-        if len(components) < 2:
-            raise ValueError("Path must contain at least one level and dataset name")
-        
-        # Extract dataset name (last component)
-        dataset_name = components[-1]
-        level_components = components[:-1]
-        
-        # Validate and parse level components
-        parsed_levels = []
-        for i, component in enumerate(level_components):
-            if not component.startswith('Q'):
-                raise ValueError(f"Invalid level component '{component}' at position {i}. Must start with 'Q'")
-            
-            if '_' not in component:
-                raise ValueError(f"Invalid level component '{component}' at position {i}. Must contain '_'")
-            
-            try:
-                level_part, value_part = component.split('_', 1)
-                level_num = int(level_part[1:])  # Remove 'Q' prefix
-                level_value = int(value_part)
-                
-                # Validate level number matches position
-                if level_num != i:
-                    raise ValueError(f"Level number {level_num} doesn't match position {i} in component '{component}'")
-                
-                # Validate level value ranges
-                if i == 0:  # Level 0: 3 bits (values 0-7)
-                    if not (0 <= level_value <= 7):
-                        raise ValueError(f"Level 0 value {level_value} out of range (0-7)")
-                else:  # Levels 1+: 2 bits (values 0-3)
-                    if not (0 <= level_value <= 3):
-                        raise ValueError(f"Level {i} value {level_value} out of range (0-3)")
-                
-                parsed_levels.append((level_num, level_value))
-                
-            except ValueError as e:
-                if "invalid literal" in str(e):
-                    raise ValueError(f"Invalid number in component '{component}' at position {i}")
-                else:
-                    raise
-        
-        # Validate level sequence is continuous from 0
-        expected_levels = list(range(len(parsed_levels)))
-        actual_levels = [level for level, _ in parsed_levels]
-        if actual_levels != expected_levels:
-            raise ValueError(f"Level sequence must be continuous from 0. Expected {expected_levels}, got {actual_levels}")
-        
-        # Reconstruct SID
-        sid = 0
-        num_levels = len(parsed_levels)
-        
-        # Validate number of levels fits in 5 bits
-        if num_levels > 32:
-            raise ValueError(f"Too many levels ({num_levels}). Maximum is 32.")
-        
-        # Set number of levels in bits 0-4 (subtract 1 because we store N-1 for N levels)
-        sid |= (num_levels - 1) & 0x1F
-        
-        # Set level values in their respective bit positions
-        for level_num, level_value in parsed_levels:
-            if level_num == 0:
-                # Level 0: bits 59-61 (3 bits)
-                bit_start = 59
-                bit_width = 3
-            elif level_num <= 27:
-                # Levels 1-27: 2 bits each
-                # Level 1: bits 57-58, Level 2: bits 55-56, etc.
-                bit_start = 59 - 2 * level_num
-                bit_width = 2
-            else:
-                # Levels beyond 27 cannot be encoded (not enough bits)
-                continue
-            
-            # Clear existing bits and set new value
-            mask = ((1 << bit_width) - 1) << bit_start
-            sid &= ~mask  # Clear the bits
-            sid |= (level_value & ((1 << bit_width) - 1)) << bit_start  # Set new value
-        
-        # Ensure bits 62 and 63 are set to 0 as requested
-        sid &= ~(0x3 << 62)  # Clear bits 62 and 63
-        
-        return sid, dataset_name
+        # Tolerate a slash-joined prefix; the pod code is the final segment.
+        podcode = partition_path.rstrip('/').split('/')[-1]
+        return podcode_to_sid(podcode), None
 
     @classmethod
     def from_s3(cls, s3_path, storage_options=None):
