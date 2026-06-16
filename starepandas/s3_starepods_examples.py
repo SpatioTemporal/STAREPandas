@@ -19,7 +19,9 @@ Workflow
 Requirements
 ------------
 - starepandas/.config (next to this script) with AWS + RDS credentials.
-- The granule file at ``GRANULE_FILE`` available locally.
+- A sample granule. Defaults to the in-repo
+  ``tests/data/granules/1C.GPM.GMI...V07B.HDF5``; override with the
+  ``STAREPODS_SAMPLE_GRANULE`` env var.
 
 Usage
 -----
@@ -35,9 +37,16 @@ from starepandas.demo_lib import StarePodsDemo
 # AWS + RDS credentials. Resolved relative to this file so it works from any cwd.
 CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".config")
 
-GRANULE_FILE = (
-    "/Users/thatdaihaiton/Workspace/STARE/L1C_Data_Samples/GPM/2025/Jan_1_2/"
-    "1C.GPM.GMI.XCAL2016-C.20250101-S034347-E051659.061567.V07B.HDF5"
+# Resolve the sample granule from the in-repo test-data dir so the example is
+# safe to run anywhere (no dependency on an external sample directory). Override
+# with the STAREPODS_SAMPLE_GRANULE env var to point at your own granule.
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+GRANULE_FILE = os.environ.get(
+    "STAREPODS_SAMPLE_GRANULE",
+    os.path.join(
+        _REPO_ROOT, "tests", "data", "granules",
+        "1C.GPM.GMI.XCAL2016-C.20250101-S034347-E051659.061567.V07B.HDF5",
+    ),
 )
 
 # S3 root where Parquet partitions and RDS metadata for this demo live.

@@ -26,9 +26,16 @@ from starepandas.demo_lib import LocalStarePodsDemo
 # ── Configuration ─────────────────────────────────────────────────────────────
 LOCAL_ROOT = "/tmp/stare_pods_local"   # Parquet store + SQLite DB live here
 
-GRANULE_FILE = (
-    "/Users/thatdaihaiton/Workspace/STARE/L1C_Data_Samples/GPM/2025/Jan_1_2/"
-    "1C.GPM.GMI.XCAL2016-C.20250101-S034347-E051659.061567.V07B.HDF5"
+# Resolve the sample granule from the in-repo test-data dir so the example is
+# safe to run anywhere (no dependency on an external sample directory). Override
+# with the STAREPODS_SAMPLE_GRANULE env var to point at your own granule.
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+GRANULE_FILE = os.environ.get(
+    "STAREPODS_SAMPLE_GRANULE",
+    os.path.join(
+        _REPO_ROOT, "tests", "data", "granules",
+        "1C.GPM.GMI.XCAL2016-C.20250101-S034347-E051659.061567.V07B.HDF5",
+    ),
 )
 
 # Bounding box filter — set to None to reconstitute the full granule,
