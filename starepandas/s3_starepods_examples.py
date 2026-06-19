@@ -139,8 +139,8 @@ def main():
         if location_sids else None
     if intersecting is not None:
         # Scope to our granule so other ingests' data doesn't pollute the
-        # result. Substring match handles the task-12 layout where the
-        # granule basename sits inside the HTM tree (not at the top).
+        # result. Substring match on the basename, which the flat pod-code
+        # layout embeds in the chunk filename (bracketed by '-').
         if not intersecting.empty and "group_path" in intersecting.columns:
             intersecting = intersecting[
                 intersecting["group_path"].str.contains(granule_path_marker, regex=False)
@@ -173,7 +173,7 @@ def main():
     t0 = time.perf_counter()
     # s3_prefix scope: with CLEAN_BEFORE_RUN=True the bucket only holds this
     # granule's data, so passing the broad S3_PREFIX is correct and avoids
-    # the task-12 layout mismatch the old granule_s3_prefix would create.
+    # the layout mismatch the old per-granule S3 prefix would create.
     recon_path = demo.reconstitute_hdf5(
         dataset=DATASETS,
         output_hdf5_path=OUTPUT_HDF5,
@@ -200,8 +200,8 @@ def main():
     conn = _ensure_rds_db_and_table("StarePodsMetadata")
     try:
         with conn.cursor() as cur:
-            # Task-12 layout: the basename sits inside the HTM tree, so
-            # use a LIKE substring match instead of a startswith prefix.
+            # Flat pod-code layout: the basename is embedded in the chunk
+            # filename, so use a LIKE substring match (not a startswith prefix).
             cur.execute(
                 'SELECT "Dataset", COUNT(*) '
                 'FROM "PodsMetadata" '
