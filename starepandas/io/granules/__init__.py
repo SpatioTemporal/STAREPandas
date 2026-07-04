@@ -1439,6 +1439,26 @@ def to_local(
     if granule_name is None:
         granule_name = os.path.splitext(os.path.basename(file_path))[0]
 
+    # §C10 #2 (mirrors to_s3): derive a deterministic per-granule timestamp
+    # from the filename so re-ingest hits the SQLite upsert instead of
+    # inserting duplicate rows stamped with utcnow(). Unlike the S3 path,
+    # an unrecognized filename falls back to ingest time rather than
+    # failing: local ingest of custom/renamed granules worked before the
+    # temporal columns and must keep working (it just isn't idempotent).
+    if raw_collected_time is None:
+        from starepandas.io.granules._timestamps import (
+            CannotDeriveTimestampError, derive_timestamp_from_path,
+        )
+        try:
+            raw_collected_time = derive_timestamp_from_path(file_path)
+        except CannotDeriveTimestampError:
+            logging.warning(
+                "to_local: could not derive a collection timestamp from %r; "
+                "falling back to ingest time — re-ingesting this granule "
+                "will add duplicate catalog rows instead of refreshing.",
+                os.path.basename(file_path),
+            )
+
     result = read_granule(
         file_path=file_path,
         sidecar_path=sidecar_path,
@@ -1471,6 +1491,7 @@ def to_local(
                 dataset=scan_dataset,
                 data_level=data_level,
                 granule_name=granule_name,
+                raw_collected_time=raw_collected_time,
             )
         else:
             local_paths = []
@@ -1490,6 +1511,7 @@ def to_local(
                     dataset=scan_dataset,
                     data_level=data_level,
                     granule_name=granule_name,
+                    raw_collected_time=raw_collected_time,
                 )
                 local_paths.append(path_out)
             return local_paths
@@ -1504,6 +1526,7 @@ def to_local(
             dataset=dataset,
             data_level=data_level,
             granule_name=granule_name,
+            raw_collected_time=raw_collected_time,
         )
 
 

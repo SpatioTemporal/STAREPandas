@@ -198,3 +198,58 @@ def test_on_conflict_targets_constraint_columns_in_order():
     recognise the inference and will raise."""
     from starepandas.metadata import _ON_CONFLICT_CLAUSE
     assert '("Dataset", "RawData Collected Time", grouped_id)' in _ON_CONFLICT_CLAUSE
+
+
+# ----- temporal range + pod code (temporal-stare-pods issue 01) -------------
+
+
+def test_partition_row_carries_temporal_range_and_podcode():
+    """The widened row appends t_start, t_end, podcode to the insert tuple,
+    in the same order as the INSERT column list."""
+    row = PartitionRow(
+        dataset="GMI_S1",
+        raw_collected_time=datetime.datetime(2024, 1, 15),
+        grouped_id=1234567890123,
+        s3_bucket="zarrpods",
+        resolution_level=4,
+        metadata_json={},
+        data_level="L1C",
+        t_start=datetime.datetime(2024, 1, 15, 0, 1, 30),
+        t_end=datetime.datetime(2024, 1, 15, 0, 3, 45),
+        podcode="q13211",
+    )
+    tup = row.as_insert_tuple()
+    assert len(tup) == 10
+    assert tup[7] == datetime.datetime(2024, 1, 15, 0, 1, 30)  # t_start
+    assert tup[8] == datetime.datetime(2024, 1, 15, 0, 3, 45)  # t_end
+    assert tup[9] == "q13211"                                  # podcode
+    assert tup[7] <= tup[8]
+
+
+def test_partition_row_temporal_fields_default_to_null():
+    """A chunk with no usable timestamps writes with an empty range."""
+    row = PartitionRow(
+        dataset="GMI_S1",
+        raw_collected_time=datetime.datetime(2024, 1, 15),
+        grouped_id=1,
+        s3_bucket="zarrpods",
+        resolution_level=4,
+        metadata_json={},
+    )
+    tup = row.as_insert_tuple()
+    assert len(tup) == 10
+    assert tup[7] is None and tup[8] is None and tup[9] is None
+
+
+def test_insert_sql_carries_temporal_columns():
+    from starepandas.metadata import _INSERT_ONE_SQL, _INSERT_SQL
+    for sql in (_INSERT_SQL, _INSERT_ONE_SQL):
+        assert 't_start, t_end, podcode' in sql
+
+
+def test_on_conflict_refreshes_temporal_range_and_podcode():
+    """Re-ingest must land the recomputed range and pod code on the
+    existing row (PRD: 'the on-conflict path refreshes all three')."""
+    from starepandas.metadata import _ON_CONFLICT_CLAUSE
+    for col in ('t_start', 't_end', 'podcode'):
+        assert f'{col} = EXCLUDED.{col}' in _ON_CONFLICT_CLAUSE

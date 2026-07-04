@@ -487,11 +487,48 @@ def _ensure_rds_db_and_table(target_dbname='StarePodsMetadata'):
                 grouped_id BIGINT,
                 "S3 bucket" TEXT,
                 "Resolution level" INTEGER,
-                "MetadataJson" JSONB
+                "MetadataJson" JSONB,
+                t_start TIMESTAMP,
+                t_end TIMESTAMP,
+                podcode TEXT
             )
             """
         )
-        
+
+        # Temporal-stare-pods issue 01: chunk temporal range + pod code.
+        # Probe the catalog first (same pattern as the grouped_id upgrade
+        # below) and only run DDL when something is actually missing: this
+        # function runs on every connect — per granule at worker scale —
+        # and even a no-op ALTER/CREATE INDEX takes table locks and needs
+        # table ownership, which steady-state connects can't afford.
+        cur.execute(
+            """
+            SELECT column_name FROM information_schema.columns
+            WHERE table_name = 'PodsMetadata'
+            AND column_name IN ('t_start', 't_end', 'podcode')
+            """
+        )
+        present = {row[0] for row in cur.fetchall()}
+        for col, decl in (('t_start', 'TIMESTAMP'), ('t_end', 'TIMESTAMP'),
+                          ('podcode', 'TEXT')):
+            if col not in present:
+                cur.execute(
+                    f'ALTER TABLE "PodsMetadata" ADD COLUMN IF NOT EXISTS {col} {decl}'
+                )
+        cur.execute(
+            """
+            SELECT indexname FROM pg_indexes
+            WHERE tablename = 'PodsMetadata'
+            AND indexname IN ('idx_pods_podcode', 'idx_pods_temporal')
+            """
+        )
+        have_idx = {row[0] for row in cur.fetchall()}
+        if 'idx_pods_podcode' not in have_idx:
+            cur.execute('CREATE INDEX IF NOT EXISTS idx_pods_podcode ON "PodsMetadata" (podcode)')
+        if 'idx_pods_temporal' not in have_idx:
+            cur.execute('CREATE INDEX IF NOT EXISTS idx_pods_temporal ON "PodsMetadata" (t_start, t_end)')
+
+
         # Check if grouped_id column needs to be upgraded from INTEGER to BIGINT
         cur.execute(
             """
@@ -542,11 +579,36 @@ def _ensure_sqlite_db_and_table(db_path: str):
             grouped_id              INTEGER,
             "LocalPath"             TEXT,
             "Resolution level"      INTEGER,
-            "MetadataJson"          TEXT
+            "MetadataJson"          TEXT,
+            t_start                 TEXT,
+            t_end                   TEXT,
+            podcode                 TEXT
         )
     """)
+    # Temporal-stare-pods issue 01: upgrade a pre-temporal catalog in place.
+    # SQLite has no ADD COLUMN IF NOT EXISTS, so consult the table info.
+    existing_cols = {row[1] for row in conn.execute('PRAGMA table_info("PodsMetadata")')}
+    for col in ('t_start', 't_end', 'podcode'):
+        if col not in existing_cols:
+            conn.execute(f'ALTER TABLE "PodsMetadata" ADD COLUMN {col} TEXT')
     conn.execute('CREATE INDEX IF NOT EXISTS idx_pods_dataset ON "PodsMetadata" ("Dataset")')
     conn.execute('CREATE INDEX IF NOT EXISTS idx_pods_grouped ON "PodsMetadata" (grouped_id)')
+    conn.execute('CREATE INDEX IF NOT EXISTS idx_pods_podcode ON "PodsMetadata" (podcode)')
+    conn.execute('CREATE INDEX IF NOT EXISTS idx_pods_temporal ON "PodsMetadata" (t_start, t_end)')
+    # Same uniqueness identity as the RDS pods_unique constraint — backs the
+    # ON CONFLICT upsert that keeps local re-ingest idempotent.
+    try:
+        conn.execute(
+            'CREATE UNIQUE INDEX IF NOT EXISTS pods_unique '
+            'ON "PodsMetadata" ("Dataset", "RawData Collected Time", grouped_id)'
+        )
+    except sqlite3.IntegrityError as e:
+        raise sqlite3.IntegrityError(
+            f"Cannot upgrade catalog {db_path!r}: PodsMetadata already holds "
+            'duplicate ("Dataset", "RawData Collected Time", grouped_id) rows, '
+            "so the pods_unique index that keeps re-ingest idempotent cannot "
+            "be created. Dedupe those rows or re-ingest into a fresh catalog."
+        ) from e
     conn.commit()
     return conn
 
@@ -556,6 +618,27 @@ def _parse_s3_bucket(s3_path: str) -> str:
         return ''
     rest = s3_path[5:]
     return rest.split('/', 1)[0] if '/' in rest else rest
+
+
+#: Per-point scan-time column produced by the granule readers.
+DEFAULT_TIMESTAMP_COLUMN = 'timestamp'
+
+
+def _chunk_temporal_range(df, column=DEFAULT_TIMESTAMP_COLUMN):
+    """Temporal range [t_start, t_end] of one chunk — the min and max of the
+    scan times of the data points it contains.
+
+    Points with missing times are dropped before the min/max. Returns
+    ``(None, None)`` when the column is absent or no point has a usable
+    time, so a timestamp-less write still succeeds with an empty range.
+    """
+    if column not in df.columns:
+        return None, None
+    times = pandas.to_datetime(df[column], errors='coerce').dropna()
+    if times.empty:
+        return None, None
+    return times.min().to_pydatetime(), times.max().to_pydatetime()
+
 
 DEFAULT_SID_COLUMN_NAME = 'sids'
 DEFAULT_TID_COLUMN_NAME = 'tids'
@@ -2119,6 +2202,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
                 'num_rows': int(len(gdf)),
                 'columns': list(arrays.keys()),
             })
+            t_start, t_end = _chunk_temporal_range(gdf)
             metadata_rows.append(PartitionRow(
                 dataset=dataset,
                 data_level=data_level,
@@ -2127,6 +2211,9 @@ class STAREDataFrame(geopandas.GeoDataFrame):
                 s3_bucket=bucket_name,
                 resolution_level=int(partition_level),
                 metadata_json=meta_row,
+                t_start=t_start,
+                t_end=t_end,
+                podcode=podcode,
             ))
 
         # Persist metadata via the MetadataStore abstraction (§C9 M4 hedge —
@@ -2149,7 +2236,8 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         return s3_path
     
     def to_local(self, local_path, level, chunk_size=250000, pixel_width=None,
-                      db_path=None, dataset=None, data_level=None, granule_name=None):
+                      db_path=None, dataset=None, data_level=None, granule_name=None,
+                      raw_collected_time=None):
         """
         Partition STAREDataFrame by SIDs at specified level and write to the
         local filesystem as one Parquet file per partition.
@@ -2184,6 +2272,13 @@ class STAREDataFrame(geopandas.GeoDataFrame):
             Dataset name recorded in the SQLite metadata (e.g. ``"GMI_S1"``).
         data_level : str, optional
             Data level string recorded in the SQLite metadata (e.g. ``"L1C"``).
+        raw_collected_time : datetime, optional
+            Granule collection timestamp recorded in the SQLite metadata.
+            Part of the row's uniqueness identity (dataset + collection time +
+            pod), so passing a deterministic value keeps re-ingest
+            idempotent — ``starepandas.io.granules.to_local`` derives one from
+            the granule filename. Defaults to UTC now (each write then
+            produces distinct rows).
 
         Returns
         -------
@@ -2212,7 +2307,10 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         original_positions = pandas.Series(np.arange(len(self), dtype=np.int64), index=self.index)
 
         metadata_rows = []
-        ts_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        if raw_collected_time is not None:
+            ts_iso = raw_collected_time.isoformat()
+        else:
+            ts_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
         # Quaternary layout (docs/quaternary_storage_plan.md §2) — local disk is
         # hierarchical (cumulative pod-code dir chain) with a self-describing
@@ -2288,25 +2386,42 @@ class STAREDataFrame(geopandas.GeoDataFrame):
                     "pixel_width": int(pixel_width) if pixel_width is not None else None,
                     "granule_name": granule_name,
                 })
+                t_start, t_end = _chunk_temporal_range(gdf)
+                # Catalog the effective dataset name (same fallback as the
+                # chunk filename). A NULL Dataset would never hit the
+                # pods_unique upsert — SQLite treats NULLs as distinct — so
+                # re-ingest would duplicate rows instead of refreshing.
                 metadata_rows.append((
-                    dataset,
+                    dataset_name,
                     data_level,
                     ts_iso,
                     int(group_id),
                     os.path.abspath(local_path),
                     partition_level,
                     meta_blob,
+                    t_start.isoformat() if t_start is not None else None,
+                    t_end.isoformat() if t_end is not None else None,
+                    podcode,
                 ))
 
-        # Batch-insert metadata into SQLite
+        # Batch-insert metadata into SQLite. The upsert mirrors the RDS
+        # ON CONFLICT path (metadata.py): re-ingest keeps the row count
+        # stable and refreshes the temporal range and pod code.
         if db_path is not None and metadata_rows:
             conn = _ensure_sqlite_db_and_table(db_path)
             try:
                 conn.executemany(
                     'INSERT INTO "PodsMetadata" '
                     '("Dataset", "DataLevel", "RawData Collected Time", grouped_id, '
-                    '"LocalPath", "Resolution level", "MetadataJson") '
-                    'VALUES (?, ?, ?, ?, ?, ?, ?)',
+                    '"LocalPath", "Resolution level", "MetadataJson", '
+                    't_start, t_end, podcode) '
+                    'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) '
+                    'ON CONFLICT ("Dataset", "RawData Collected Time", grouped_id) '
+                    'DO UPDATE SET "MetadataJson" = excluded."MetadataJson", '
+                    '"LocalPath" = excluded."LocalPath", '
+                    't_start = excluded.t_start, '
+                    't_end = excluded.t_end, '
+                    'podcode = excluded.podcode',
                     metadata_rows,
                 )
                 conn.commit()

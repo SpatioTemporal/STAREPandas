@@ -73,6 +73,12 @@ class PartitionRow:
     resolution_level: int
     metadata_json: dict
     data_level: Optional[str] = None
+    #: Chunk temporal range [t_start, t_end] — min/max of the per-point scan
+    #: times. None/None when the chunk has no usable timestamps.
+    t_start: Optional[datetime.datetime] = None
+    t_end: Optional[datetime.datetime] = None
+    #: Pod code (compact base-4 spatial address) of the chunk's pod.
+    podcode: Optional[str] = None
 
     def as_insert_tuple(self) -> tuple:
         return (
@@ -83,6 +89,9 @@ class PartitionRow:
             self.s3_bucket,
             self.resolution_level,
             json.dumps(self.metadata_json),
+            self.t_start,
+            self.t_end,
+            self.podcode,
         )
 
 
@@ -126,21 +135,26 @@ class MetadataStore(Protocol):
 # different timestamps and the conflict path never fires.
 _ON_CONFLICT_CLAUSE = (
     ' ON CONFLICT ("Dataset", "RawData Collected Time", grouped_id) '
-    'DO UPDATE SET "MetadataJson" = EXCLUDED."MetadataJson"'
+    'DO UPDATE SET "MetadataJson" = EXCLUDED."MetadataJson", '
+    't_start = EXCLUDED.t_start, '
+    't_end = EXCLUDED.t_end, '
+    'podcode = EXCLUDED.podcode'
 )
 
 _INSERT_SQL = (
     'INSERT INTO "PodsMetadata" '
     '("Dataset", "DataLevel", "RawData Collected Time", grouped_id, '
-    '"S3 bucket", "Resolution level", "MetadataJson") '
+    '"S3 bucket", "Resolution level", "MetadataJson", '
+    't_start, t_end, podcode) '
     'VALUES %s'
     + _ON_CONFLICT_CLAUSE
 )
 _INSERT_ONE_SQL = (
     'INSERT INTO "PodsMetadata" '
     '("Dataset", "DataLevel", "RawData Collected Time", grouped_id, '
-    '"S3 bucket", "Resolution level", "MetadataJson") '
-    'VALUES (%s, %s, %s, %s, %s, %s, %s)'
+    '"S3 bucket", "Resolution level", "MetadataJson", '
+    't_start, t_end, podcode) '
+    'VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)'
     + _ON_CONFLICT_CLAUSE
 )
 
