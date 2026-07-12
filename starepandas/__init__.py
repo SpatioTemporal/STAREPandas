@@ -24,6 +24,18 @@ from starepandas.ingest import (
     clean_s3_prefix,
 )
 
+# Temporal-stare-pods issue 05: multi-instrument overlap analytics (slides
+# 8/9) — pure functions over a loaded temporal-catalog frame.
+import starepandas.overlap
+from starepandas.overlap import (
+    fold_instrument,
+    overlap_matrix,
+    overlap_pod_table,
+    pair_drilldown,
+    pod_drilldown,
+    rendezvous_events,
+)
+
 # Path C C-6: client SDK. ``sp.cloud.ingest_granules(...).wait()`` submits an
 # ingest job to the deployed REST API and polls it to completion.
 import starepandas.cloud as cloud

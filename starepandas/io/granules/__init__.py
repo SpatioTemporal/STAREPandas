@@ -560,6 +560,36 @@ def _period_conditions(period, placeholder='%s', as_iso=False):
     return conditions, params
 
 
+def _period_mask(df, period):
+    """Client-side boolean mask for "chunk temporal range overlaps period".
+
+    The exact closed-overlap predicate (``t_start ≤ period_end AND
+    t_end ≥ period_start``) over parsed ``t_start``/``t_end`` columns — the
+    in-memory counterpart of :func:`_period_conditions`' SQL rewrite, kept
+    beside it so the two encodings of the overlap semantics cannot drift.
+    Rows with a null range never match.
+    """
+    period_start, period_end = _validate_period(period)
+    return (df['t_start'] <= period_end) & (df['t_end'] >= period_start)
+
+
+def _require_podcodes(catalog):
+    """Raise when a temporal-catalog frame carries rows with a null podcode.
+
+    Shared contract of the pure pod-keyed functions (:func:`vcf_rollup`, the
+    overlap analytics): rows without a pod code (pre-temporal rows from an
+    in-place schema upgrade) cannot participate in pod-keyed analytics, and
+    dropping them silently would undercount — so they raise instead (the
+    thin loaders exclude them in SQL).
+    """
+    if catalog['podcode'].isna().any():
+        raise ValueError(
+            "catalog contains rows with a null podcode (pre-temporal rows "
+            "from an in-place schema upgrade?) — re-ingest them or filter "
+            "them out first; dropping them silently would undercount"
+        )
+
+
 def _podcode_prefix_condition(podcode_prefix, placeholder='%s'):
     """SQL condition + param for "chunk lies in the pod subtree" (both backends).
 
@@ -1997,13 +2027,7 @@ def vcf_rollup(catalog, level, subtree=None):
     """
     n = _validate_vcf_args(level, subtree)
     df = catalog
-    if df['podcode'].isna().any():
-        raise ValueError(
-            "catalog contains rows with a null podcode (pre-temporal rows "
-            "from an in-place schema upgrade?) — re-ingest them or filter "
-            "them out before rolling up; dropping them silently would "
-            "undercount n_chunks"
-        )
+    _require_podcodes(df)
     if subtree is not None:
         df = df[df['podcode'].str.startswith(subtree)]
 

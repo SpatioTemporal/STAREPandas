@@ -33,6 +33,12 @@ starepandas/
 │                            # Single point that all PodsMetadata I/O
 │                            # flows through; future DynamoDB swap is local
 │                            # to one adapter implementation.
+├── overlap.py               # temporal issue 05 — slide-8/9 overlap
+│                            # analytics: rendezvous_events (Helly sweep
+│                            # kernel) + overlap_matrix / overlap_pod_table
+│                            # / pair_drilldown / pod_drilldown +
+│                            # fold_instrument. Pure functions over a
+│                            # loaded temporal-catalog frame (ADR-0001/2).
 ├── cloud/                   # Path C cloud-service package (C-2 onward)
 │   ├── __init__.py
 │   ├── ticket_sizing.py    # §C2 pure functions (split_into_tickets)
@@ -70,7 +76,8 @@ starepandas/
 │                           #  test_podcode_layout, test_temporal_catalog —
 │                           #  issue 01 local seam; test_temporal_query —
 │                           #  issue 03 period filter; test_vcf_rollup —
-│                           #  issue 04 VCF roll-up; _temporal_fixtures.py =
+│                           #  issue 04 VCF roll-up; test_overlap_analytics —
+│                           #  issue 05 pure seam; _temporal_fixtures.py =
 │                           #  shared local-seam helpers)
 └── examples/               # Example notebooks and scripts
 ```
@@ -309,16 +316,20 @@ All skills run exclusively inside the `starepandas_3.12_v3` conda environment.
 - Bug fixed → add a regression test asserting the fix
 - New pytest file under `tests/` → add it to the unit-test check's `test_files` list
 
-### Verified checks (basic, 7/7 PASS as of 2026-05-30)
+### Verified checks (basic, 8/8 PASS as of 2026-07-12)
 1. `import starepandas` (core package loads + headline symbols present)
 2. `import pystare` (dependency, with `from_latlon` / `to_latlon`)
 3. `STAREDataFrame` instantiable + `set_sids` + `make_trixels`
 4. `sids_from_xy` → `to_latlon` round-trips within tolerance
 5. `stare_join` on synthetic STAREDataFrames returns matches
 6. Task-7 ingest module + task-1 cloud package reachable at top level
-7. C-2 `cloud.worker` exposes `Worker` / `WorkerConfig` / `main` / `_is_rds_auth_error`; `WorkerConfig.from_env()` rejects missing `SQS_QUEUE_URL`
+7. Issue-05 overlap analytics reachable at top level (`rendezvous_events` /
+   `overlap_matrix` / `overlap_pod_table` / `pair_drilldown` /
+   `pod_drilldown` / `fold_instrument`) + functional micro-check: genuine
+   trio counted at n=3, fake triangle rejected
+8. C-2 `cloud.worker` exposes `Worker` / `WorkerConfig` / `main` / `_is_rds_auth_error`; `WorkerConfig.from_env()` rejects missing `SQS_QUEUE_URL`
 
-### Verified checks (STARE-PODS, 13/13 PASS as of 2026-07-11 — fully online, live-RDS checks included)
+### Verified checks (STARE-PODS, 14/14 PASS as of 2026-07-12 — fully online, live-RDS checks included)
 1. `import starepandas`
 2. `MAX_PARTITION_LEVEL == 4` (locks in the post-ba3028d level-4 partitioning)
 3. `to_local` writes Parquet leaves (no zarr artifacts)
@@ -333,17 +344,22 @@ All skills run exclusively inside the `starepandas_3.12_v3` conda environment.
 7. VCF temporal roll-up (issue 04 — `load_local_vcf` level-1 union range ==
    manual leaf aggregation, child counts, subtree prefix scoping,
    `podcode_prefix_length` grouping key)
-8. `reconstitute_hdf5_from_local` round-trips through Parquet
-9. `reconstitute_hdf5_from_s3` (local path) walks pod-code tree
-10. `local_starepods_examples.py` end-to-end against the real GMI granule
-11. `pods_unique` UNIQUE constraint exists on `PodsMetadata` (§C10 #1 gate)
+8. Overlap analytics over the local catalog (issue 05 — pod two instruments,
+   thin-load, DELETE the SQLite db, then sweep at two Δt values + matrix +
+   pod table + both drill-downs on the loaded frame; headline views agree
+   for the pair)
+9. `reconstitute_hdf5_from_local` round-trips through Parquet
+10. `reconstitute_hdf5_from_s3` (local path) walks pod-code tree
+11. `local_starepods_examples.py` end-to-end against the real GMI granule
+12. `pods_unique` UNIQUE constraint exists on `PodsMetadata` (§C10 #1 gate)
     + `t_start`/`t_end`/`podcode` columns present on the live catalog
-12. `PodsMetadata` insert is idempotent (§C10 #1 live regression —
+13. `PodsMetadata` insert is idempotent (§C10 #1 live regression —
     double-insert keeps row count stable, DO UPDATE refreshes MetadataJson)
-13. C-1..C-6 unit tests pass (cloud.ticket_sizing + metadata + granule_timestamps
+14. C-1..C-6 unit tests pass (cloud.ticket_sizing + metadata + granule_timestamps
     + s3_layout + ingest_module + config_env_secret + control_plane_lambdas
     + completion_watcher + cloud_client + podcode_layout + temporal_catalog
-    + temporal_query + vcf_rollup — currently 183 unit tests)
+    + temporal_query + vcf_rollup + overlap_analytics — currently 207 unit
+    tests)
 
 ### Verified checks (cloud SDK, env-gated — C-6)
 `~/.claude/scripts/starepods_cloud_verify.py` (run with `STAREPANDAS_CLOUD_VERIFY=1`;
@@ -401,7 +417,42 @@ pip install -e .
 
 ---
 
-*Last Updated: 2026-07-11 (temporal-stare-pods issue 04 COMPLETE — VCF temporal
+*Last Updated: 2026-07-12 (temporal-stare-pods issue 05 COMPLETE —
+multi-instrument overlap analytics (slides 8/9). New `starepandas/overlap.py`,
+all pure functions over a loaded temporal-catalog frame (no DB/object-store
+access — ADR-0002 Decision 2): `rendezvous_events(catalog, dt, period=None,
+include_passes=False)` is the one kernel — the ADR-0002 Decision-1 Helly
+sweep (`+instrument` at `t_start`, `−instrument` at `t_end + Δt`, per-pod
+vectorized segmented cumsum, '+' before '−' at ties so closed bounds hold),
+emitting the canonical events frame (`EVENT_COLUMNS`: podcode, time = the
+arriving pass's t_start, added, instruments = full active mask as sorted
+tuple; optional `passes` = participating catalog index labels, requires a
+unique index). The four views aggregate it: `overlap_matrix(events, pods=,
+instruments=)` (slide 8; per-pair pod bitmaps → popcount cells; `pods=`
+region re-scope = bitmap AND, prefix-cover semantics, no re-sweep),
+`overlap_pod_table` (slide 9; distinct n-combos per pod via subset expansion
+— a fake triangle never records a 3-mask so n=3 stays 0), `pair_drilldown` /
+`pod_drilldown` (frequency = events where `added ∈ combo ⊆ mask`, plus
+times; pod_drilldown rolls up a coarser code's subtree). Scan-group folding:
+`fold_instrument` strips `_S<n>` (labeling only). Shared contracts extracted
+to io/granules: `_require_podcodes` (used by vcf_rollup too) and
+`_period_mask` (client-side closed-overlap predicate beside
+`_period_conditions`). Post-review hardening: numpy scalars rejected as dt;
+tz-aware t_start/t_end normalized to naive UTC (loader parity); pod-code
+arguments finer than `MAX_PARTITION_LEVEL` raise (the sliver trap — they'd
+silently cover nothing); unfolded instrument args (`'GMI_S1'`) raise instead
+of silently matching nothing; typed empty results (pod table always carries
+the n=2 int column). Perf: ~135 ms sweep+aggregate on a 100k-row catalog
+(1 s CI guard vs combinatorial regression). Tests:
+`tests/test_overlap_analytics.py` (26, pure seam + delete-the-db round-trip
+proving no catalog access). Live read-only smoke vs the real RDS catalog
+(14,739 rows): Δt=30 min → 0 events (verified genuine: min GMI–SSMIS gap in
+any shared pod is 36.8 min); Δt=60 min → matrix cell 55 == brute-force
+pairwise pod count == pair_drilldown pods. Verification: basic 8/8 (new
+check 7), STARE-PODS 14/14 online (new check 8), full suite 323 green.
+Issue 06 (covering-index upgrades) stays blocked on profiling.)*
+
+*Prior: 2026-07-11 (temporal-stare-pods issue 04 COMPLETE — VCF temporal
 roll-up. The temporal hierarchy ("Virtual Collection File") is queryable
 on-the-fly: `vcf_rollup(catalog, level, subtree=None)` — pure function over a
 temporal-catalog frame — plus `load_s3_vcf` / `load_local_vcf` return, per pod
