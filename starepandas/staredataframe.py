@@ -117,21 +117,19 @@ def podcode_to_sid(podcode: str) -> int:
     body = podcode[1:]
     if not body:
         raise ValueError(f"Invalid pod code {podcode!r}: missing octant digit")
-    try:
-        octant = int(body[0])
-    except ValueError:
-        raise ValueError(f"Invalid octant digit in pod code {podcode!r}")
-    if not (0 <= octant <= 7):
-        raise ValueError(f"Octant {octant} out of range (0-7) in {podcode!r}")
+    # Membership checks, not int(): int() accepts non-ASCII Unicode digits
+    # (int('٣') == 3), which would pass here yet never match the ASCII codes
+    # the writer emits — and this function doubles as the grammar gate for
+    # the catalog's ``podcode LIKE`` filters.
+    if body[0] not in '01234567':
+        raise ValueError(f"Octant {body[0]!r} out of range (0-7) in {podcode!r}")
+    octant = int(body[0])
     digits = []
     for ch in body[1:]:
-        try:
-            d = int(ch)
-        except ValueError:
-            raise ValueError(f"Invalid quaternary digit {ch!r} in pod code {podcode!r}")
-        if not (0 <= d <= 3):
-            raise ValueError(f"Quaternary digit {d} out of range (0-3) in {podcode!r}")
-        digits.append(d)
+        if ch not in '0123':
+            raise ValueError(
+                f"Quaternary digit {ch!r} out of range (0-3) in {podcode!r}")
+        digits.append(int(ch))
 
     num_levels = 1 + len(digits)           # octant level + quaternary levels
     if num_levels > 28:
@@ -142,6 +140,34 @@ def podcode_to_sid(podcode: str) -> int:
         bit_start = 59 - 2 * i
         sid |= (d & 0x3) << bit_start
     return sid
+
+
+def podcode_prefix_length(level: int) -> int:
+    """Length of the pod-code prefix that addresses a level-``level`` trixel.
+
+    A pod code is ``"q"`` + one octant digit + one quaternary digit per
+    refinement level (see the codec block above), so the prefix is
+    ``level + 2`` characters. This is *the* level → prefix-length mapping:
+    grouping a catalog by ``podcode[:podcode_prefix_length(level)]`` rolls
+    chunks up to their level-``level`` ancestor pod (a coarser pod code is a
+    prefix of its descendants' codes). Kept next to the codec so the
+    arithmetic cannot drift from the grammar.
+
+    Examples
+    --------
+    >>> podcode_prefix_length(0)
+    2
+    >>> podcode_prefix_length(4) == len(sid_to_podcode(podcode_to_sid("q13211")))
+    True
+    """
+    if isinstance(level, bool) or not isinstance(level, (int, np.integer)):
+        raise TypeError(f"level must be an integer, got {level!r}")
+    if not (0 <= level <= 27):
+        raise ValueError(
+            f"level must be in 0..27 (the codec's refinement-level limit), "
+            f"got {level}"
+        )
+    return int(level) + 2
 
 
 def podcode_to_local_dirs(podcode: str) -> list:

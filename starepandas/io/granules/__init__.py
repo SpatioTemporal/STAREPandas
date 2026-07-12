@@ -560,6 +560,26 @@ def _period_conditions(period, placeholder='%s', as_iso=False):
     return conditions, params
 
 
+def _podcode_prefix_condition(podcode_prefix, placeholder='%s'):
+    """SQL condition + param for "chunk lies in the pod subtree" (both backends).
+
+    Validates ``podcode_prefix`` against the pod-code grammar via the codec
+    (:func:`starepandas.staredataframe.podcode_to_sid`, raising ``ValueError``
+    on anything malformed) — the grammar contains no SQL wildcard characters,
+    so the prefix is safe inside a ``LIKE`` pattern. The emitted
+    ``podcode LIKE '<prefix>%'`` rides the ``idx_pods_podcode`` index.
+
+    Returns
+    -------
+    tuple of (list of str, list)
+        Condition fragments (to AND into a WHERE clause) and their params.
+    """
+    from starepandas.staredataframe import podcode_to_sid
+
+    podcode_to_sid(podcode_prefix)
+    return [f'podcode LIKE {placeholder}'], [f'{podcode_prefix}%']
+
+
 def load_s3_metadata(dataset=None, dataset_prefix=None, data_level=None, s3_bucket=None,
                       resolution_level=None, start_date=None, end_date=None,
                       grouped_id=None, period=None, limit=None, order_by=None):
@@ -1777,7 +1797,8 @@ def _finish_temporal_catalog(rows):
     return df
 
 
-def load_s3_temporal_catalog(dataset=None, dataset_prefix=None, period=None):
+def load_s3_temporal_catalog(dataset=None, dataset_prefix=None, period=None,
+                             podcode_prefix=None):
     """
     Thin-projection catalog load for the overlap analytics (cloud/RDS).
 
@@ -1795,19 +1816,25 @@ def load_s3_temporal_catalog(dataset=None, dataset_prefix=None, period=None):
     period : tuple, optional
         Data-level time-period filter; same semantics as
         :func:`load_s3_metadata`'s ``period``.
+    podcode_prefix : str, optional
+        Restrict to the pod subtree under this pod code (a coarser pod code
+        is a prefix of its descendants' codes); see
+        :func:`_podcode_prefix_condition`.
 
     Returns
     -------
     pandas.DataFrame
         Columns ``podcode``, ``Dataset``, ``t_start``, ``t_end`` with the
-        temporal columns parsed to timestamps.
+        temporal columns parsed to timestamps. Rows without a pod code
+        (pre-temporal catalogs upgraded in place but never re-ingested)
+        cannot participate in pod-keyed analytics and are excluded.
     """
     from starepandas.staredataframe import _ensure_rds_db_and_table
 
     conn = _ensure_rds_db_and_table('StarePodsMetadata')
     try:
         query = 'SELECT podcode, "Dataset", t_start, t_end FROM "PodsMetadata"'
-        conditions = []
+        conditions = ['podcode IS NOT NULL']
         params = []
         if dataset is not None:
             conditions.append('"Dataset" = %s')
@@ -1815,6 +1842,11 @@ def load_s3_temporal_catalog(dataset=None, dataset_prefix=None, period=None):
         if dataset_prefix is not None:
             conditions.append('"Dataset" LIKE %s')
             params.append(f"{dataset_prefix}_%")
+        if podcode_prefix is not None:
+            prefix_conds, prefix_params = _podcode_prefix_condition(
+                podcode_prefix, placeholder='%s')
+            conditions.extend(prefix_conds)
+            params.extend(prefix_params)
         if period is not None:
             period_conds, period_params = _period_conditions(period, placeholder='%s')
             conditions.extend(period_conds)
@@ -1832,32 +1864,34 @@ def load_s3_temporal_catalog(dataset=None, dataset_prefix=None, period=None):
 
 
 def load_local_temporal_catalog(db_path, dataset=None, dataset_prefix=None,
-                                period=None):
+                                period=None, podcode_prefix=None):
     """
     Thin-projection catalog load for the overlap analytics (local/SQLite).
 
     Local equivalent of :func:`load_s3_temporal_catalog`; see there for the
-    projection and period semantics.
+    projection, period, and subtree semantics.
 
     Parameters
     ----------
     db_path : str
         Path to the SQLite metadata database.
-    dataset, dataset_prefix, period : optional
+    dataset, dataset_prefix, period, podcode_prefix : optional
         As in :func:`load_s3_temporal_catalog`.
 
     Returns
     -------
     pandas.DataFrame
         Columns ``podcode``, ``Dataset``, ``t_start``, ``t_end`` with the
-        temporal columns parsed to timestamps.
+        temporal columns parsed to timestamps. Rows without a pod code
+        (pre-temporal catalogs upgraded in place but never re-ingested)
+        cannot participate in pod-keyed analytics and are excluded.
     """
     from starepandas.staredataframe import _ensure_sqlite_db_and_table
 
     conn = _ensure_sqlite_db_and_table(db_path)
     try:
         query = 'SELECT podcode, "Dataset", t_start, t_end FROM "PodsMetadata"'
-        conditions = []
+        conditions = ['podcode IS NOT NULL']
         params = []
         if dataset is not None:
             conditions.append('"Dataset" = ?')
@@ -1865,6 +1899,11 @@ def load_local_temporal_catalog(db_path, dataset=None, dataset_prefix=None,
         if dataset_prefix is not None:
             conditions.append('"Dataset" LIKE ?')
             params.append(f"{dataset_prefix}_%")
+        if podcode_prefix is not None:
+            prefix_conds, prefix_params = _podcode_prefix_condition(
+                podcode_prefix, placeholder='?')
+            conditions.extend(prefix_conds)
+            params.extend(prefix_params)
         if period is not None:
             period_conds, period_params = _period_conditions(
                 period, placeholder='?', as_iso=True)
@@ -1878,6 +1917,171 @@ def load_local_temporal_catalog(db_path, dataset=None, dataset_prefix=None,
         conn.close()
 
     return _finish_temporal_catalog(rows)
+
+
+#: Columns of a VCF roll-up frame (issue 04 — the on-the-fly temporal
+#: hierarchy). One row per pod at the requested level: the union temporal
+#: range of all chunks beneath it plus the child count.
+VCF_COLUMNS = ['podcode', 't_start', 't_end', 'n_chunks', 'n_without_range']
+
+
+def _validate_vcf_args(level, subtree=None):
+    """Validate a roll-up's ``level``/``subtree`` pair → pod-code prefix length.
+
+    Single validation point for :func:`vcf_rollup` and the VCF loaders (which
+    call it *before* the catalog round-trip, to fail fast). Rejects a
+    ``subtree`` deeper than the requested ``level``: the result row would
+    carry a coarse pod's code but a union range covering only the subtree's
+    sliver — indistinguishable from the pod's true envelope.
+    """
+    from starepandas.staredataframe import (podcode_prefix_length,
+                                            podcode_to_sid)
+
+    n = podcode_prefix_length(level)
+    if subtree is not None:
+        podcode_to_sid(subtree)              # grammar check (raises ValueError)
+        if len(subtree) > n:
+            raise ValueError(
+                f"subtree {subtree!r} (level {len(subtree) - 2}) is deeper "
+                f"than the requested roll-up level {level}: a level-{level} "
+                f"row would cover only that subtree's chunks while carrying "
+                f"the coarser pod's code. Roll up at level >= "
+                f"{len(subtree) - 2} instead."
+            )
+    return n
+
+
+def vcf_rollup(catalog, level, subtree=None):
+    """
+    Roll a temporal catalog up the pod-code hierarchy, one VCF node per pod.
+
+    Groups chunks by their level-``level`` ancestor pod — the first
+    ``podcode_prefix_length(level)`` characters of the pod code, since a
+    coarser pod code is a prefix of its descendants' codes — and returns, per
+    pod, its **VCF (Virtual Collection File) node**: the union temporal range
+    ``[min(t_start), max(t_end)]`` of the chunks beneath it plus the child
+    count. Computed on the fly; nothing is materialized.
+
+    Pure function over an already-loaded frame (no database access), so a
+    Δt / level / subtree change never re-queries the catalog (ADR-0002
+    Decision 2). Use :func:`load_s3_vcf` / :func:`load_local_vcf` for the
+    catalog-backed equivalents.
+
+    Parameters
+    ----------
+    catalog : pandas.DataFrame
+        A temporal-catalog frame with ``podcode`` and *parsed* (datetime)
+        ``t_start`` / ``t_end`` columns, as returned by
+        :func:`load_s3_temporal_catalog` / :func:`load_local_temporal_catalog`.
+        Every row must carry a pod code — rows without one (pre-temporal
+        catalog remnants) would otherwise vanish from the counts silently,
+        so they raise instead (the loaders exclude them in SQL).
+    level : int
+        Pod-code level to roll up to (0 = octant … ``MAX_PARTITION_LEVEL`` =
+        leaf). A chunk cataloged at a level coarser than ``level`` groups
+        under its own (shorter) pod code.
+    subtree : str, optional
+        Restrict the roll-up to the chunks under this pod code (validated
+        against the pod-code grammar; must not be deeper than ``level`` —
+        see :func:`_validate_vcf_args`).
+
+    Returns
+    -------
+    pandas.DataFrame
+        :data:`VCF_COLUMNS` — one row per pod, sorted by ``podcode``.
+        ``n_chunks`` counts every chunk beneath the pod; ``n_without_range``
+        notes how many of them lack a usable temporal range (either end
+        missing — e.g. ingested without per-point timestamps). Range-less
+        chunks never contribute either end to the union; a pod holding only
+        range-less chunks gets a null union range.
+    """
+    n = _validate_vcf_args(level, subtree)
+    df = catalog
+    if df['podcode'].isna().any():
+        raise ValueError(
+            "catalog contains rows with a null podcode (pre-temporal rows "
+            "from an in-place schema upgrade?) — re-ingest them or filter "
+            "them out before rolling up; dropping them silently would "
+            "undercount n_chunks"
+        )
+    if subtree is not None:
+        df = df[df['podcode'].str.startswith(subtree)]
+
+    pods = df['podcode'].str[:n]
+    pods.name = 'podcode'
+    # A half-null range is no range: neither end may join the union.
+    missing = df['t_start'].isna() | df['t_end'].isna()
+    grouped = pd.DataFrame({
+        't_start': df['t_start'].where(~missing),
+        't_end': df['t_end'].where(~missing),
+        'n_without_range': missing,
+    }).groupby(pods, sort=True)
+    vcf = grouped.agg({'t_start': 'min', 't_end': 'max',   # NaT-skipping
+                       'n_without_range': 'sum'})
+    vcf['n_chunks'] = grouped.size()
+    vcf['n_without_range'] = vcf['n_without_range'].astype('int64')
+    return vcf.reset_index()[VCF_COLUMNS]
+
+
+def load_s3_vcf(level, subtree=None, dataset=None, dataset_prefix=None,
+                period=None):
+    """
+    VCF temporal roll-up over the cloud (RDS) catalog.
+
+    Loads the thin temporal-catalog projection (``subtree`` / ``dataset`` /
+    ``period`` filters pushed into SQL, riding the ``idx_pods_podcode`` and
+    ``idx_pods_temporal`` indexes) and rolls it up with the shared pure
+    :func:`vcf_rollup` — both backends go through the same group-by code.
+
+    Parameters
+    ----------
+    level : int
+        Pod-code level to roll up to; see :func:`vcf_rollup`.
+    subtree : str, optional
+        Restrict to the pod subtree under this pod code.
+    dataset, dataset_prefix, period : optional
+        As in :func:`load_s3_temporal_catalog`.
+
+    Returns
+    -------
+    pandas.DataFrame
+        :data:`VCF_COLUMNS` — one row per pod at ``level``.
+    """
+    _validate_vcf_args(level, subtree)       # fail fast, before the DB hit
+    catalog = load_s3_temporal_catalog(dataset=dataset,
+                                       dataset_prefix=dataset_prefix,
+                                       period=period, podcode_prefix=subtree)
+    return vcf_rollup(catalog, level, subtree=subtree)
+
+
+def load_local_vcf(db_path, level, subtree=None, dataset=None,
+                   dataset_prefix=None, period=None):
+    """
+    VCF temporal roll-up over the local (SQLite) catalog.
+
+    Local equivalent of :func:`load_s3_vcf`; see there and
+    :func:`vcf_rollup` for semantics.
+
+    Parameters
+    ----------
+    db_path : str
+        Path to the SQLite metadata database.
+    level : int
+        Pod-code level to roll up to.
+    subtree, dataset, dataset_prefix, period : optional
+        As in :func:`load_s3_vcf`.
+
+    Returns
+    -------
+    pandas.DataFrame
+        :data:`VCF_COLUMNS` — one row per pod at ``level``.
+    """
+    _validate_vcf_args(level, subtree)       # fail fast, before the DB hit
+    catalog = load_local_temporal_catalog(db_path, dataset=dataset,
+                                          dataset_prefix=dataset_prefix,
+                                          period=period,
+                                          podcode_prefix=subtree)
+    return vcf_rollup(catalog, level, subtree=subtree)
 
 
 def reconstitute_hdf5_from_local(

@@ -69,7 +69,9 @@ starepandas/
 │                           #  test_granule_timestamps, test_ingest_module,
 │                           #  test_podcode_layout, test_temporal_catalog —
 │                           #  issue 01 local seam; test_temporal_query —
-│                           #  issue 03 period filter)
+│                           #  issue 03 period filter; test_vcf_rollup —
+│                           #  issue 04 VCF roll-up; _temporal_fixtures.py =
+│                           #  shared local-seam helpers)
 └── examples/               # Example notebooks and scripts
 ```
 
@@ -101,7 +103,9 @@ doubles as a native spatial query — `list_objects_v2(Prefix="storage/q13")`
 returns the `q13` subtree, no tree walk.
 
 **Codec** (`starepandas/staredataframe.py`): `sid_to_podcode` / `podcode_to_sid` /
-`podcode_to_local_dirs` / `chunk_filename` / `parse_chunk_filename`. The writers
+`podcode_to_local_dirs` / `chunk_filename` / `parse_chunk_filename` /
+`podcode_prefix_length` (level → prefix length, the VCF roll-up's grouping
+key — kept beside the codec so it can't drift from the grammar). The writers
 (`STAREDataFrame.to_s3` flat, `to_local` hier) and readers
 (`reconstitute_hdf5_from_*`, which are metadata-driven via the stored
 `group_path` and fall back to a pod-code prefix list / dir walk) all flow through
@@ -314,7 +318,7 @@ All skills run exclusively inside the `starepandas_3.12_v3` conda environment.
 6. Task-7 ingest module + task-1 cloud package reachable at top level
 7. C-2 `cloud.worker` exposes `Worker` / `WorkerConfig` / `main` / `_is_rds_auth_error`; `WorkerConfig.from_env()` rejects missing `SQS_QUEUE_URL`
 
-### Verified checks (STARE-PODS, 12/12 PASS as of 2026-07-11 — fully online, live-RDS checks included)
+### Verified checks (STARE-PODS, 13/13 PASS as of 2026-07-11 — fully online, live-RDS checks included)
 1. `import starepandas`
 2. `MAX_PARTITION_LEVEL == 4` (locks in the post-ba3028d level-4 partitioning)
 3. `to_local` writes Parquet leaves (no zarr artifacts)
@@ -326,17 +330,20 @@ All skills run exclusively inside the `starepandas_3.12_v3` conda environment.
    `load_local_metadata(period=…)` includes/excludes by `[t_start, t_end]`
    overlap; `load_local_temporal_catalog` projects exactly
    `podcode`/`Dataset`/`t_start`/`t_end`)
-7. `reconstitute_hdf5_from_local` round-trips through Parquet
-8. `reconstitute_hdf5_from_s3` (local path) walks pod-code tree
-9. `local_starepods_examples.py` end-to-end against the real GMI granule
-10. `pods_unique` UNIQUE constraint exists on `PodsMetadata` (§C10 #1 gate)
+7. VCF temporal roll-up (issue 04 — `load_local_vcf` level-1 union range ==
+   manual leaf aggregation, child counts, subtree prefix scoping,
+   `podcode_prefix_length` grouping key)
+8. `reconstitute_hdf5_from_local` round-trips through Parquet
+9. `reconstitute_hdf5_from_s3` (local path) walks pod-code tree
+10. `local_starepods_examples.py` end-to-end against the real GMI granule
+11. `pods_unique` UNIQUE constraint exists on `PodsMetadata` (§C10 #1 gate)
     + `t_start`/`t_end`/`podcode` columns present on the live catalog
-11. `PodsMetadata` insert is idempotent (§C10 #1 live regression —
+12. `PodsMetadata` insert is idempotent (§C10 #1 live regression —
     double-insert keeps row count stable, DO UPDATE refreshes MetadataJson)
-12. C-1..C-6 unit tests pass (cloud.ticket_sizing + metadata + granule_timestamps
+13. C-1..C-6 unit tests pass (cloud.ticket_sizing + metadata + granule_timestamps
     + s3_layout + ingest_module + config_env_secret + control_plane_lambdas
     + completion_watcher + cloud_client + podcode_layout + temporal_catalog
-    + temporal_query — currently 161 unit tests)
+    + temporal_query + vcf_rollup — currently 183 unit tests)
 
 ### Verified checks (cloud SDK, env-gated — C-6)
 `~/.claude/scripts/starepods_cloud_verify.py` (run with `STAREPANDAS_CLOUD_VERIFY=1`;
@@ -394,7 +401,37 @@ pip install -e .
 
 ---
 
-*Last Updated: 2026-07-11 (temporal-stare-pods issue 03 COMPLETE — temporal-aware
+*Last Updated: 2026-07-11 (temporal-stare-pods issue 04 COMPLETE — VCF temporal
+roll-up. The temporal hierarchy ("Virtual Collection File") is queryable
+on-the-fly: `vcf_rollup(catalog, level, subtree=None)` — pure function over a
+temporal-catalog frame — plus `load_s3_vcf` / `load_local_vcf` return, per pod
+at the requested level, the union range `[min(t_start), max(t_end)]` of all
+chunks beneath it + `n_chunks` / `n_without_range` (null-range chunks counted
+but never in the union; a pod with only range-less chunks gets a null range),
+grouped on the pod-code prefix. Level → prefix-length centralized beside the
+codec as `podcode_prefix_length(level)` = `level + 2` (can't-drift
+requirement). Loaders push subtree/dataset/period into SQL — new
+`podcode_prefix=` on the issue-03 thin loaders emits `podcode LIKE '<prefix>%'`
+(grammar-validated via `podcode_to_sid`, no SQL wildcards possible; rides
+`idx_pods_podcode`); period reuses `_period_conditions`; both backends share
+the single pure groupby (no second GROUP-BY dialect). No materialized index
+(deferred, issue 06). Post-review hardening: thin loaders exclude NULL-podcode
+legacy rows in SQL and `vcf_rollup` raises on them (groupby silently dropped
+them); `podcode_to_sid` digits tightened to ASCII (Unicode digits passed the
+gate but matched nothing); subtree deeper than the roll-up level raises via
+shared `_validate_vcf_args` (mislabeled sliver-envelope trap); half-null
+ranges contribute neither end to the union; empty-catalog special case
+deleted (dtype-divergent duplicate schema) so `VCF_COLUMNS` is load-bearing;
+subtree LIKE deduped into `_podcode_prefix_condition`. Tests:
+`tests/test_vcf_rollup.py` (23, pure-rollup + local round-trip +
+cloud-parity-by-inspection seams); shared local-seam helpers lifted into
+`tests/_temporal_fixtures.py` (issue-03 review flag). Live read-only smoke vs
+the real RDS catalog (14,739 chunks): `load_s3_vcf` exactly equals
+client-side `vcf_rollup` of the full thin load; subtree + period scoping
+match manual aggregation; deep-subtree guard fires live. Verification: basic
+7/7, STARE-PODS 13/13 online (new check 7), full suite 299 green.)*
+
+*Prior: 2026-07-11 (temporal-stare-pods issue 03 COMPLETE — temporal-aware
 intersection. `load_s3_metadata` / `load_local_metadata` and both demo
 `find_intersecting_data` methods accept `period=(start, end)` — a chunk matches
 when `[t_start, t_end]` overlaps the period, ANDed with the spatial pod match;
