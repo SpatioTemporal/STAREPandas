@@ -68,7 +68,8 @@ starepandas/
 │                           #  test_cloud_ticket_sizing, test_s3_layout,
 │                           #  test_granule_timestamps, test_ingest_module,
 │                           #  test_podcode_layout, test_temporal_catalog —
-│                           #  issue 01 local seam)
+│                           #  issue 01 local seam; test_temporal_query —
+│                           #  issue 03 period filter)
 └── examples/               # Example notebooks and scripts
 ```
 
@@ -313,7 +314,7 @@ All skills run exclusively inside the `starepandas_3.12_v3` conda environment.
 6. Task-7 ingest module + task-1 cloud package reachable at top level
 7. C-2 `cloud.worker` exposes `Worker` / `WorkerConfig` / `main` / `_is_rds_auth_error`; `WorkerConfig.from_env()` rejects missing `SQS_QUEUE_URL`
 
-### Verified checks (STARE-PODS, 11/11 PASS as of 2026-07-11 — fully online, live-RDS checks included)
+### Verified checks (STARE-PODS, 12/12 PASS as of 2026-07-11 — fully online, live-RDS checks included)
 1. `import starepandas`
 2. `MAX_PARTITION_LEVEL == 4` (locks in the post-ba3028d level-4 partitioning)
 3. `to_local` writes Parquet leaves (no zarr artifacts)
@@ -321,17 +322,21 @@ All skills run exclusively inside the `starepandas_3.12_v3` conda environment.
 5. `to_local` catalogs temporal range + pod code (SQLite `t_start`/`t_end`/
    `podcode` per chunk; re-ingest with same `raw_collected_time` stays
    idempotent — temporal-stare-pods issue 01)
-6. `reconstitute_hdf5_from_local` round-trips through Parquet
-7. `reconstitute_hdf5_from_s3` (local path) walks pod-code tree
-8. `local_starepods_examples.py` end-to-end against the real GMI granule
-9. `pods_unique` UNIQUE constraint exists on `PodsMetadata` (§C10 #1 gate)
-   + `t_start`/`t_end`/`podcode` columns present on the live catalog
-10. `PodsMetadata` insert is idempotent (§C10 #1 live regression —
+6. Period filter + thin temporal-catalog load (issue 03 —
+   `load_local_metadata(period=…)` includes/excludes by `[t_start, t_end]`
+   overlap; `load_local_temporal_catalog` projects exactly
+   `podcode`/`Dataset`/`t_start`/`t_end`)
+7. `reconstitute_hdf5_from_local` round-trips through Parquet
+8. `reconstitute_hdf5_from_s3` (local path) walks pod-code tree
+9. `local_starepods_examples.py` end-to-end against the real GMI granule
+10. `pods_unique` UNIQUE constraint exists on `PodsMetadata` (§C10 #1 gate)
+    + `t_start`/`t_end`/`podcode` columns present on the live catalog
+11. `PodsMetadata` insert is idempotent (§C10 #1 live regression —
     double-insert keeps row count stable, DO UPDATE refreshes MetadataJson)
-11. C-1..C-6 unit tests pass (cloud.ticket_sizing + metadata + granule_timestamps
+12. C-1..C-6 unit tests pass (cloud.ticket_sizing + metadata + granule_timestamps
     + s3_layout + ingest_module + config_env_secret + control_plane_lambdas
     + completion_watcher + cloud_client + podcode_layout + temporal_catalog
-    — currently 135 unit tests)
+    + temporal_query — currently 161 unit tests)
 
 ### Verified checks (cloud SDK, env-gated — C-6)
 `~/.claude/scripts/starepods_cloud_verify.py` (run with `STAREPANDAS_CLOUD_VERIFY=1`;
@@ -389,7 +394,31 @@ pip install -e .
 
 ---
 
-*Last Updated: 2026-07-11 (temporal-stare-pods issue 02 COMPLETE — cloud
+*Last Updated: 2026-07-11 (temporal-stare-pods issue 03 COMPLETE — temporal-aware
+intersection. `load_s3_metadata` / `load_local_metadata` and both demo
+`find_intersecting_data` methods accept `period=(start, end)` — a chunk matches
+when `[t_start, t_end]` overlaps the period, ANDed with the spatial pod match;
+no period → spatial-only behavior unchanged; null-range chunks never match.
+Predicate built by the shared `_period_conditions` helper
+(`starepandas/io/granules/__init__.py`) as the ADR-0002 Decision-3
+index-friendly rewrite: `t_start BETWEEN period_start − D_MAX AND period_end`
++ residual `t_end ≥ period_start`, `D_MAX = timedelta(hours=2)` (documented
+constant; live EXPLAIN confirms Bitmap Index Scan on `idx_pods_temporal`).
+Granule-level `start_date`/`end_date` (filename-derived "RawData Collected
+Time") documented as distinct from the data-level `period` everywhere. New
+thin-projection loaders for the issue-05 analytics:
+`load_s3_temporal_catalog` / `load_local_temporal_catalog` project exactly
+`podcode`/`Dataset`/`t_start`/`t_end` (never `MetadataJson`), timestamps
+parsed. Post-review: `_validate_period` normalizes tz-aware bounds to naive
+UTC and rejects `None`/`NaT`/reversed periods, demos validate the period up
+front (fail fast, not swallowed to empty), and `StarePodsDemo` now actually
+forwards `start_date`/`end_date`/`time_range` (previously captured and
+dropped). Tests: `tests/test_temporal_query.py` (26, local round-trip + pure
+predicate seams). Live read-only smoke against the re-ingested catalog
+(14,225 SSMIS rows) passed. Verification: basic 7/7, STARE-PODS 12/12 online
+(new check 6).)*
+
+*Prior: 2026-07-11 (temporal-stare-pods issue 02 COMPLETE — cloud
 redeploy + demo re-ingest. Worker image rebuilt from temporal HEAD `c282315`
 (wheel `0.6.8+74.gc282315.dirty` — the `.dirty` is uncommitted docs/notebook
 edits only, zero source diff vs `c282315`) and repushed to ECR `starepods/worker:dev`

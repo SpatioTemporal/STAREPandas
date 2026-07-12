@@ -1,3 +1,4 @@
+import datetime
 import glob
 import logging
 import os
@@ -478,9 +479,90 @@ def to_s3(file_path, s3_path=None, level=10, chunk_size=250000, storage_options=
             pass
 
 
+#: Upper bound on one chunk's temporal range. A chunk holds data from a
+#: single granule pass (≈ one orbit ≈ 100 min), so 2 h is a safe ceiling.
+#: Used to rewrite the period-overlap predicate into an index-friendly
+#: ``t_start`` range (ADR-0002 Decision 3): because ``t_end ≤ t_start +
+#: D_MAX``, every chunk overlapping ``[period_start, period_end]`` has
+#: ``t_start BETWEEN period_start − D_MAX AND period_end`` — that range
+#: prunes via the ``(t_start, t_end)`` index, and the residual exact
+#: ``t_end ≥ period_start`` test filters the pruned slice. A bare
+#: ``t_end ≥ …`` half cannot use the index and degrades to full scans as
+#: the catalog grows.
+D_MAX = datetime.timedelta(hours=2)
+
+
+def _validate_period(period):
+    """Normalize a ``(period_start, period_end)`` pair to naive-UTC datetimes.
+
+    The catalog stores ``t_start``/``t_end`` as naive UTC, so tz-aware bounds
+    are converted to UTC and stripped of their offset. Rejects missing bounds
+    (``None``/``NaT`` — the period must be closed on both ends) and a
+    reversed period. Returns ``(period_start, period_end)`` as
+    ``datetime.datetime``.
+    """
+    period_start, period_end = period
+    bounds = []
+    for name, bound in (('start', period_start), ('end', period_end)):
+        ts = pd.Timestamp(bound)
+        if pd.isna(ts):
+            raise ValueError(
+                f"period {name} is missing ({bound!r}) — a period must be "
+                "closed on both ends"
+            )
+        if ts.tzinfo is not None:
+            # Catalog timestamps are naive UTC.
+            ts = ts.tz_convert('UTC').tz_localize(None)
+        bounds.append(ts.to_pydatetime())
+    period_start, period_end = bounds
+    if period_end < period_start:
+        raise ValueError(
+            f"period end ({period_end}) precedes period start ({period_start})"
+        )
+    return period_start, period_end
+
+
+def _period_conditions(period, placeholder='%s', as_iso=False):
+    """SQL conditions + params for "chunk temporal range overlaps period".
+
+    The exact predicate is ``t_start ≤ period_end AND t_end ≥ period_start``;
+    this returns its ADR-0002 Decision-3 index-friendly rewrite (see
+    :data:`D_MAX`). Chunks with a null temporal range (ingested without
+    per-point timestamps) never match a period.
+
+    Parameters
+    ----------
+    period : tuple
+        ``(period_start, period_end)`` — each a datetime, pandas Timestamp,
+        or ISO-8601 / ``'YYYY-MM-DD'`` string; inclusive on both ends.
+        tz-aware bounds are converted to the catalog's naive-UTC convention.
+    placeholder : str
+        SQL parameter placeholder — ``'%s'`` (psycopg2) or ``'?'`` (sqlite3).
+    as_iso : bool
+        Emit params as ISO-8601 strings for SQLite, where ``t_start`` /
+        ``t_end`` are stored as ISO TEXT and compared lexicographically.
+
+    Returns
+    -------
+    tuple of (list of str, list)
+        Condition fragments (to AND into a WHERE clause) and their params.
+    """
+    period_start, period_end = _validate_period(period)
+
+    conditions = [
+        f't_start >= {placeholder}',
+        f't_start <= {placeholder}',
+        f't_end >= {placeholder}',
+    ]
+    params = [period_start - D_MAX, period_end, period_start]
+    if as_iso:
+        params = [p.isoformat() for p in params]
+    return conditions, params
+
+
 def load_s3_metadata(dataset=None, dataset_prefix=None, data_level=None, s3_bucket=None,
                       resolution_level=None, start_date=None, end_date=None,
-                      grouped_id=None, limit=None, order_by=None):
+                      grouped_id=None, period=None, limit=None, order_by=None):
     """
     Load metadata from the RDS database for Parquet partitions stored in S3.
     
@@ -498,11 +580,23 @@ def load_s3_metadata(dataset=None, dataset_prefix=None, data_level=None, s3_buck
     resolution_level : int, optional
         Filter by STARE resolution level
     start_date : str or datetime, optional
-        Filter by start date (inclusive). Can be string in format 'YYYY-MM-DD' or datetime object
+        **Granule-level** date filter (inclusive lower bound) on
+        "RawData Collected Time" — the single collection time derived from
+        the granule *filename*. Distinct from ``period``, which filters on
+        the data-level temporal range. Can be 'YYYY-MM-DD' or datetime.
     end_date : str or datetime, optional
-        Filter by end date (inclusive). Can be string in format 'YYYY-MM-DD' or datetime object
+        Granule-level date filter (inclusive upper bound) on
+        "RawData Collected Time"; see ``start_date``.
     grouped_id : int, optional
         Filter by specific grouped_id
+    period : tuple of (str or datetime, str or datetime), optional
+        **Data-level** time-period filter ``(period_start, period_end)``: a
+        chunk matches when its temporal range overlaps the period —
+        ``t_start <= period_end AND t_end >= period_start`` (both ends
+        inclusive). ``t_start``/``t_end`` are the min/max of the chunk's
+        per-point scan times, so this filters on when the data was actually
+        collected. Chunks with a null temporal range never match. Executed
+        as the index-friendly ``D_MAX`` rewrite (ADR-0002 Decision 3).
     limit : int, optional
         Limit the number of results returned
     order_by : str, optional
@@ -595,7 +689,12 @@ def load_s3_metadata(dataset=None, dataset_prefix=None, data_level=None, s3_buck
         if end_date is not None:
             conditions.append('"RawData Collected Time" <= %s')
             params.append(end_date)
-        
+
+        if period is not None:
+            period_conds, period_params = _period_conditions(period, placeholder='%s')
+            conditions.extend(period_conds)
+            params.extend(period_params)
+
         # Add WHERE clause if conditions exist
         if conditions:
             query += ' WHERE ' + ' AND '.join(conditions)
@@ -1538,6 +1637,7 @@ def load_local_metadata(
     start_date=None,
     end_date=None,
     grouped_id=None,
+    period=None,
     limit=None,
     order_by=None,
 ):
@@ -1561,11 +1661,20 @@ def load_local_metadata(
     resolution_level : int, optional
         Filter by STARE resolution level.
     start_date : str, optional
-        ISO-8601 lower-bound for ``"RawData Collected Time"`` (inclusive).
+        **Granule-level** ISO-8601 lower-bound (inclusive) on
+        ``"RawData Collected Time"`` — the filename-derived collection time.
+        Distinct from ``period``, which filters the data-level range.
     end_date : str, optional
-        ISO-8601 upper-bound for ``"RawData Collected Time"`` (inclusive).
+        Granule-level ISO-8601 upper-bound (inclusive) on
+        ``"RawData Collected Time"``; see ``start_date``.
     grouped_id : int, optional
         Filter by exact grouped_id.
+    period : tuple, optional
+        **Data-level** time-period filter ``(period_start, period_end)``:
+        includes a chunk when its temporal range ``[t_start, t_end]``
+        overlaps the period (both ends inclusive). Chunks with a null
+        temporal range never match. Same semantics as
+        :func:`load_s3_metadata`'s ``period``.
     limit : int, optional
         Maximum rows to return.
     order_by : str, optional
@@ -1611,6 +1720,12 @@ def load_local_metadata(
             conditions.append('"RawData Collected Time" <= ?')
             params.append(str(end_date))
 
+        if period is not None:
+            period_conds, period_params = _period_conditions(
+                period, placeholder='?', as_iso=True)
+            conditions.extend(period_conds)
+            params.extend(period_params)
+
         if conditions:
             query += ' WHERE ' + ' AND '.join(conditions)
 
@@ -1647,6 +1762,122 @@ def load_local_metadata(
                 df[col] = meta_df[col]
 
     return df
+
+
+#: Columns the overlap-analytics loaders project (ADR-0002 Decision 3) —
+#: never ``MetadataJson``.
+TEMPORAL_CATALOG_COLUMNS = ['podcode', 'Dataset', 't_start', 't_end']
+
+
+def _finish_temporal_catalog(rows):
+    """Rows → analytics-ready frame: fixed columns, parsed timestamps."""
+    df = pd.DataFrame(rows, columns=TEMPORAL_CATALOG_COLUMNS)
+    df['t_start'] = pd.to_datetime(df['t_start'])
+    df['t_end'] = pd.to_datetime(df['t_end'])
+    return df
+
+
+def load_s3_temporal_catalog(dataset=None, dataset_prefix=None, period=None):
+    """
+    Thin-projection catalog load for the overlap analytics (cloud/RDS).
+
+    Projects exactly ``podcode``, ``Dataset``, ``t_start``, ``t_end`` per
+    ADR-0002 Decision 3 and prunes by ``period`` via the ``t_start`` index
+    range (the ``D_MAX`` rewrite). Use :func:`load_s3_metadata` when the
+    full metadata (group paths, etc.) is needed.
+
+    Parameters
+    ----------
+    dataset : str, optional
+        Exact dataset name filter.
+    dataset_prefix : str, optional
+        Matches datasets named ``"<dataset_prefix>_…"``.
+    period : tuple, optional
+        Data-level time-period filter; same semantics as
+        :func:`load_s3_metadata`'s ``period``.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Columns ``podcode``, ``Dataset``, ``t_start``, ``t_end`` with the
+        temporal columns parsed to timestamps.
+    """
+    from starepandas.staredataframe import _ensure_rds_db_and_table
+
+    conn = _ensure_rds_db_and_table('StarePodsMetadata')
+    try:
+        query = 'SELECT podcode, "Dataset", t_start, t_end FROM "PodsMetadata"'
+        conditions = []
+        params = []
+        if dataset is not None:
+            conditions.append('"Dataset" = %s')
+            params.append(dataset)
+        if dataset_prefix is not None:
+            conditions.append('"Dataset" LIKE %s')
+            params.append(f"{dataset_prefix}_%")
+        if period is not None:
+            period_conds, period_params = _period_conditions(period, placeholder='%s')
+            conditions.extend(period_conds)
+            params.extend(period_params)
+        if conditions:
+            query += ' WHERE ' + ' AND '.join(conditions)
+
+        with conn.cursor() as cur:
+            cur.execute(query, params)
+            rows = cur.fetchall()
+    finally:
+        conn.close()
+
+    return _finish_temporal_catalog(rows)
+
+
+def load_local_temporal_catalog(db_path, dataset=None, dataset_prefix=None,
+                                period=None):
+    """
+    Thin-projection catalog load for the overlap analytics (local/SQLite).
+
+    Local equivalent of :func:`load_s3_temporal_catalog`; see there for the
+    projection and period semantics.
+
+    Parameters
+    ----------
+    db_path : str
+        Path to the SQLite metadata database.
+    dataset, dataset_prefix, period : optional
+        As in :func:`load_s3_temporal_catalog`.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Columns ``podcode``, ``Dataset``, ``t_start``, ``t_end`` with the
+        temporal columns parsed to timestamps.
+    """
+    from starepandas.staredataframe import _ensure_sqlite_db_and_table
+
+    conn = _ensure_sqlite_db_and_table(db_path)
+    try:
+        query = 'SELECT podcode, "Dataset", t_start, t_end FROM "PodsMetadata"'
+        conditions = []
+        params = []
+        if dataset is not None:
+            conditions.append('"Dataset" = ?')
+            params.append(dataset)
+        if dataset_prefix is not None:
+            conditions.append('"Dataset" LIKE ?')
+            params.append(f"{dataset_prefix}_%")
+        if period is not None:
+            period_conds, period_params = _period_conditions(
+                period, placeholder='?', as_iso=True)
+            conditions.extend(period_conds)
+            params.extend(period_params)
+        if conditions:
+            query += ' WHERE ' + ' AND '.join(conditions)
+
+        rows = conn.execute(query, params).fetchall()
+    finally:
+        conn.close()
+
+    return _finish_temporal_catalog(rows)
 
 
 def reconstitute_hdf5_from_local(

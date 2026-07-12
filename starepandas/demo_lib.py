@@ -84,10 +84,11 @@ class StarePodsDemo:
                            time_range: Optional[Tuple[str, str]] = None,
                            start_date: Optional[str] = None,
                            end_date: Optional[str] = None,
+                           period: Optional[Tuple] = None,
                            **kwargs) -> pd.DataFrame:
         """
         Find intersecting data across multiple instruments using STARE SIDs.
-        
+
         Parameters
         ----------
         location_sids : List[int]
@@ -96,9 +97,17 @@ class StarePodsDemo:
             List of instruments to search (GMI, AMSR2, SSMIS, ATMS)
         time_range : Tuple[str, str], optional
             Time range filter (start_date, end_date) in 'YYYY-MM-DD' format
+        start_date, end_date : str, optional
+            **Granule-level** date filters on "RawData Collected Time" (the
+            filename-derived collection time). Distinct from ``period``.
+        period : Tuple, optional
+            **Data-level** time-period filter ``(period_start, period_end)``:
+            a chunk matches when its temporal range ``[t_start, t_end]``
+            overlaps the period. ANDed with the spatial pod match; omit to
+            keep spatial-only behavior.
         **kwargs
             Additional filters for metadata search
-            
+
         Returns
         -------
         pd.DataFrame
@@ -108,9 +117,14 @@ class StarePodsDemo:
 
         logger.info(f"Finding intersections for {len(location_sids)} SIDs across {instruments}")
 
-        # Handle time range parameters
-        if time_range is None and start_date is not None and end_date is not None:
-            time_range = (start_date, end_date)
+        # Fail fast on a malformed period — the per-instrument except below
+        # would otherwise swallow it into an empty (not erroneous) result.
+        if period is not None:
+            starepandas.io.granules._validate_period(period)
+
+        # time_range is legacy shorthand for the granule-level date pair.
+        if time_range is not None and start_date is None and end_date is None:
+            start_date, end_date = time_range
 
         # Coerce query SIDs down to partition level for coarse matching against grouped_id in RDS.
         # A level-10 query SID maps to its ancestor level-6 trixel, which is what's stored as grouped_id.
@@ -132,11 +146,17 @@ class StarePodsDemo:
                 # datasets stored as e.g. "GMI_S1", "GMI_S2" when queried as "GMI".
                 metadata = starepandas.io.granules.load_s3_metadata(
                     dataset=instrument,
+                    start_date=start_date,
+                    end_date=end_date,
+                    period=period,
                     **kwargs
                 )
                 if metadata.empty:
                     metadata = starepandas.io.granules.load_s3_metadata(
                         dataset_prefix=instrument,
+                        start_date=start_date,
+                        end_date=end_date,
+                        period=period,
                         **kwargs
                     )
 
@@ -632,6 +652,7 @@ class LocalStarePodsDemo:
         self,
         location_sids: List[int],
         instruments: List[str],
+        period: Optional[Tuple] = None,
         **kwargs,
     ) -> pd.DataFrame:
         """
@@ -643,6 +664,13 @@ class LocalStarePodsDemo:
             STARE SIDs for the area of interest.
         instruments : list of str
             Instrument / dataset names to search (e.g. ``["GMI"]``).
+        period : tuple, optional
+            **Data-level** time-period filter ``(period_start, period_end)``:
+            a chunk matches when its temporal range ``[t_start, t_end]``
+            overlaps the period. ANDed with the spatial pod match; omit to
+            keep spatial-only behavior. (The granule-level ``start_date`` /
+            ``end_date`` filters on "RawData Collected Time" remain available
+            via ``**kwargs``.)
         **kwargs
             Forwarded to :func:`load_local_metadata`.
 
@@ -651,17 +679,23 @@ class LocalStarePodsDemo:
         pandas.DataFrame
             Matching metadata rows.
         """
+        # Fail fast on a malformed period — the per-instrument except below
+        # would otherwise swallow it into an empty (not erroneous) result.
+        if period is not None:
+            starepandas.io.granules._validate_period(period)
+
         # No spatial filter — return all partitions for the requested instruments
         if location_sids is None:
             all_meta = []
             for instrument in instruments:
                 try:
                     meta = starepandas.io.granules.load_local_metadata(
-                        self.db_path, dataset=instrument, **kwargs
+                        self.db_path, dataset=instrument, period=period, **kwargs
                     )
                     if meta is None or meta.empty:
                         meta = starepandas.io.granules.load_local_metadata(
-                            self.db_path, dataset_prefix=instrument, **kwargs
+                            self.db_path, dataset_prefix=instrument, period=period,
+                            **kwargs
                         )
                     if meta is not None and not meta.empty:
                         logger.info(f"Loaded all {len(meta)} partitions for {instrument}")
@@ -687,11 +721,12 @@ class LocalStarePodsDemo:
         for instrument in instruments:
             try:
                 meta = starepandas.io.granules.load_local_metadata(
-                    self.db_path, dataset=instrument, **kwargs
+                    self.db_path, dataset=instrument, period=period, **kwargs
                 )
                 if meta.empty:
                     meta = starepandas.io.granules.load_local_metadata(
-                        self.db_path, dataset_prefix=instrument, **kwargs
+                        self.db_path, dataset_prefix=instrument, period=period,
+                        **kwargs
                     )
 
                 if meta.empty:

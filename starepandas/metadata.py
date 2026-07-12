@@ -114,7 +114,9 @@ class MetadataStore(Protocol):
 
         Supported keyword filters: ``dataset``, ``dataset_prefix``,
         ``data_level``, ``s3_bucket``, ``resolution_level``, ``start_date``,
-        ``end_date``, ``grouped_id``, ``limit``, ``order_by``.
+        ``end_date`` (granule-level, on "RawData Collected Time"),
+        ``grouped_id``, ``period`` (data-level ``(start, end)`` overlap
+        against ``[t_start, t_end]``), ``limit``, ``order_by``.
         """
         ...
 
