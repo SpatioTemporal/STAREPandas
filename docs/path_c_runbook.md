@@ -330,7 +330,7 @@ run cadence × that figure.
 | SQS tickets / DLQ | `starepods-tickets` (vis 6 h, maxReceive 3) / `starepods-tickets-dlq` |
 | SQS callbacks DLQ | `starepods-callbacks-dlq` (alarm `starepods-callbacks-dlq-depth`) |
 | DynamoDB | `StarePodsJobs` (PK `job_id`; also holds `JobsControl` singleton), `StarePodsFailures` (PK `job_id`, SK `granule_uri`); TTL `expires_at` |
-| RDS (Postgres) | `starepodsmetadata.cgxwy3lllofm.us-west-2.rds.amazonaws.com:5432` db `postgres`, table `PodsMetadata` (UNIQUE `pods_unique`) |
+| RDS (Postgres) | `starepodsmetadata.cgxwy3lllofm.us-west-2.rds.amazonaws.com:5432` — table `PodsMetadata` (UNIQUE `pods_unique`) lives in database **`StarePodsMetadata`** (created by `_ensure_rds_db_and_table`); the `.config` `database=postgres` is only the bootstrap/admin DB |
 | Secrets Manager | `starepods/worker/.config` |
 | Lambdas | `starepods-scheduler`, `starepods-status`, `starepods-completion-watcher` |
 | EventBridge | `starepods-completion-tick` (`rate(1 min)`) |
