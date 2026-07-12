@@ -227,6 +227,40 @@ Image: `637388276731.dkr.ecr.us-west-2.amazonaws.com/starepods/worker:<tag>`
   redeploy (§7). The task definition picks up the new image on the next task.
 - New tasks only — running tasks keep their image until they exit.
 
+**Rebuild + repush** (after any change to the podding writer / worker code —
+performed 2026-05-30, 2026-06-21, 2026-07-11):
+```bash
+# 1. Wheel on the HOST (versioneer can't resolve the worktree .git in Docker)
+rm -f infra/worker/dist/*.whl
+conda run -n starepandas_3.12_v3 python setup.py bdist_wheel -d infra/worker/dist
+
+# 2. Build for linux/amd64 (colima on arm64 → buildx required; the
+#    --provenance/--sbom=false flags force a single-platform manifest that
+#    Fargate can pull). A gcc "exit -11" segfault compiling psycopg2 under
+#    emulation is transient — just retry.
+docker buildx build --platform=linux/amd64 --provenance=false --sbom=false \
+    -f infra/worker/Dockerfile -t starepods/worker:dev --load .
+
+# 3. Login (no aws CLI needed — mint the token with boto3 using .config creds)
+python -c "
+import base64, boto3
+cfg = dict(l.strip().split('=',1) for l in open('starepandas/.config')
+           if '=' in l and not l.startswith('#'))
+t = boto3.client('ecr', region_name='us-west-2', aws_access_key_id=cfg['key'],
+                 aws_secret_access_key=cfg['secret']
+    ).get_authorization_token()['authorizationData'][0]['authorizationToken']
+print(base64.b64decode(t).decode().split(':',1)[1], end='')" \
+  | docker login --username AWS --password-stdin 637388276731.dkr.ecr.us-west-2.amazonaws.com
+
+# 4. Push the mutable :dev tag; note the digest it prints
+docker tag starepods/worker:dev 637388276731.dkr.ecr.us-west-2.amazonaws.com/starepods/worker:dev
+docker push 637388276731.dkr.ecr.us-west-2.amazonaws.com/starepods/worker:dev
+```
+No ECS action needed: the service idles at `desiredCount=0` and freshly-launched
+tasks re-resolve the `:dev` tag. Verify with
+`aws ecs describe-tasks … --query 'tasks[].containers[].imageDigest'` (or boto3)
+on the next job's tasks.
+
 ### 6g. Deploy / diff (CDK)
 ```bash
 ./infra/cdk/cdk-zarpodder.sh diff   StarePodsInfraStack
@@ -307,4 +341,5 @@ run cadence × that figure.
 
 ---
 
-*Last updated: 2026-06-14 (C-7, after load test #1 + 6 h visibility timeout).*
+*Last updated: 2026-07-11 (temporal-catalog redeploy — §6f rebuild+repush recipe
+added; live image now `sha256:8736fd06…`).*
