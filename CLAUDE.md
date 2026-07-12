@@ -353,12 +353,14 @@ All skills run exclusively inside the `starepandas_3.12_v3` conda environment.
 11. `local_starepods_examples.py` end-to-end against the real GMI granule
 12. `pods_unique` UNIQUE constraint exists on `PodsMetadata` (§C10 #1 gate)
     + `t_start`/`t_end`/`podcode` columns present on the live catalog
+    + issue-06 index set present (`idx_pods_podcode`, `idx_pods_temporal`,
+    `idx_pods_temporal_covering` with its `INCLUDE (podcode, "Dataset")`)
 13. `PodsMetadata` insert is idempotent (§C10 #1 live regression —
     double-insert keeps row count stable, DO UPDATE refreshes MetadataJson)
 14. C-1..C-6 unit tests pass (cloud.ticket_sizing + metadata + granule_timestamps
     + s3_layout + ingest_module + config_env_secret + control_plane_lambdas
     + completion_watcher + cloud_client + podcode_layout + temporal_catalog
-    + temporal_query + vcf_rollup + overlap_analytics — currently 207 unit
+    + temporal_query + vcf_rollup + overlap_analytics — currently 210 unit
     tests)
 
 ### Verified checks (cloud SDK, env-gated — C-6)
@@ -417,7 +419,36 @@ pip install -e .
 
 ---
 
-*Last Updated: 2026-07-12 (temporal-stare-pods issue 05 COMPLETE —
+*Last Updated: 2026-07-12 (temporal-stare-pods issue 06 COMPLETE — measured
+index upgrades. The ADR-0002 "measure before building" gate opened (issues
+03 + 05 shipped), so the deferred index menu was profiled at realistic scale:
+live 14,739-row RDS catalog + a 2M-row RDS scratch table (server-side
+`generate_series`, real column shapes, ingest≈time heap order; dropped after
+the run) + a 1M-row SQLite catalog. **Adopted item 1** — covering index
+`idx_pods_temporal_covering` (`(t_start, t_end) INCLUDE (podcode, "Dataset")`
+on RDS; trailing key columns `(t_start, t_end, podcode, "Dataset")` on
+SQLite): the issue-05 analytics thin fetch becomes an index-only scan — RDS
+@2M, 7 d period: 201.6 ms / ~25.7k buffers → 67.6 ms / 238 buffers, Heap
+Fetches: 0; live catalog EXPLAIN confirms Index Only Scan (3.0 ms) after
+`VACUUM (ANALYZE)` (visibility-map note in runbook §6h). DDL applied
+idempotently in both initializers — probe-gated on RDS
+(`_ensure_rds_db_and_table`, issue-01 pattern); plain per-open
+`CREATE INDEX IF NOT EXISTS` on SQLite (`_ensure_sqlite_db_and_table`,
+matching its existing index block). `idx_pods_temporal` kept (additive-only
+mandate; the narrow index stays the cheaper key-only arm). **Rejected item 2** (`(podcode,
+t_start)` composite — only wins exact-pod+period SQL, a shape no shipped
+path emits; the `podcode_prefix=` LIKE path is answered index-only by the
+covering index) and **item 3** (CLUSTER-by-podcode — zero heap fetches left
+to optimize and measured harmful: 7 d fetch 67.6 → 189.1 ms, it destroys
+ingest-order temporal locality). Full numbers in the issue-06 profiling note
+(`.scratch/temporal-stare-pods/issues/06-covering-index-upgrades.md`);
+ADR-0002 "Deferred" annotated with the verdicts. Tests: 3 new in
+`tests/test_temporal_catalog.py` (SQLite covering-index shape, plan-level
+covering-scan assertion, RDS DDL probe-gating) — 210 unit tests in the gate,
+full suite 326 green. Verification: basic 8/8, STARE-PODS 14/14 online
+(check 12 now asserts the index set + INCLUDE columns).)*
+
+*Prior: 2026-07-12 (temporal-stare-pods issue 05 COMPLETE —
 multi-instrument overlap analytics (slides 8/9). New `starepandas/overlap.py`,
 all pure functions over a loaded temporal-catalog frame (no DB/object-store
 access — ADR-0002 Decision 2): `rendezvous_events(catalog, dt, period=None,

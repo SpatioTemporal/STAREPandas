@@ -545,7 +545,8 @@ def _ensure_rds_db_and_table(target_dbname='StarePodsMetadata'):
             """
             SELECT indexname FROM pg_indexes
             WHERE tablename = 'PodsMetadata'
-            AND indexname IN ('idx_pods_podcode', 'idx_pods_temporal')
+            AND indexname IN ('idx_pods_podcode', 'idx_pods_temporal',
+                              'idx_pods_temporal_covering')
             """
         )
         have_idx = {row[0] for row in cur.fetchall()}
@@ -553,6 +554,17 @@ def _ensure_rds_db_and_table(target_dbname='StarePodsMetadata'):
             cur.execute('CREATE INDEX IF NOT EXISTS idx_pods_podcode ON "PodsMetadata" (podcode)')
         if 'idx_pods_temporal' not in have_idx:
             cur.execute('CREATE INDEX IF NOT EXISTS idx_pods_temporal ON "PodsMetadata" (t_start, t_end)')
+        # Temporal-stare-pods issue 06 (profiled 2026-07-12): covering index
+        # for the analytics thin fetch — the 4-column projection is answered
+        # from the index leaves (index-only scan; keep the visibility map
+        # current with VACUUM after bulk ingest). idx_pods_temporal is kept:
+        # the issue-06 mandate is additive-only, and the narrow index stays
+        # the cheaper arm for key-only scans (size/cache footprint — a bitmap
+        # scan can use either index's keys). Rationale + numbers in the
+        # issue-06 profiling note.
+        if 'idx_pods_temporal_covering' not in have_idx:
+            cur.execute('CREATE INDEX IF NOT EXISTS idx_pods_temporal_covering '
+                        'ON "PodsMetadata" (t_start, t_end) INCLUDE (podcode, "Dataset")')
 
 
         # Check if grouped_id column needs to be upgraded from INTEGER to BIGINT
@@ -621,6 +633,13 @@ def _ensure_sqlite_db_and_table(db_path: str):
     conn.execute('CREATE INDEX IF NOT EXISTS idx_pods_grouped ON "PodsMetadata" (grouped_id)')
     conn.execute('CREATE INDEX IF NOT EXISTS idx_pods_podcode ON "PodsMetadata" (podcode)')
     conn.execute('CREATE INDEX IF NOT EXISTS idx_pods_temporal ON "PodsMetadata" (t_start, t_end)')
+    # Temporal-stare-pods issue 06 (profiled 2026-07-12): covering index for
+    # the analytics thin fetch — SQLite has no INCLUDE, so the projected
+    # columns ride as trailing key columns. idx_pods_temporal is kept only
+    # for schema parity with RDS and the additive-only issue-06 mandate;
+    # its key columns are this index's prefix, so SQLite plans never need it.
+    conn.execute('CREATE INDEX IF NOT EXISTS idx_pods_temporal_covering '
+                 'ON "PodsMetadata" (t_start, t_end, podcode, "Dataset")')
     # Same uniqueness identity as the RDS pods_unique constraint — backs the
     # ON CONFLICT upsert that keeps local re-ingest idempotent.
     try:

@@ -1834,8 +1834,10 @@ def load_s3_temporal_catalog(dataset=None, dataset_prefix=None, period=None,
 
     Projects exactly ``podcode``, ``Dataset``, ``t_start``, ``t_end`` per
     ADR-0002 Decision 3 and prunes by ``period`` via the ``t_start`` index
-    range (the ``D_MAX`` rewrite). Use :func:`load_s3_metadata` when the
-    full metadata (group paths, etc.) is needed.
+    range (the ``D_MAX`` rewrite); since issue 06 the projection is answered
+    index-only by ``idx_pods_temporal_covering`` (no heap access). Use
+    :func:`load_s3_metadata` when the full metadata (group paths, etc.) is
+    needed.
 
     Parameters
     ----------

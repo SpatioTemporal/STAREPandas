@@ -277,5 +277,78 @@ def test_rds_ddl_adds_temporal_columns_idempotently():
         "column DDL must be probe-gated (no per-connect ALTER lock)"
     assert 'pg_indexes' in src, \
         "index DDL must be probe-gated (no per-connect CREATE INDEX)"
-    assert 'idx_pods_podcode' in src
-    assert 'idx_pods_temporal' in src
+    # Full CREATE fragments, not bare names: 'idx_pods_temporal' is a
+    # substring of the issue-06 'idx_pods_temporal_covering', so a name-only
+    # check could pass with the plain temporal index deleted.
+    assert 'CREATE INDEX IF NOT EXISTS idx_pods_podcode' in src
+    assert 'CREATE INDEX IF NOT EXISTS idx_pods_temporal ' in src
+
+
+# ----- Measured index upgrades (temporal-stare-pods issue 06) ----------------
+#
+# Profiling (2026-07-12, 1M-row SQLite / 2M-row RDS scratch catalogs) adopted
+# menu item 1 — the covering index that answers the analytics thin fetch
+# (podcode, "Dataset", t_start, t_end) from the index leaves alone, with no
+# heap/table visits. Items 2 (podcode, t_start composite) and 3 (CLUSTER by
+# podcode) were rejected; the numbers live in the issue-06 profiling note.
+
+
+def test_sqlite_schema_has_covering_index(tmp_path):
+    """SQLite spells the covering index as trailing key columns."""
+    db_path = os.path.join(str(tmp_path), 'meta.db')
+    conn = _ensure_sqlite_db_and_table(db_path)
+    try:
+        indexes = {r[1] for r in conn.execute('PRAGMA index_list("PodsMetadata")')}
+        assert 'idx_pods_temporal_covering' in indexes
+        cols = [r[2] for r in
+                conn.execute('PRAGMA index_info("idx_pods_temporal_covering")')]
+        assert cols == ['t_start', 't_end', 'podcode', 'Dataset']
+    finally:
+        conn.close()
+
+
+def test_sqlite_covering_index_answers_analytics_fetch(tmp_path):
+    """The issue-05 thin fetch must run as a covering-index scan (the plan
+    says so explicitly — no table b-tree visits). The predicate is built by
+    the same ``_period_conditions`` helper the shipped loader uses, so the
+    asserted plan cannot drift from the query
+    ``load_local_temporal_catalog`` actually emits."""
+    from starepandas.io.granules import _period_conditions
+
+    db_path = os.path.join(str(tmp_path), 'meta.db')
+    conn = _ensure_sqlite_db_and_table(db_path)
+    try:
+        conn.execute(
+            'INSERT INTO "PodsMetadata" '
+            '("Dataset", t_start, t_end, podcode) VALUES (?, ?, ?, ?)',
+            ('GMI_S1', '2020-06-15T12:00:00', '2020-06-15T12:03:00', 'q31230'),
+        )
+        conds, params = _period_conditions(
+            (T0, T0 + pd.Timedelta(hours=1)), placeholder='?', as_iso=True)
+        plan = ' | '.join(
+            r[3] for r in conn.execute(
+                'EXPLAIN QUERY PLAN '
+                'SELECT podcode, "Dataset", t_start, t_end FROM "PodsMetadata" '
+                'WHERE ' + ' AND '.join(['podcode IS NOT NULL'] + conds),
+                params,
+            )
+        )
+        assert 'COVERING INDEX idx_pods_temporal_covering' in plan, plan
+    finally:
+        conn.close()
+
+
+def test_rds_ddl_creates_covering_index_probe_gated():
+    """The RDS initializer must create the INCLUDE-form covering index behind
+    the same pg_indexes probe as the issue-01 indexes (no per-connect DDL)."""
+    import inspect
+    import starepandas.staredataframe as m
+    src = inspect.getsource(m._ensure_rds_db_and_table)
+    assert 'INCLUDE (podcode, "Dataset")' in src
+    # The quoted form is the pg_indexes probe IN-list entry; the bare CREATE
+    # fragment is the gated DDL. Missing the former re-runs the CREATE on
+    # every connect; missing the latter never creates the index at all.
+    assert "'idx_pods_temporal_covering'" in src, \
+        "covering index missing from the pg_indexes probe IN-list"
+    assert 'CREATE INDEX IF NOT EXISTS idx_pods_temporal_covering' in src, \
+        "gated CREATE for the covering index missing"

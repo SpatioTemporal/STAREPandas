@@ -270,6 +270,33 @@ Lambda code (scheduler/status/watcher) and the vendored helpers ship from the
 `infra/cdk/lambdas` asset — editing them changes the asset hash and a deploy
 updates all three functions.
 
+### 6h. VACUUM after bulk ingest (keeps analytics fetches index-only)
+
+The temporal-analytics thin fetch (`load_s3_temporal_catalog`) is answered
+index-only by `idx_pods_temporal_covering` (`(t_start, t_end) INCLUDE
+(podcode, "Dataset")` — adopted after the 2026-07-12 issue-06 profiling: at a
+2M-row scratch catalog it cut a 7-day fetch from ~202 ms / ~25.7k buffers to
+~68 ms / 238 buffers, zero heap fetches). Index-only scans depend on a current
+visibility map, so after a bulk ingest job run:
+
+```sql
+VACUUM (ANALYZE) "PodsMetadata";
+```
+
+Skipping it is safe — queries stay correct, autovacuum catches up eventually —
+but until then the fetch degrades toward per-row heap checks. The index is
+created idempotently on first connect by `_ensure_rds_db_and_table`
+(probe-gated) / `_ensure_sqlite_db_and_table` (per-open `CREATE INDEX IF NOT
+EXISTS`); `starepods_verify.py` check 12 asserts it exists on the live
+catalog. It already exists there (built 2026-07-12 at 14.7k rows, instant).
+If a **new, already-large** catalog ever needs it, build it out-of-band first
+(`CREATE INDEX CONCURRENTLY idx_pods_temporal_covering ON "PodsMetadata"
+(t_start, t_end) INCLUDE (podcode, "Dataset")`) before pointing the worker
+fleet at it — the initializer's inline build is non-concurrent and would hold
+a SHARE lock (blocking ingest writes) for the build duration. The rejected menu items ((podcode,
+t_start) composite; CLUSTER-by-podcode — measured harmful) are recorded in the
+issue-06 profiling note and ADR-0002; don't re-derive them.
+
 ---
 
 ## 7. Common error → likely cause
