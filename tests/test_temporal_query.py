@@ -26,6 +26,7 @@ import starepandas.io.granules as granules
 from starepandas.demo_lib import StarePodsDemo
 from starepandas.io.granules import (
     D_MAX,
+    _finish_temporal_catalog,
     _period_conditions,
     load_local_metadata,
     load_local_temporal_catalog,
@@ -336,3 +337,22 @@ def test_s3_temporal_catalog_never_touches_metadatajson():
     src = inspect.getsource(load_s3_temporal_catalog)
     assert 'MetadataJson' not in src
     assert 'SELECT podcode, "Dataset", t_start, t_end' in src
+
+
+def test_finish_temporal_catalog_parses_mixed_precision_and_null():
+    """Regression: a catalog mixing whole-second stamps (no fraction) with
+    fractional ones — as real GMI/SSMIS ingests produce — must parse. A fixed
+    ``.%f`` format inferred from the first row rejected the rest; ISO8601 does
+    not. ``None`` (null-range chunks) parses to ``NaT``."""
+    rows = [
+        ('q13011', 'GMI_S1', '2025-01-01T04:36:55', '2025-01-01T04:36:57.123456'),
+        ('q13012', 'GMI_S1', '2025-01-01T04:36:55.500000', '2025-01-01T04:37:00'),
+        ('q13013', 'GMI_S1', None, None),
+    ]
+    df = _finish_temporal_catalog(rows)
+
+    assert pd.api.types.is_datetime64_any_dtype(df['t_start'])
+    assert pd.api.types.is_datetime64_any_dtype(df['t_end'])
+    assert df['t_start'].iloc[0] == pd.Timestamp('2025-01-01T04:36:55')
+    assert df['t_end'].iloc[0] == pd.Timestamp('2025-01-01T04:36:57.123456')
+    assert pd.isna(df['t_start'].iloc[2]) and pd.isna(df['t_end'].iloc[2])

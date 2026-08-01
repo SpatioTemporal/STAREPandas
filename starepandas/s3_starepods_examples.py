@@ -8,20 +8,32 @@ real RDS Postgres `PodsMetadata` table.
 
 Workflow
 --------
-1. Ingest a GMI granule → Parquet partitions on S3 + RDS metadata
-   (with optional clean_before_run to wipe prior data for the same prefix).
+1. Ingest a GMI **and** an SSMIS granule → Parquet partitions on S3 + RDS
+   metadata (clean_before_run wipes prior data for the same prefix before the
+   first ingest; the second appends).
 2. Find intersecting data for a bounding box via STARE SIDs + RDS.
 3. Download intersecting Parquet partitions from S3.
 4. Reconstitute an HDF5 file (both S1 and S2 scans).
 5. Compare the reconstituted structure with the original granule.
 6. Verify RDS metadata (counts per dataset under our s3_prefix).
 
+Temporal features (temporal-stare-pods issues 01–06)
+----------------------------------------------------
+7.  Temporal catalog — every chunk carries ``[t_start, t_end]`` + podcode
+8.  Period-filtered intersection — data-level ``[t_start, t_end]`` overlap
+9.  VCF temporal roll-up — union range per pod, on the fly
+10. Multi-instrument overlap analytics — the slide-8/9 rendezvous views
+
+Note: the S3/RDS temporal loaders read the **shared** ``PodsMetadata``
+catalog — every ingest in the RDS table, not only this demo's granule. That
+is the production query surface, so the temporal counts below reflect the
+whole catalog (filtered by instrument), unlike the local demo's fresh SQLite.
+
 Requirements
 ------------
 - starepandas/.config (next to this script) with AWS + RDS credentials.
-- A sample granule. Defaults to the in-repo
-  ``tests/data/granules/1C.GPM.GMI...V07B.HDF5``; override with the
-  ``STAREPODS_SAMPLE_GRANULE`` env var.
+- Sample granules. Default to the in-repo GMI + SSMIS granules; override with
+  the ``STAREPODS_SAMPLE_GRANULE`` / ``STAREPODS_SAMPLE_GRANULE_SSMIS`` env vars.
 
 Usage
 -----
@@ -31,6 +43,7 @@ Usage
 import os
 import time
 import h5py
+import pandas as pd
 from starepandas.demo_lib import StarePodsDemo
 
 # ── Configuration ─────────────────────────────────────────────────────────────
@@ -46,6 +59,18 @@ GRANULE_FILE = os.environ.get(
     os.path.join(
         _REPO_ROOT, "tests", "data", "granules",
         "1C.GPM.GMI.XCAL2016-C.20250101-S034347-E051659.061567.V07B.HDF5",
+    ),
+)
+
+# A second instrument (SSMIS) so the overlap analytics (step 10) span two
+# instruments. The F18 granule (2025-01-05) is the closest in time to the GMI
+# granule (2025-01-01) among the in-repo samples. Override with
+# STAREPODS_SAMPLE_GRANULE_SSMIS.
+SSMIS_GRANULE_FILE = os.environ.get(
+    "STAREPODS_SAMPLE_GRANULE_SSMIS",
+    os.path.join(
+        _REPO_ROOT, "tests", "data", "granules",
+        "1C.F18.SSMIS.XCAL2021-V.20250105-S222535-E000725.078504.V07B.HDF5",
     ),
 )
 
@@ -80,6 +105,34 @@ def dump_structure(path, label):
         f.visititems(_visit)
 
 
+def illustrative_catalog():
+    """A tiny hand-built temporal catalog whose passes are co-located in
+    time and space, so the overlap views (step 10) return non-zero numbers.
+
+    The in-repo GMI (2025-01-01) and SSMIS (2025-01-05) granules are days
+    apart and land in different pods, so a realistic Δt never rendezvous on
+    them — the sweep is correct, the sample data just doesn't co-locate. This
+    synthetic frame stands in only to show what the views look like when data
+    *does* overlap. (Swap in co-located GMI/SSMIS granules and the *real*
+    step-10 sweep lights up with no code change.) Same shape a temporal-catalog
+    loader returns: ``podcode`` / ``Dataset`` / parsed ``t_start`` / ``t_end``.
+    """
+    t = pd.Timestamp("2025-01-01 10:00")
+    m = lambda minutes: pd.Timedelta(minutes=minutes)  # noqa: E731
+    rows = [
+        # pod q13011 — GMI, SSMIS, ATMS all within 30 min → a trio
+        ("q13011", "GMI_S1",   t,        t + m(2)),
+        ("q13011", "SSMIS_S1", t + m(12), t + m(15)),
+        ("q13011", "ATMS_S1",  t + m(20), t + m(23)),
+        # pod q13012 — GMI + SSMIS only → a pair
+        ("q13012", "GMI_S1",   t + m(120), t + m(123)),
+        ("q13012", "SSMIS_S1", t + m(140), t + m(144)),
+        # pod q13013 — GMI alone → no rendezvous
+        ("q13013", "GMI_S1",   t + m(300), t + m(303)),
+    ]
+    return pd.DataFrame(rows, columns=["podcode", "Dataset", "t_start", "t_end"])
+
+
 def main():
     print("=" * 60)
     print("STARE-PODS Demo on S3 + RDS")
@@ -108,19 +161,26 @@ def main():
 
     # ── Step 1: Ingest ────────────────────────────────────────────────────────
     print("=" * 60)
-    print("Step 1: Ingest granule → S3 Parquet + RDS")
+    print("Step 1: Ingest granules → S3 Parquet + RDS")
     print("=" * 60)
     t0 = time.perf_counter()
     s3_paths = demo.ingest_granules(
         data_path=GRANULE_FILE,
         instrument="GMI",
         s3_prefix=S3_PREFIX,
-        clean_before_run=CLEAN_BEFORE_RUN,
+        clean_before_run=CLEAN_BEFORE_RUN,   # wipes the prefix before GMI
+    )
+    # Second instrument appends — clean_before_run=False so it does NOT wipe
+    # the GMI data just written to the same prefix.
+    ssmis_paths = demo.ingest_granules(
+        data_path=SSMIS_GRANULE_FILE,
+        instrument="SSMIS",
+        s3_prefix=S3_PREFIX,
+        clean_before_run=False,
     )
     print(f"Ingest wall: {time.perf_counter() - t0:.2f} s")
-    print(f"Stored {len(s3_paths)} dataset path(s):")
-    for p in s3_paths:
-        print(f"  {p}")
+    print(f"GMI  : stored {len(s3_paths)} dataset path(s)")
+    print(f"SSMIS: stored {len(ssmis_paths)} dataset path(s)")
     print()
 
     # ── Step 2: Find intersecting data ────────────────────────────────────────
@@ -215,8 +275,98 @@ def main():
             print(f"  {ds}: {cnt} partition(s)")
     finally:
         conn.close()
-
     print()
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # TEMPORAL FEATURES (temporal-stare-pods issues 01–06)
+    #
+    # The S3/RDS temporal loaders read the SHARED PodsMetadata catalog — every
+    # ingest in the RDS table, not only this demo's granule — filtered here by
+    # instrument. That is the production query surface, so counts reflect the
+    # whole catalog (contrast the local demo's fresh isolated SQLite).
+    # ══════════════════════════════════════════════════════════════════════════
+    from starepandas.io.granules import (
+        load_s3_metadata, load_s3_temporal_catalog, load_s3_vcf,
+    )
+    from starepandas.overlap import (
+        rendezvous_events, overlap_matrix, overlap_pod_table,
+        pair_drilldown, pod_drilldown,
+    )
+
+    # ── Step 7: Temporal catalog columns ──────────────────────────────────────
+    print("=" * 60)
+    print("Step 7: Temporal catalog — each chunk carries [t_start, t_end] + podcode")
+    print("=" * 60)
+    catalog = pd.concat(
+        [load_s3_temporal_catalog(dataset_prefix='GMI'),
+         load_s3_temporal_catalog(dataset_prefix='SSMIS')],
+        ignore_index=True,
+    )
+    print(f"Thin catalog (GMI+SSMIS, catalog-wide): {len(catalog)} chunk(s) across "
+          f"{catalog['Dataset'].nunique()} dataset(s)")
+    per_ds = catalog.groupby('Dataset').agg(
+        chunks=('podcode', 'size'),
+        first_start=('t_start', 'min'),
+        last_end=('t_end', 'max'),
+    )
+    print(per_ds.to_string())
+    print("\nSample rows (podcode / dataset / temporal range):")
+    print(catalog.head(6).to_string(index=False))
+    print()
+
+    # ── Step 8: Period-filtered intersection ──────────────────────────────────
+    print("=" * 60)
+    print("Step 8: Period-filtered load (data-level [t_start,t_end] overlap)")
+    print("=" * 60)
+    gmi = catalog[catalog['Dataset'].str.startswith('GMI')]
+    gmi_start, gmi_end = gmi['t_start'].min(), gmi['t_end'].max()
+    match_period = (gmi_start - pd.Timedelta(hours=1), gmi_end + pd.Timedelta(hours=1))
+    miss_period = (gmi_start - pd.Timedelta(days=10), gmi_start - pd.Timedelta(days=9))
+    hit = load_s3_metadata(dataset_prefix='GMI', period=match_period)
+    miss = load_s3_metadata(dataset_prefix='GMI', period=miss_period)
+    print(f"GMI catalog window: [{gmi_start}, {gmi_end}]")
+    print(f"  period bracketing the window -> {len(hit):3d} chunk(s)")
+    print(f"  period 9–10 days earlier      -> {len(miss):3d} chunk(s)")
+    print()
+
+    # ── Step 9: VCF temporal roll-up ──────────────────────────────────────────
+    print("=" * 60)
+    print("Step 9: VCF temporal roll-up — union [t_start,t_end] per pod (level 1)")
+    print("=" * 60)
+    vcf = load_s3_vcf(1, dataset_prefix='GMI')
+    print(f"{len(vcf)} level-1 VCF node(s) for GMI (one per octant subtree):")
+    print(vcf.to_string(index=False))
+    print()
+
+    # ── Step 10: Multi-instrument overlap analytics ───────────────────────────
+    print("=" * 60)
+    print("Step 10: Multi-instrument overlap analytics (slides 8/9)")
+    print("=" * 60)
+    dt = pd.Timedelta(minutes=30)
+    real_events = rendezvous_events(catalog, dt)
+    print(f"Rendezvous over the GMI+SSMIS catalog (Δt={dt}): "
+          f"{len(real_events)} event(s)")
+    if real_events.empty:
+        print("  (The in-repo GMI 2025-01-01 / SSMIS 2025-01-05 passes are days apart")
+        print("   and land in different pods, so a realistic Δt yields none — the sweep")
+        print("   is correct; swap in co-located granules to see real rendezvous.)")
+    print()
+    print("--- Illustrative synthetic catalog (co-located passes) ---")
+    demo_cat = illustrative_catalog()
+    ev = rendezvous_events(demo_cat, dt)
+    print(f"{len(ev)} event(s) over {demo_cat['podcode'].nunique()} pods, "
+          f"{demo_cat['Dataset'].map(lambda d: d.split('_')[0]).nunique()} instruments")
+    print("\nInstrument×instrument matrix — pods where A & B rendezvous (slide 8):")
+    print(overlap_matrix(ev).to_string())
+    print("\nPer-pod n-way combination counts — cell (pod, n) = distinct")
+    print("n-instrument combos rendezvousing in that pod (slide 9):")
+    print(overlap_pod_table(ev).to_string())
+    print("\nGMI–SSMIS pair drill-down (pods + times):")
+    print(pair_drilldown(ev, 'GMI', 'SSMIS').to_string(index=False))
+    print("\nSubtree drill-down under pod 'q1301' (rolls up q13011/12/13):")
+    print(pod_drilldown(ev, 'q1301').to_string(index=False))
+    print()
+
     print("Done.")
 
 

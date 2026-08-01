@@ -1820,10 +1820,17 @@ TEMPORAL_CATALOG_COLUMNS = ['podcode', 'Dataset', 't_start', 't_end']
 
 
 def _finish_temporal_catalog(rows):
-    """Rows → analytics-ready frame: fixed columns, parsed timestamps."""
+    """Rows → analytics-ready frame: fixed columns, parsed timestamps.
+
+    ``format='ISO8601'`` so a catalog mixing whole-second stamps
+    (``2025-01-01T04:36:55``) with fractional ones
+    (``...:55.123456``) parses cleanly — pandas otherwise infers a single
+    format from the first row and rejects the rest. ``None`` (null-range
+    chunks) parses to ``NaT``.
+    """
     df = pd.DataFrame(rows, columns=TEMPORAL_CATALOG_COLUMNS)
-    df['t_start'] = pd.to_datetime(df['t_start'])
-    df['t_end'] = pd.to_datetime(df['t_end'])
+    df['t_start'] = pd.to_datetime(df['t_start'], format='ISO8601')
+    df['t_end'] = pd.to_datetime(df['t_end'], format='ISO8601')
     return df
 
 
