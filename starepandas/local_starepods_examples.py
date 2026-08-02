@@ -61,13 +61,18 @@ SSMIS_GRANULE_FILE = os.environ.get(
     ),
 )
 
+# STARE partition level used for both ingestion and bbox → SIDs lookup.
+# Capped at MAX_PARTITION_LEVEL = 4 (~256 cells/granule), the regime
+# where each Parquet partition is multi-MB — ideal for S3.
+STARE_LEVEL = 4
+
 # Bounding box filter — set to None to reconstitute the full granule,
 # or e.g. (115, -30, 120, -25) to restrict to SW Australia / Perth.
 BBOX = None   # (lon_min, lat_min, lon_max, lat_max) or None
 
 DATASETS = ["GMI_S1", "GMI_S2"]
 
-OUTPUT_HDF5 = "/tmp/gmi_local_reconstituted.h5"
+OUTPUT_HDF5 = "/tmp/reconsitution/gmi_local_reconstituted.h5"
 
 # Set to True to wipe LOCAL_ROOT before each run.
 # IMPORTANT: re-running without cleaning causes duplicate SQLite entries,
@@ -112,9 +117,9 @@ def main():
     print("=" * 60)
     print("Step 1: Ingest granules → local Parquet + SQLite")
     print("=" * 60)
-    local_paths = demo.ingest_granules(GRANULE_FILE, instrument='GMI', level=10)
+    local_paths = demo.ingest_granules(GRANULE_FILE, instrument='GMI', level=STARE_LEVEL)
     print(f"GMI  : written {len(local_paths)} scan path(s).")
-    ssmis_paths = demo.ingest_granules(SSMIS_GRANULE_FILE, instrument='SSMIS', level=10)
+    ssmis_paths = demo.ingest_granules(SSMIS_GRANULE_FILE, instrument='SSMIS', level=STARE_LEVEL)
     print(f"SSMIS: written {len(ssmis_paths)} scan path(s).")
     print()
 
@@ -123,7 +128,7 @@ def main():
     print("Step 2: Find intersecting data via STARE SIDs")
     print("=" * 60)
     if BBOX is not None:
-        location_sids = demo.get_sids_for_bbox(*BBOX, level=10)
+        location_sids = demo.get_sids_for_bbox(*BBOX, level=STARE_LEVEL)
         print(f"Generated {len(location_sids)} SIDs for bbox {BBOX}")
     else:
         location_sids = None

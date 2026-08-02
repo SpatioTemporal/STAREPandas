@@ -77,6 +77,11 @@ SSMIS_GRANULE_FILE = os.environ.get(
 # S3 root where Parquet partitions and RDS metadata for this demo live.
 S3_PREFIX = "s3://zarrpods/gmi-demo-parquet"
 
+# STARE partition level used for both ingestion and bbox → SIDs lookup.
+# Capped at MAX_PARTITION_LEVEL = 4 (~256 cells/granule), the regime
+# where each Parquet partition is multi-MB — ideal for S3.
+STARE_LEVEL = 4
+
 # Bounding box filter — set to None to reconstitute the full granule
 # (matching local_starepods_examples.py), or e.g. (115, -30, 120, -25)
 # to restrict to SW Australia / Perth.
@@ -140,6 +145,7 @@ def main():
         data_path=GRANULE_FILE,
         instrument="GMI",
         s3_prefix=S3_PREFIX,
+        level=STARE_LEVEL,
         clean_before_run=CLEAN_BEFORE_RUN,   # wipes the prefix before GMI
     )
     # Second instrument appends — clean_before_run=False so it does NOT wipe
@@ -148,6 +154,7 @@ def main():
         data_path=SSMIS_GRANULE_FILE,
         instrument="SSMIS",
         s3_prefix=S3_PREFIX,
+        level=STARE_LEVEL,
         clean_before_run=False,
     )
     print(f"Ingest wall: {time.perf_counter() - t0:.2f} s")
@@ -160,7 +167,7 @@ def main():
     print("Step 2: Find intersecting data via STARE SIDs")
     print("=" * 60)
     if BBOX is not None:
-        location_sids = demo.get_sids_for_bbox(*BBOX, level=10)
+        location_sids = demo.get_sids_for_bbox(*BBOX, level=STARE_LEVEL)
         print(f"Generated {len(location_sids)} SIDs for bbox {BBOX}")
     else:
         location_sids = []
