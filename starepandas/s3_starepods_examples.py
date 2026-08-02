@@ -8,21 +8,22 @@ real RDS Postgres `PodsMetadata` table.
 
 Workflow
 --------
-1. Ingest a GMI **and** an SSMIS granule → Parquet partitions on S3 + RDS
-   metadata (clean_before_run wipes prior data for the same prefix before the
-   first ingest; the second appends).
-2. Find intersecting data for a bounding box via STARE SIDs + RDS.
+1. Ingest GMI + SSMIS granules → S3 Parquet + RDS metadata (clean_before_run
+   wipes prior data for the same prefix before the first ingest; the second
+   appends).
+2. Find intersecting data via STARE SIDs + RDS (bbox filter optional; default
+   loads the full granule).
 3. Download intersecting Parquet partitions from S3.
-4. Reconstitute an HDF5 file (both S1 and S2 scans).
-5. Compare the reconstituted structure with the original granule.
-6. Verify RDS metadata (counts per dataset under our s3_prefix).
+4. Reconstitute HDF5 (S1 + S2 scans).
+5. Structure comparison — reconstituted vs original.
+6. RDS metadata verification.
 
 Temporal features (temporal-stare-pods issues 01–06)
 ----------------------------------------------------
 7.  Temporal catalog — every chunk carries ``[t_start, t_end]`` + podcode
-8.  Period-filtered intersection — data-level ``[t_start, t_end]`` overlap
+8.  Period-filtered load — data-level ``[t_start, t_end]`` overlap
 9.  VCF temporal roll-up — union range per pod, on the fly
-10. Multi-instrument overlap analytics — the slide-8/9 rendezvous views
+10. Multi-instrument overlap analytics — GMI↔SSMIS rendezvous
 
 Note: the S3/RDS temporal loaders read the **shared** ``PodsMetadata``
 catalog — every ingest in the RDS table, not only this demo's granule. That
@@ -292,7 +293,7 @@ def main():
     print(catalog.head(6).to_string(index=False))
     print()
 
-    # ── Step 8: Period-filtered intersection ──────────────────────────────────
+    # ── Step 8: Period-filtered load ──────────────────────────────────────────
     print("=" * 60)
     print("Step 8: Period-filtered load (data-level [t_start,t_end] overlap)")
     print("=" * 60)
@@ -318,7 +319,7 @@ def main():
 
     # ── Step 10: Multi-instrument overlap analytics ───────────────────────────
     print("=" * 60)
-    print("Step 10: Multi-instrument overlap analytics (slides 8/9)")
+    print("Step 10: Multi-instrument overlap analytics")
     print("=" * 60)
     # The catalog-wide read (step 7) mixes every ingest in the shared RDS table.
     # Scope the sweep to the co-located pair's time window so the result is the

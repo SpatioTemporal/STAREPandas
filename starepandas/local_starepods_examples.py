@@ -8,21 +8,21 @@ credentials are needed.
 
 Workflow
 --------
-1. Ingest a GMI **and** an SSMIS granule → Parquet partitions on local disk
-   + SQLite metadata (two instruments so the overlap analytics in step 10
-   have something to compare)
-2. Find intersecting data for a bounding box via STARE SIDs + SQLite
+1. Ingest GMI + SSMIS granules → local Parquet + SQLite metadata (two
+   instruments so the overlap analytics in step 10 have something to compare)
+2. Find intersecting data via STARE SIDs (bbox filter optional; default
+   loads the full granule)
 3. Load intersecting Parquet partitions from disk
-4. Reconstitute an HDF5 file (both S1 and S2 scans)
-5. Compare the reconstituted structure with the original granule
-6. SQLite metadata verification (counts per dataset)
+4. Reconstitute HDF5 (S1 + S2 scans)
+5. Structure comparison — reconstituted vs original
+6. SQLite metadata verification
 
 Temporal features (temporal-stare-pods issues 01–06)
 ----------------------------------------------------
-7.  Temporal catalog — every chunk now carries ``[t_start, t_end]`` + podcode
+7.  Temporal catalog — every chunk carries ``[t_start, t_end]`` + podcode
 8.  Period-filtered intersection — data-level ``[t_start, t_end]`` overlap
 9.  VCF temporal roll-up — union range per pod, on the fly
-10. Multi-instrument overlap analytics — the slide-8/9 rendezvous views
+10. Multi-instrument overlap analytics — GMI↔SSMIS rendezvous
 
 Usage
 -----
@@ -245,7 +245,7 @@ def main():
 
     # ── Step 10: Multi-instrument overlap analytics ───────────────────────────
     print("=" * 60)
-    print("Step 10: Multi-instrument overlap analytics (slides 8/9)")
+    print("Step 10: Multi-instrument overlap analytics")
     print("=" * 60)
     dt = pd.Timedelta(minutes=15)
     events = rendezvous_events(catalog, dt)
