@@ -54,23 +54,23 @@ CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".config"
 # safe to run anywhere (no dependency on an external sample directory). Override
 # with the STAREPODS_SAMPLE_GRANULE env var to point at your own granule.
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# GMI + SSMIS are a co-located pair (both 2025-01-01, concurrent orbits) whose
+# ground tracks cross within ~3 min in 42 shared pods — so the overlap
+# analytics (step 10) show genuine multi-instrument rendezvous. Override with
+# STAREPODS_SAMPLE_GRANULE / STAREPODS_SAMPLE_GRANULE_SSMIS.
 GRANULE_FILE = os.environ.get(
     "STAREPODS_SAMPLE_GRANULE",
     os.path.join(
         _REPO_ROOT, "tests", "data", "granules",
-        "1C.GPM.GMI.XCAL2016-C.20250101-S034347-E051659.061567.V07B.HDF5",
+        "1C.GPM.GMI.XCAL2016-C.20250101-S112952-E130304.061572.V07B.HDF5",
     ),
 )
 
-# A second instrument (SSMIS) so the overlap analytics (step 10) span two
-# instruments. The F18 granule (2025-01-05) is the closest in time to the GMI
-# granule (2025-01-01) among the in-repo samples. Override with
-# STAREPODS_SAMPLE_GRANULE_SSMIS.
 SSMIS_GRANULE_FILE = os.environ.get(
     "STAREPODS_SAMPLE_GRANULE_SSMIS",
     os.path.join(
         _REPO_ROOT, "tests", "data", "granules",
-        "1C.F18.SSMIS.XCAL2021-V.20250105-S222535-E000725.078504.V07B.HDF5",
+        "1C.F18.SSMIS.XCAL2021-V.20250101-S112813-E131004.078441.V07B.HDF5",
     ),
 )
 
@@ -103,34 +103,6 @@ def dump_structure(path, label):
             elif isinstance(obj, h5py.Group) and name != "/":
                 print(f"  /{name:50s} Group")
         f.visititems(_visit)
-
-
-def illustrative_catalog():
-    """A tiny hand-built temporal catalog whose passes are co-located in
-    time and space, so the overlap views (step 10) return non-zero numbers.
-
-    The in-repo GMI (2025-01-01) and SSMIS (2025-01-05) granules are days
-    apart and land in different pods, so a realistic Δt never rendezvous on
-    them — the sweep is correct, the sample data just doesn't co-locate. This
-    synthetic frame stands in only to show what the views look like when data
-    *does* overlap. (Swap in co-located GMI/SSMIS granules and the *real*
-    step-10 sweep lights up with no code change.) Same shape a temporal-catalog
-    loader returns: ``podcode`` / ``Dataset`` / parsed ``t_start`` / ``t_end``.
-    """
-    t = pd.Timestamp("2025-01-01 10:00")
-    m = lambda minutes: pd.Timedelta(minutes=minutes)  # noqa: E731
-    rows = [
-        # pod q13011 — GMI, SSMIS, ATMS all within 30 min → a trio
-        ("q13011", "GMI_S1",   t,        t + m(2)),
-        ("q13011", "SSMIS_S1", t + m(12), t + m(15)),
-        ("q13011", "ATMS_S1",  t + m(20), t + m(23)),
-        # pod q13012 — GMI + SSMIS only → a pair
-        ("q13012", "GMI_S1",   t + m(120), t + m(123)),
-        ("q13012", "SSMIS_S1", t + m(140), t + m(144)),
-        # pod q13013 — GMI alone → no rendezvous
-        ("q13013", "GMI_S1",   t + m(300), t + m(303)),
-    ]
-    return pd.DataFrame(rows, columns=["podcode", "Dataset", "t_start", "t_end"])
 
 
 def main():
@@ -289,8 +261,7 @@ def main():
         load_s3_metadata, load_s3_temporal_catalog, load_s3_vcf,
     )
     from starepandas.overlap import (
-        rendezvous_events, overlap_matrix, overlap_pod_table,
-        pair_drilldown, pod_drilldown,
+        rendezvous_events, overlap_matrix, overlap_pod_table, pair_drilldown,
     )
 
     # ── Step 7: Temporal catalog columns ──────────────────────────────────────
@@ -342,29 +313,29 @@ def main():
     print("=" * 60)
     print("Step 10: Multi-instrument overlap analytics (slides 8/9)")
     print("=" * 60)
-    dt = pd.Timedelta(minutes=30)
-    real_events = rendezvous_events(catalog, dt)
-    print(f"Rendezvous over the GMI+SSMIS catalog (Δt={dt}): "
-          f"{len(real_events)} event(s)")
-    if real_events.empty:
-        print("  (The in-repo GMI 2025-01-01 / SSMIS 2025-01-05 passes are days apart")
-        print("   and land in different pods, so a realistic Δt yields none — the sweep")
-        print("   is correct; swap in co-located granules to see real rendezvous.)")
+    # The catalog-wide read (step 7) mixes every ingest in the shared RDS table.
+    # Scope the sweep to the co-located pair's time window so the result is the
+    # pair's genuine rendezvous, reproducibly (period pushes into SQL).
+    pair_period = (pd.Timestamp('2025-01-01 11:00'), pd.Timestamp('2025-01-01 13:30'))
+    cat_pair = pd.concat(
+        [load_s3_temporal_catalog(dataset_prefix='GMI', period=pair_period),
+         load_s3_temporal_catalog(dataset_prefix='SSMIS', period=pair_period)],
+        ignore_index=True,
+    )
+    dt = pd.Timedelta(minutes=15)
+    events = rendezvous_events(cat_pair, dt)
+    npods = events['podcode'].nunique() if not events.empty else 0
+    print(f"Rendezvous over the co-located GMI+SSMIS pair (Δt={dt}): "
+          f"{len(events)} event(s) across {npods} shared pod(s).")
+    print("  (Ground tracks cross within ~3 min — a spatial + temporal intersection.)")
     print()
-    print("--- Illustrative synthetic catalog (co-located passes) ---")
-    demo_cat = illustrative_catalog()
-    ev = rendezvous_events(demo_cat, dt)
-    print(f"{len(ev)} event(s) over {demo_cat['podcode'].nunique()} pods, "
-          f"{demo_cat['Dataset'].map(lambda d: d.split('_')[0]).nunique()} instruments")
-    print("\nInstrument×instrument matrix — pods where A & B rendezvous (slide 8):")
-    print(overlap_matrix(ev).to_string())
+    print("Instrument×instrument matrix — pods where A & B rendezvous (slide 8):")
+    print(overlap_matrix(events).to_string())
     print("\nPer-pod n-way combination counts — cell (pod, n) = distinct")
     print("n-instrument combos rendezvousing in that pod (slide 9):")
-    print(overlap_pod_table(ev).to_string())
-    print("\nGMI–SSMIS pair drill-down (pods + times):")
-    print(pair_drilldown(ev, 'GMI', 'SSMIS').to_string(index=False))
-    print("\nSubtree drill-down under pod 'q1301' (rolls up q13011/12/13):")
-    print(pod_drilldown(ev, 'q1301').to_string(index=False))
+    print(overlap_pod_table(events).head(10).to_string())
+    print("\nGMI–SSMIS pair drill-down (first 8 pods + times):")
+    print(pair_drilldown(events, 'GMI', 'SSMIS').head(8).to_string(index=False))
     print()
 
     print("Done.")
