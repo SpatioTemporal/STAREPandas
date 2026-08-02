@@ -18,8 +18,8 @@ Workflow
 5. Structure comparison — reconstituted vs original.
 6. RDS metadata verification.
 
-Temporal features (temporal-stare-pods issues 01–06)
-----------------------------------------------------
+Temporal features
+-----------------
 7.  Temporal catalog — every chunk carries ``[t_start, t_end]`` + podcode
 8.  Period-filtered load — data-level ``[t_start, t_end]`` overlap
 9.  VCF temporal roll-up — union range per pod, on the fly
@@ -258,7 +258,7 @@ def main():
     print()
 
     # ══════════════════════════════════════════════════════════════════════════
-    # TEMPORAL FEATURES (temporal-stare-pods issues 01–06)
+    # TEMPORAL FEATURES
     #
     # The S3/RDS temporal loaders read the SHARED PodsMetadata catalog — every
     # ingest in the RDS table, not only this demo's granule — filtered here by
