@@ -25,6 +25,12 @@ Temporal features
 9.  VCF temporal roll-up — union range per pod, on the fly
 10. Multi-instrument overlap analytics — 2-, 3- and 4-way rendezvous
 
+Plots
+-----
+11. Pod coverage map — the level-4 pods each instrument's chunks occupy
+12. The widest rendezvous up close — the swaths (where) beside their pass
+    windows (when)
+
 Usage
 -----
     conda run -n starepandas_3.12_v3 python starepandas/local_starepods_examples.py
@@ -32,6 +38,9 @@ Usage
 
 import os
 import h5py
+import matplotlib
+matplotlib.use("Agg")          # headless: steps 11-12 write PNGs, never a window
+import matplotlib.pyplot as plt
 import pandas as pd
 from starepandas.demo_lib import LocalStarePodsDemo
 
@@ -108,6 +117,9 @@ BBOX = None   # (lon_min, lat_min, lon_max, lat_max) or None
 DATASETS = ["GMI_S1", "GMI_S2"]
 
 OUTPUT_HDF5 = "/tmp/reconsitution/gmi_local_reconstituted.h5"
+
+# Where steps 11-12 write their PNGs.
+PLOT_DIR = "/tmp/stare_pods_plots"
 
 # Set to True to wipe LOCAL_ROOT before each run.
 # IMPORTANT: re-running without cleaning causes duplicate SQLite entries,
@@ -237,7 +249,7 @@ def main():
     # TEMPORAL FEATURES
     # ══════════════════════════════════════════════════════════════════════════
     from starepandas.io.granules import (
-        load_local_temporal_catalog, load_local_vcf,
+        load_local_metadata, load_local_temporal_catalog, load_local_vcf,
     )
     from starepandas.overlap import (
         rendezvous_events, overlap_matrix, overlap_pod_table, pair_drilldown,
@@ -334,6 +346,56 @@ def main():
         for _, row in meeting.iterrows():
             print(f"  all {widest} at: "
                   f"{', '.join(str(t) for t in row['times'])}")
+    print()
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # PLOTS
+    # ══════════════════════════════════════════════════════════════════════════
+    from starepandas.demo_plots import (
+        plot_pod_coverage, plot_rendezvous, pod_pixels, widest_rendezvous,
+    )
+
+    # ── Step 11: Pod coverage map ─────────────────────────────────────────────
+    print("=" * 60)
+    print("Step 11: Where each instrument flew — pod coverage map")
+    print("=" * 60)
+    quad_pods = list(pod_table[pod_table[widest].gt(0)].index)
+    fig = plot_pod_coverage(catalog, highlight=quad_pods)
+    coverage_path = os.path.join(PLOT_DIR, "pod_coverage.png")
+    os.makedirs(PLOT_DIR, exist_ok=True)
+    fig.savefig(coverage_path, dpi=110)
+    plt.close(fig)
+    print(f"One panel per instrument, level-4 pods shaded; the {widest}-way pod(s)")
+    print(f"{quad_pods} outlined in black.")
+    print("GMI's 65° inclination confines it to a ±67° band, while the")
+    print("sun-synchronous instruments run pole to pole — which is why a")
+    print("4-way needs them to converge at a mid-southern latitude.")
+    print(f"Written to: {coverage_path}")
+    print()
+
+    # ── Step 12: Zoom on the widest rendezvous ────────────────────────────────
+    print("=" * 60)
+    print(f"Step 12: The {widest}-way rendezvous up close — where *and* when")
+    print("=" * 60)
+    pod, meeting, n_way = widest_rendezvous(events)
+    window = (meeting - OVERLAP_DT, meeting + OVERLAP_DT)
+    pod_meta = load_local_metadata(demo.db_path, period=window)
+    passes = pod_pixels(demo, pod_meta, pod, window)
+    print(f"Pod {pod}: {n_way} instruments, rendezvous completes {meeting}")
+    for instrument, pixels in sorted(passes.items(),
+                                     key=lambda kv: kv[1]['timestamp'].min()):
+        print(f"  {instrument:6s} {len(pixels):6d} px  "
+              f"{pixels['timestamp'].min()} .. {pixels['timestamp'].max()}")
+    fig = plot_rendezvous(pod, passes, meeting, OVERLAP_DT)
+    rendezvous_path = os.path.join(PLOT_DIR, f"rendezvous_{pod}.png")
+    fig.savefig(rendezvous_path, dpi=110, bbox_inches='tight')
+    plt.close(fig)
+    print("Left: the swaths inside the pod's trixel. Right: their pass windows,")
+    print(f"all landing inside one Δt={OVERLAP_DT}. Both halves are required —")
+    print("same pod alone is not a rendezvous, and neither is same time.")
+    print("Note the granularity: co-location means the same level-4 pod")
+    print("(~500 km across), not the same pixel — the swaths need not touch.")
+    print(f"Written to: {rendezvous_path}")
     print()
 
     print("Done.")

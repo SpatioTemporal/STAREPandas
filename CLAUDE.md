@@ -33,6 +33,14 @@ starepandas/
 │                            # Single point that all PodsMetadata I/O
 │                            # flows through; future DynamoDB swap is local
 │                            # to one adapter implementation.
+├── demo_plots.py            # figures for the example demos (steps 11-12):
+│                            # plot_pod_coverage (per-instrument pod map),
+│                            # plot_rendezvous (swaths + pass-time panels),
+│                            # pod_pixels (backend-agnostic chunk loader —
+│                            # the pod code prefixes the chunk filename in
+│                            # both the local and the flat S3 layout),
+│                            # widest_rendezvous. Returns Figures; callers
+│                            # savefig (scripts) or display (notebooks).
 ├── overlap.py               # temporal issue 05 — slide-8/9 overlap
 │                            # analytics: rendezvous_events (Helly sweep
 │                            # kernel) + overlap_matrix / overlap_pod_table
@@ -425,7 +433,43 @@ pip install -e .
 
 ---
 
-*Last Updated: 2026-08-04 (demo notebooks: **four instruments** in the
+*Last Updated: 2026-08-07 (demo notebooks: **two plot steps**. The analytics
+said *which* pods hold a rendezvous but showed none of the geometry that
+produces it, so all four demo files gained **Step 11** (pod coverage map — one
+world-map panel per instrument shading the level-4 pods its chunks occupy,
+4-way pods outlined) and **Step 12** (the widest rendezvous up close — the
+swaths inside the pod's trixel beside their pass windows on a time axis, since
+a rendezvous needs *both* halves and one map cannot show them). Step 11 makes
+the orbital geometry legible: GMI's 65° inclination confines it to a ±67°
+band while the sun-synchronous instruments run pole to pole, which is exactly
+why AMSR2–ATMS share 359 pods and anything involving GMI is scarce. New
+`starepandas/demo_plots.py` holds all of it (`plot_pod_coverage`,
+`plot_rendezvous`, `pod_pixels`, `widest_rendezvous`) so the four demo files
+stay thin; `pod_pixels` is backend-agnostic because the pod code prefixes the
+chunk *filename* in both layouts, so one `group_path` substring test selects a
+pod's chunks on local disk and on flat S3 alike — verified to return identical
+pixel counts (SSMIS 139 / AMSR2 578 / ATMS 146 / GMI 9573 in pod q03203) from
+both backends. Both figures scope pixels to `[meeting − Δt, meeting + Δt]`,
+which matters because SSMIS crosses q03200 in *both* demo windows and the
+11:36 pass would otherwise be drawn as if it were part of the 21:29
+rendezvous. Demo text states the granularity caveat explicitly: co-location
+means the same level-4 pod (~500 km), not the same pixel. cartopy was already
+a declared dependency. Both notebooks also gained **per-cell timing**: one hook
+cell registers `pre_run_cell`/`post_run_cell` (unregistering first, so
+re-running it cannot stack duplicate hooks) so every later cell self-reports
+`⏱ cell [n] took X.XXs` into `CELL_TIMINGS`, with a slowest-first summary cell
+at the end; the pre-existing `%%time` magics were stripped so nothing
+double-reports. Chosen over per-cell `%%time` because it cannot drift as cells
+are added or reordered. The numbers make the architecture's point: **local
+89.6 s total of which ingest is 84.4 s (94%)** — every query and analytic
+(temporal catalog, period filter, VCF roll-up, the whole slide-8/9 sweep) is
+≤0.07 s; **S3 20.3 min of which ingest is 16 min and the step-3 partition
+download 3.9 min**, the analytics again negligible. Verification: basic 8/8,
+STARE-PODS 14/14 online, full suite 332 green; both notebooks re-executed
+end-to-end with identical analytics output (matrix, pod table, and the
+139/578/146/9573 pixel counts agree local vs S3).)*
+
+*Prior: 2026-08-04 (demo notebooks: **four instruments** in the
 slide-8/9 overlap analytics. The example demos previously ingested a GMI+SSMIS
 pair, so the slide-9 table only ever had an n=2 column. All 56 healthy granules
 of 2025-01-01 (GMI/SSMIS/AMSR2/ATMS, fetched from the Bayesics EC2) were
