@@ -433,7 +433,45 @@ pip install -e .
 
 ---
 
-*Last Updated: 2026-08-07e (**`SKIP_INGEST` + S3 notebook outputs restored**.
+*Last Updated: 2026-08-07f (**steps 12/13/14 build up 2- → 3- → 4-way, with
+several examples each**. The three rendezvous steps ran widest-first and showed
+**one** pod apiece, so the narrowest case came last and every width rested on a
+single example. Reordered to 2 → 3 → 4 (a demo should build up, not down) and
+widened to **3 / 3 / 2** examples — 2 being all the 4-way pods that exist in
+this data. New `rendezvous_examples(events, n, count=, metadata=, window=)` in
+`demo_plots.py`; `rendezvous_of_size` is now a one-line wrapper over it, so the
+selection rules live in one place. Two changes make the extra examples worth
+having rather than repetitive: (1) **combination round-robin** — the picks
+spread across *different* instrument combinations before taking a second pod
+from one already shown, so the three 2-way panels are GMI+SSMIS, AMSR2+ATMS and
+ATMS+GMI instead of three GMI+SSMIS pods telling one story three times;
+(2) **window-scoped, prorated footprints** — the legibility score
+(`min` participant pixels) previously summed `num_rows` over the whole day,
+which promoted a pod whose ATMS contribution to *that* meeting was 21 px. The
+cause is that `[t_start, t_end]` is an *envelope*: an ATMS chunk in q33320
+spans 20:17→21:56 because the granule crosses that pod **twice**, so a
+whole-chunk count credits both passes to one rendezvous. `_pod_footprints` now
+takes `(meetings, window)` and weights each chunk by the share of its span
+inside `[meeting ± Δt]`; bursty two-pass chunks are down-weighted, which is
+exactly right. Slivers (< `LEGIBLE_PIXELS` = 250) are held back but still used
+when a width would otherwise show fewer examples — which is what keeps
+q03203 (SSMIS 139 px) as the second 4-way. Meeting times are now taken from the
+same combination a pod was *scored* on (a pod can hold several distinct pairs
+hours apart). Pandas gotcha: `Series.clip` fills NaT bounds with `inf`, so the
+non-candidate rows must be dropped before clipping or the comparison goes
+object-dtype and raises. Header lists in both notebooks: the `12-14.` bullet
+was not a valid list marker and rendered as a stray paragraph — now separate
+`12.` / `13.` / `14.` bullets, and `**Core workflow**` gained the blank line
+its list needed (the other two sections already had one, so that list alone was
+not rendering). Notebook cells display each figure inline via `display(fig)` +
+`plt.close(fig)` so text and picture stay adjacent. Verified: all 8 pods draw
+exactly the labelled number of swaths, smallest participant ≥ 564 px for every
+2-/3-way; both notebooks 9 figures, 0 errors, and local vs S3 agree on all 8
+pods, all meeting times and all 23 pixel counts. Notebooks grew 1.7 → 3.7 MB
+(9 embedded figures at dpi 110). Tests: +9 in `tests/test_demo_plots.py` (26).
+Suite 373 green, basic 8/8, STARE-PODS 14/14 online.)*
+
+*Prior: 2026-08-07e (**`SKIP_INGEST` + S3 notebook outputs restored**.
 The committed `s3_starepods_examples.ipynb` had **no cell outputs at all** — a
 step-12→12/13/14 rework script ended with a blanket `cell.outputs = []` so the
 re-run would be honest, the *local* notebook was then re-executed but the S3
