@@ -28,8 +28,8 @@ Temporal features
 Plots
 -----
 11. Pod coverage map — the level-4 pods each instrument's chunks occupy
-12. The widest rendezvous up close — the swaths (where) beside their pass
-    windows (when)
+12-14. One rendezvous up close at each width (4-, 3- and 2-way) — the swaths
+    (where) beside their pass windows (when)
 
 Usage
 -----
@@ -39,7 +39,7 @@ Usage
 import os
 import h5py
 import matplotlib
-matplotlib.use("Agg")          # headless: steps 11-12 write PNGs, never a window
+matplotlib.use("Agg")          # headless: steps 11-14 write PNGs, never a window
 import matplotlib.pyplot as plt
 import pandas as pd
 from starepandas.demo_lib import LocalStarePodsDemo
@@ -118,7 +118,12 @@ DATASETS = ["GMI_S1", "GMI_S2"]
 
 OUTPUT_HDF5 = "/tmp/reconsitution/gmi_local_reconstituted.h5"
 
-# Where steps 11-12 write their PNGs.
+# Steps 12-14 each draw one rendezvous, at these widths (widest first). A
+# width with no pod of exactly that size is skipped.
+RENDEZVOUS_WIDTHS = [4, 3, 2]
+RENDEZVOUS_STEPS = [12, 13, 14]
+
+# Where steps 11-14 write their PNGs.
 PLOT_DIR = "/tmp/stare_pods_plots"
 
 # Set to True to wipe LOCAL_ROOT before each run.
@@ -352,7 +357,7 @@ def main():
     # PLOTS
     # ══════════════════════════════════════════════════════════════════════════
     from starepandas.demo_plots import (
-        plot_pod_coverage, plot_rendezvous, pod_pixels, widest_rendezvous,
+        plot_pod_coverage, plot_rendezvous, pod_pixels, rendezvous_of_size,
     )
 
     # ── Step 11: Pod coverage map ─────────────────────────────────────────────
@@ -373,30 +378,33 @@ def main():
     print(f"Written to: {coverage_path}")
     print()
 
-    # ── Step 12: Zoom on the widest rendezvous ────────────────────────────────
-    print("=" * 60)
-    print(f"Step 12: The {widest}-way rendezvous up close — where *and* when")
-    print("=" * 60)
-    pod, meeting, n_way = widest_rendezvous(events)
-    window = (meeting - OVERLAP_DT, meeting + OVERLAP_DT)
-    pod_meta = load_local_metadata(demo.db_path, period=window)
-    passes = pod_pixels(demo, pod_meta, pod, window)
-    print(f"Pod {pod}: {n_way} instruments, rendezvous completes {meeting}")
-    for instrument, pixels in sorted(passes.items(),
-                                     key=lambda kv: kv[1]['timestamp'].min()):
-        print(f"  {instrument:6s} {len(pixels):6d} px  "
-              f"{pixels['timestamp'].min()} .. {pixels['timestamp'].max()}")
-    fig = plot_rendezvous(pod, passes, meeting, OVERLAP_DT)
-    rendezvous_path = os.path.join(PLOT_DIR, f"rendezvous_{pod}.png")
-    fig.savefig(rendezvous_path, dpi=110, bbox_inches='tight')
-    plt.close(fig)
-    print("Left: the swaths inside the pod's trixel. Right: their pass windows,")
-    print(f"all landing inside one Δt={OVERLAP_DT}. Both halves are required —")
-    print("same pod alone is not a rendezvous, and neither is same time.")
-    print("Note the granularity: co-location means the same level-4 pod")
-    print("(~500 km across), not the same pixel — the swaths need not touch.")
-    print(f"Written to: {rendezvous_path}")
-    print()
+    # ── Steps 12-14: the same view at three rendezvous widths ─────────────────
+    # Left: the swaths inside the pod's trixel. Right: their pass windows, all
+    # landing inside one Δt. Both halves are required — same pod alone is not a
+    # rendezvous, and neither is same time. Note the granularity: co-location
+    # means the same level-4 pod (~500 km across), not the same pixel, so the
+    # swaths need not touch.
+    demo_meta = load_local_metadata(demo.db_path)
+    for step, n_way in zip(RENDEZVOUS_STEPS, RENDEZVOUS_WIDTHS):
+        print("=" * 60)
+        print(f"Step {step}: A {n_way}-way rendezvous up close — where *and* when")
+        print("=" * 60)
+        # Pods whose widest rendezvous is *exactly* n_way, so a "2-way" is not
+        # illustrated with a picture of four instruments.
+        pod, meeting, _ = rendezvous_of_size(events, n_way, metadata=demo_meta)
+        window = (meeting - OVERLAP_DT, meeting + OVERLAP_DT)
+        passes = pod_pixels(demo, demo_meta, pod, window)
+        print(f"Pod {pod}: {n_way} instruments, rendezvous completes {meeting}")
+        for instrument, pixels in sorted(passes.items(),
+                                         key=lambda kv: kv[1]['timestamp'].min()):
+            print(f"  {instrument:6s} {len(pixels):6d} px  "
+                  f"{pixels['timestamp'].min()} .. {pixels['timestamp'].max()}")
+        fig = plot_rendezvous(pod, passes, meeting, OVERLAP_DT)
+        rendezvous_path = os.path.join(PLOT_DIR, f"rendezvous_{n_way}way_{pod}.png")
+        fig.savefig(rendezvous_path, dpi=110, bbox_inches='tight')
+        plt.close(fig)
+        print(f"Written to: {rendezvous_path}")
+        print()
 
     print("Done.")
 

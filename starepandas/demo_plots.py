@@ -74,6 +74,11 @@ def pod_trixels(podcodes):
     return geopandas.GeoSeries(split[split._trixel_column_name])
 
 
+def _pod_widths(events):
+    """Per pod, how many instruments its *widest* rendezvous involves."""
+    return events.groupby('podcode')['instruments'].apply(lambda s: s.map(len).max())
+
+
 def widest_rendezvous(events):
     """The pod holding the widest rendezvous, and the instant it completes.
 
@@ -97,10 +102,79 @@ def widest_rendezvous(events):
     if events.empty:
         raise ValueError("no rendezvous events to plot")
     widest = events['instruments'].map(len).max()
-    widest_events = events[events['instruments'].map(len) == widest]
-    meeting = widest_events['time'].min()
-    podcode = widest_events.loc[widest_events['time'] == meeting, 'podcode'].iloc[0]
-    return podcode, meeting, int(widest)
+    return rendezvous_of_size(events, int(widest))
+
+
+def _pod_footprints(metadata):
+    """Pixels per (pod, instrument), from the catalog's per-chunk ``num_rows``."""
+    frame = metadata[['podcode', 'Dataset', 'num_rows']].copy()
+    frame['instrument'] = frame['Dataset'].map(fold_instrument)
+    return frame.groupby(['podcode', 'instrument'])['num_rows'].sum()
+
+
+def rendezvous_of_size(events, n_instruments, metadata=None):
+    """A representative pod whose widest rendezvous is *exactly* ``n``.
+
+    "Exactly" matters: every pod holding a 4-way also holds 2- and 3-way
+    combinations, so a pod that merely *contains* an n-way one would
+    illustrate a "2-way" with a picture of four instruments. Only pods whose
+    maximum is ``n`` are considered.
+
+    Selection is deterministic (ties broken by pod code) so a re-run tells the
+    same story. With ``metadata``, the pod chosen is the one whose *least*
+    represented participant still covers the most pixels — without that, a pod
+    can qualify on a 21-pixel sliver clipping one corner, which is true but
+    illegible.
+
+    Parameters
+    ----------
+    events : pandas.DataFrame
+        Events frame from :func:`starepandas.overlap.rendezvous_events`.
+    n_instruments : int
+        Rendezvous width to look for (2 = a pair, 3 = a trio, ...).
+    metadata : pandas.DataFrame, optional
+        Full metadata rows (needs ``podcode``, ``Dataset``, ``num_rows``).
+        Falls back to the busiest pod by event count when omitted.
+
+    Returns
+    -------
+    tuple
+        ``(podcode, meeting_time, n_instruments)`` — as
+        :func:`widest_rendezvous`, with ``meeting_time`` the completion of an
+        ``n``-instrument rendezvous in that pod.
+
+    Raises
+    ------
+    ValueError
+        If no pod's widest rendezvous is exactly ``n_instruments``.
+    """
+    if not events.empty:
+        widths = _pod_widths(events)
+        candidates = list(widths.index[widths == n_instruments])
+        if candidates:
+            scoped = events[events['podcode'].isin(candidates)
+                            & (events['instruments'].map(len) == n_instruments)]
+            if metadata is None:
+                counts = events[events['podcode'].isin(candidates)].groupby('podcode').size()
+                def score(podcode):
+                    return -counts[podcode]
+            else:
+                footprints = _pod_footprints(metadata)
+                combos = scoped.groupby('podcode')['instruments'].first()
+
+                def score(podcode):
+                    # Rank by the *smallest* participant: a pod is only as
+                    # legible as its least-covered instrument.
+                    return -min(int(footprints.get((podcode, instrument), 0))
+                                for instrument in combos[podcode])
+
+            podcode = sorted(scoped['podcode'].unique(), key=lambda p: (score(p), p))[0]
+            meeting = scoped.loc[scoped['podcode'] == podcode, 'time'].min()
+            return podcode, meeting, int(n_instruments)
+
+    raise ValueError(
+        f"no pod has a rendezvous of exactly {n_instruments} instruments"
+    )
 
 
 def plot_pod_coverage(catalog, highlight=(), instruments=None, figsize=(14, 7)):
@@ -229,14 +303,22 @@ def plot_rendezvous(podcode, passes, meeting, dt, figsize=(15, 6.5)):
 
     # ---- left: space -------------------------------------------------------
     ax = fig.add_subplot(1, 2, 1, projection=ccrs.PlateCarree())
-    # Widest swath first, so the sparse ones stay visible on top of it.
-    for rank, instrument in enumerate(sorted(passes, key=lambda k: -len(passes[k]))):
+    # Densest swath first so sparser ones stay visible on top, but keep the
+    # markers small and semi-transparent throughout: a 2,500-pixel sliver drawn
+    # boldly will otherwise hide the 35,000-pixel swath underneath it.
+    by_density = sorted(passes, key=lambda k: -len(passes[k]))
+    for rank, instrument in enumerate(by_density):
         pixels = passes[instrument]
         ax.scatter(pixels['lon'], pixels['lat'],
-                   s=1.0 if rank == 0 else 6.0,
-                   alpha=0.30 if rank == 0 else 0.85,
+                   s=(1.2, 2.5, 4.0, 5.5)[min(rank, 3)],
+                   alpha=(0.45, 0.55, 0.65, 0.75)[min(rank, 3)],
                    color=_color(instrument), label=instrument, zorder=2 + rank,
                    transform=ccrs.PlateCarree())
+    # Pods are triangles of wildly varying shape — a polar one spans tens of
+    # degrees of longitude but only a few of latitude. Let the panel fill its
+    # box rather than preserving 1:1 degrees, or such a pod renders as an
+    # unreadable sliver.
+    ax.set_aspect('auto')
     ax.add_geometries(pod_trixels([podcode]), crs=ccrs.PlateCarree(),
                       facecolor='none', edgecolor='black', linewidth=2, zorder=10)
     ax.add_feature(cfeature.LAND, facecolor='#f2f2f2')

@@ -610,9 +610,71 @@ def _podcode_prefix_condition(podcode_prefix, placeholder='%s'):
     return [f'podcode LIKE {placeholder}'], [f'{podcode_prefix}%']
 
 
+#: SQL that extracts a chunk's storage path out of ``MetadataJson``. The path
+#: is not a column of its own — it lives in the JSON blob — so each backend
+#: needs its own accessor (Postgres jsonb ``->>`` vs SQLite JSON1).
+_GROUP_PATH_SQL = {
+    'postgres': '"MetadataJson"->>\'group_path\'',
+    'sqlite': 'json_extract("MetadataJson", \'$.group_path\')',
+}
+
+
+def _path_prefix_condition(path_prefix, backend, placeholder='%s'):
+    """SQL condition + param for "chunk was written under this storage root".
+
+    One RDS catalog is shared by every ingest, so ``dataset``/``period``
+    filters alone cannot tell one job's chunks from another's — two ingests of
+    the same instrument covering the same hours are indistinguishable by those
+    columns. The storage root can: it is the prefix a given ingest wrote to
+    (e.g. ``"s3://zarrpods/gmi-demo-parquet"`` vs
+    ``"s3://zarrpods/testing-s3/loadtest-jan"``). Works for local paths too,
+    where ``group_path`` is the on-disk chunk path.
+
+    Note the prefix is matched against a JSON field, so no index serves it —
+    combine with ``period``/``dataset`` (which do) rather than relying on this
+    alone to keep a scan small.
+
+    Parameters
+    ----------
+    path_prefix : str
+        Storage root; matched as a literal prefix of ``group_path``. A
+        trailing separator is not required.
+    backend : str
+        ``'postgres'`` or ``'sqlite'`` — selects the JSON accessor.
+    placeholder : str
+        SQL parameter placeholder — ``'%s'`` (psycopg2) or ``'?'`` (sqlite3).
+
+    Returns
+    -------
+    tuple of (list of str, list)
+        Condition fragments (to AND into a WHERE clause) and their params.
+
+    Raises
+    ------
+    ValueError
+        If ``path_prefix`` is not a non-empty string, or ``backend`` is
+        unknown.
+    """
+    if not isinstance(path_prefix, str) or not path_prefix:
+        raise ValueError(f"path_prefix must be a non-empty string, got {path_prefix!r}")
+    if backend not in _GROUP_PATH_SQL:
+        raise ValueError(f"backend must be one of {sorted(_GROUP_PATH_SQL)}, "
+                         f"got {backend!r}")
+
+    # Unlike a pod code, a storage path may legitimately contain LIKE
+    # wildcards ('_' is common in bucket and prefix names), so escape them
+    # rather than trusting the grammar.
+    escaped = (path_prefix.replace('\\', r'\\')
+                          .replace('%', r'\%')
+                          .replace('_', r'\_'))
+    condition = f"{_GROUP_PATH_SQL[backend]} LIKE {placeholder} ESCAPE '\\'"
+    return [condition], [f'{escaped}%']
+
+
 def load_s3_metadata(dataset=None, dataset_prefix=None, data_level=None, s3_bucket=None,
                       resolution_level=None, start_date=None, end_date=None,
-                      grouped_id=None, period=None, limit=None, order_by=None):
+                      grouped_id=None, period=None, path_prefix=None, limit=None,
+                      order_by=None):
     """
     Load metadata from the RDS database for Parquet partitions stored in S3.
     
@@ -740,6 +802,11 @@ def load_s3_metadata(dataset=None, dataset_prefix=None, data_level=None, s3_buck
             conditions.append('"RawData Collected Time" <= %s')
             params.append(end_date)
 
+        if path_prefix is not None:
+            path_conds, path_params = _path_prefix_condition(
+                path_prefix, 'postgres', placeholder='%s')
+            conditions.extend(path_conds)
+            params.extend(path_params)
         if period is not None:
             period_conds, period_params = _period_conditions(period, placeholder='%s')
             conditions.extend(period_conds)
@@ -1688,6 +1755,7 @@ def load_local_metadata(
     end_date=None,
     grouped_id=None,
     period=None,
+    path_prefix=None,
     limit=None,
     order_by=None,
 ):
@@ -1770,6 +1838,12 @@ def load_local_metadata(
             conditions.append('"RawData Collected Time" <= ?')
             params.append(str(end_date))
 
+        if path_prefix is not None:
+            path_conds, path_params = _path_prefix_condition(
+                path_prefix, 'sqlite', placeholder='?')
+            conditions.extend(path_conds)
+            params.extend(path_params)
+
         if period is not None:
             period_conds, period_params = _period_conditions(
                 period, placeholder='?', as_iso=True)
@@ -1835,7 +1909,7 @@ def _finish_temporal_catalog(rows):
 
 
 def load_s3_temporal_catalog(dataset=None, dataset_prefix=None, period=None,
-                             podcode_prefix=None):
+                             podcode_prefix=None, path_prefix=None):
     """
     Thin-projection catalog load for the overlap analytics (cloud/RDS).
 
@@ -1859,6 +1933,12 @@ def load_s3_temporal_catalog(dataset=None, dataset_prefix=None, period=None,
         Restrict to the pod subtree under this pod code (a coarser pod code
         is a prefix of its descendants' codes); see
         :func:`_podcode_prefix_condition`.
+    path_prefix : str, optional
+        Restrict to chunks written under this storage root (e.g.
+        ``"s3://zarrpods/gmi-demo-parquet"``). The catalog is shared by every
+        ingest, so this is the only filter that separates one job's chunks
+        from another's when they cover the same instrument and hours; see
+        :func:`_path_prefix_condition`.
 
     Returns
     -------
@@ -1886,6 +1966,11 @@ def load_s3_temporal_catalog(dataset=None, dataset_prefix=None, period=None,
                 podcode_prefix, placeholder='%s')
             conditions.extend(prefix_conds)
             params.extend(prefix_params)
+        if path_prefix is not None:
+            path_conds, path_params = _path_prefix_condition(
+                path_prefix, 'postgres', placeholder='%s')
+            conditions.extend(path_conds)
+            params.extend(path_params)
         if period is not None:
             period_conds, period_params = _period_conditions(period, placeholder='%s')
             conditions.extend(period_conds)
@@ -1903,7 +1988,8 @@ def load_s3_temporal_catalog(dataset=None, dataset_prefix=None, period=None,
 
 
 def load_local_temporal_catalog(db_path, dataset=None, dataset_prefix=None,
-                                period=None, podcode_prefix=None):
+                                period=None, podcode_prefix=None,
+                                path_prefix=None):
     """
     Thin-projection catalog load for the overlap analytics (local/SQLite).
 
@@ -1914,7 +2000,7 @@ def load_local_temporal_catalog(db_path, dataset=None, dataset_prefix=None,
     ----------
     db_path : str
         Path to the SQLite metadata database.
-    dataset, dataset_prefix, period, podcode_prefix : optional
+    dataset, dataset_prefix, period, podcode_prefix, path_prefix : optional
         As in :func:`load_s3_temporal_catalog`.
 
     Returns
@@ -1943,6 +2029,11 @@ def load_local_temporal_catalog(db_path, dataset=None, dataset_prefix=None,
                 podcode_prefix, placeholder='?')
             conditions.extend(prefix_conds)
             params.extend(prefix_params)
+        if path_prefix is not None:
+            path_conds, path_params = _path_prefix_condition(
+                path_prefix, 'sqlite', placeholder='?')
+            conditions.extend(path_conds)
+            params.extend(path_params)
         if period is not None:
             period_conds, period_params = _period_conditions(
                 period, placeholder='?', as_iso=True)

@@ -433,7 +433,34 @@ pip install -e .
 
 ---
 
-*Last Updated: 2026-08-07b (demo plots: **antimeridian fix**. Step 11's
+*Last Updated: 2026-08-07c (**`path_prefix` catalog filter** + **2-/3-/4-way
+rendezvous steps**. (1) The shared RDS catalog leaked other jobs into the demo:
+`Dataset`/`period` cannot separate two ingests of the same instrument over the
+same hours, so the S3 panels counted a `loadtest-jan` job's SSMIS chunks (814
+pods vs the local 672 — two of its granules straddle any window's edges). New
+`path_prefix=` on `load_s3_metadata` / `load_s3_temporal_catalog` /
+`load_local_metadata` / `load_local_temporal_catalog` filters on the chunk's
+storage root. The path is not a column — it lives in `MetadataJson` — so
+`_path_prefix_condition` emits a per-backend accessor (`"MetadataJson"->>
+'group_path'` on Postgres, `json_extract(...)` on SQLite), with LIKE wildcards
+escaped (`_` is common in prefixes) and an `ESCAPE` clause. No index serves a
+JSON field, so it is documented as "combine with period/dataset"; measured at
+0.89 s for the whole demo prefix. The S3 demo now scopes with it instead of
+`DEMO_WINDOWS` — one call, 7156 rows, **identical to local row for row** (the
+window approach was also *lossy*: it clipped SSMIS's 19:57 pass start).
+(2) Steps **12/13/14** now show one rendezvous at each width — 4-way, 3-way,
+2-way — via `rendezvous_of_size(events, n, metadata=)`, which considers only
+pods whose widest rendezvous is *exactly* n (else a "2-way" is drawn with four
+swaths) and, given metadata, picks the pod whose *least*-covered participant
+has the most pixels — without that it chose a pod where ATMS contributed a
+21-pixel sliver. Plot tuning: gentler marker sizes/alphas by density (a
+2.5k-pixel sliver was hiding a 35k-pixel swath) and `set_aspect('auto')` (a
+polar pod spans tens of degrees of longitude but few of latitude and rendered
+as an unreadable sliver). Tests: `tests/test_path_prefix_filter.py` (13) +
+6 more in `tests/test_demo_plots.py`. Suite 362 green, basic 8/8, STARE-PODS
+14/14.)*
+
+*Prior: 2026-08-07b (demo plots: **antimeridian fix**. Step 11's
 coverage map drew full-width horizontal bands across the globe — 22 of GMI's
 509 pods rendered with a ~357° longitude span. Cause: `make_trixels`' default
 `wrap_lon=True` normalises every longitude into [-180, 180], so a trixel with

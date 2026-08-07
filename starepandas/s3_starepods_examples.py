@@ -28,8 +28,8 @@ Temporal features
 Plots
 -----
 11. Pod coverage map — the level-4 pods each instrument's chunks occupy
-12. The widest rendezvous up close — the swaths (where) beside their pass
-    windows (when)
+12-14. One rendezvous up close at each width (4-, 3- and 2-way) — the swaths
+    (where) beside their pass windows (when)
 
 Note: the S3/RDS temporal loaders read the **shared** ``PodsMetadata``
 catalog — every ingest in the RDS table, not only this demo's granule. That
@@ -52,7 +52,7 @@ import os
 import time
 import h5py
 import matplotlib
-matplotlib.use("Agg")          # headless: steps 11-12 write PNGs, never a window
+matplotlib.use("Agg")          # headless: steps 11-14 write PNGs, never a window
 import matplotlib.pyplot as plt
 import pandas as pd
 from starepandas.demo_lib import StarePodsDemo
@@ -108,14 +108,6 @@ INSTRUMENTS = ["GMI", "SSMIS", "AMSR2", "ATMS"]
 # prints the whole Δt progression to make that visible.
 OVERLAP_DT = pd.Timedelta(minutes=45)
 
-# The RDS catalog is shared with every other ingest, so step 10 scopes its
-# read to the two windows this demo actually wrote — the tight pair and the
-# 4-way — rather than sweeping the whole table. Both push into SQL.
-DEMO_WINDOWS = [
-    (pd.Timestamp("2025-01-01 11:00"), pd.Timestamp("2025-01-01 13:30")),
-    (pd.Timestamp("2025-01-01 20:00"), pd.Timestamp("2025-01-01 23:00")),
-]
-
 # Steps 2–5 reconstitute GRANULE_FILE specifically, and two GMI granules are
 # now ingested; the granule-basename marker below already scopes them, so no
 # extra filter is needed. Step 8 splits the two GMI passes at this instant,
@@ -124,6 +116,16 @@ PASS_SPLIT = pd.Timestamp("2025-01-01T16:00:00")
 
 # S3 root where Parquet partitions and RDS metadata for this demo live.
 S3_PREFIX = "s3://zarrpods/gmi-demo-parquet"
+
+# The RDS catalog is shared with every other ingest, so steps 10-14 scope
+# their reads to the chunks this demo actually wrote. The storage root is the
+# only filter that can do that: two ingests of the same instrument covering
+# the same hours are indistinguishable by Dataset or period. (Scoping by time
+# window instead was both leaky — other jobs' granules straddle any window's
+# edges — and lossy, since a window that excludes them also clips this demo's
+# own passes.) Scoped this way the S3 catalog matches the local one row for
+# row, so both demos report identical analytics.
+DEMO_PATH_PREFIX = S3_PREFIX
 
 # STARE partition level used for both ingestion and bbox → SIDs lookup.
 # Capped at MAX_PARTITION_LEVEL = 4 (~256 cells/granule), the regime
@@ -139,7 +141,12 @@ DATASETS = ["GMI_S1", "GMI_S2"]
 
 OUTPUT_HDF5 = "/tmp/gmi_s3_reconstituted.h5"
 
-# Where steps 11-12 write their PNGs.
+# Steps 12-14 each draw one rendezvous, at these widths (widest first). A
+# width with no pod of exactly that size is skipped.
+RENDEZVOUS_WIDTHS = [4, 3, 2]
+RENDEZVOUS_STEPS = [12, 13, 14]
+
+# Where steps 11-14 write their PNGs.
 PLOT_DIR = "/tmp/stare_pods_plots_s3"
 
 # Set to True to wipe S3_PREFIX (S3 objects + RDS metadata rows) before
@@ -393,13 +400,13 @@ def main():
     print("Step 10: Multi-instrument overlap analytics")
     print("=" * 60)
     # The catalog-wide read (step 7) mixes every ingest in the shared RDS table.
-    # Scope the sweep to the two windows this demo wrote so the result is this
-    # demo's genuine rendezvous, reproducibly (period pushes into SQL).
-    demo_catalog = pd.concat(
-        [load_s3_temporal_catalog(dataset_prefix=instrument, period=window)
-         for instrument in INSTRUMENTS for window in DEMO_WINDOWS],
-        ignore_index=True,
-    )
+    # Scope the sweep to this demo's own storage root so the result is exactly
+    # this demo's rendezvous (the LIKE on the chunk's group_path pushes into
+    # SQL, and one call covers every instrument).
+    demo_catalog = load_s3_temporal_catalog(path_prefix=DEMO_PATH_PREFIX)
+    print(f"Scoped to {DEMO_PATH_PREFIX}: {len(demo_catalog)} chunk(s) "
+          f"across {demo_catalog['Dataset'].nunique()} dataset(s) — this "
+          f"demo's ingests only.")
     print("How the coincidence window Δt widens what counts as a rendezvous:")
     for dt in (pd.Timedelta(minutes=15), pd.Timedelta(minutes=30), OVERLAP_DT):
         ev = rendezvous_events(demo_catalog, dt)
@@ -442,7 +449,7 @@ def main():
     # PLOTS
     # ══════════════════════════════════════════════════════════════════════════
     from starepandas.demo_plots import (
-        plot_pod_coverage, plot_rendezvous, pod_pixels, widest_rendezvous,
+        plot_pod_coverage, plot_rendezvous, pod_pixels, rendezvous_of_size,
     )
 
     # ── Step 11: Pod coverage map ─────────────────────────────────────────────
@@ -463,34 +470,33 @@ def main():
     print(f"Written to: {coverage_path}")
     print()
 
-    # ── Step 12: Zoom on the widest rendezvous ────────────────────────────────
-    print("=" * 60)
-    print(f"Step 12: The {widest}-way rendezvous up close — where *and* when")
-    print("=" * 60)
-    pod, meeting, n_way = widest_rendezvous(events)
-    window = (meeting - OVERLAP_DT, meeting + OVERLAP_DT)
-    pod_meta = pd.concat(
-        [load_s3_metadata(dataset_prefix=instrument, period=window)
-         for instrument in INSTRUMENTS],
-        ignore_index=True,
-    )
-    passes = pod_pixels(demo, pod_meta, pod, window)
-    print(f"Pod {pod}: {n_way} instruments, rendezvous completes {meeting}")
-    for instrument, pixels in sorted(passes.items(),
-                                     key=lambda kv: kv[1]['timestamp'].min()):
-        print(f"  {instrument:6s} {len(pixels):6d} px  "
-              f"{pixels['timestamp'].min()} .. {pixels['timestamp'].max()}")
-    fig = plot_rendezvous(pod, passes, meeting, OVERLAP_DT)
-    rendezvous_path = os.path.join(PLOT_DIR, f"rendezvous_{pod}.png")
-    fig.savefig(rendezvous_path, dpi=110, bbox_inches='tight')
-    plt.close(fig)
-    print("Left: the swaths inside the pod's trixel. Right: their pass windows,")
-    print(f"all landing inside one Δt={OVERLAP_DT}. Both halves are required —")
-    print("same pod alone is not a rendezvous, and neither is same time.")
-    print("Note the granularity: co-location means the same level-4 pod")
-    print("(~500 km across), not the same pixel — the swaths need not touch.")
-    print(f"Written to: {rendezvous_path}")
-    print()
+    # ── Steps 12-14: the same view at three rendezvous widths ─────────────────
+    # Left: the swaths inside the pod's trixel. Right: their pass windows, all
+    # landing inside one Δt. Both halves are required — same pod alone is not a
+    # rendezvous, and neither is same time. Note the granularity: co-location
+    # means the same level-4 pod (~500 km across), not the same pixel, so the
+    # swaths need not touch.
+    demo_meta = load_s3_metadata(path_prefix=DEMO_PATH_PREFIX)
+    for step, n_way in zip(RENDEZVOUS_STEPS, RENDEZVOUS_WIDTHS):
+        print("=" * 60)
+        print(f"Step {step}: A {n_way}-way rendezvous up close — where *and* when")
+        print("=" * 60)
+        # Pods whose widest rendezvous is *exactly* n_way, so a "2-way" is not
+        # illustrated with a picture of four instruments.
+        pod, meeting, _ = rendezvous_of_size(events, n_way, metadata=demo_meta)
+        window = (meeting - OVERLAP_DT, meeting + OVERLAP_DT)
+        passes = pod_pixels(demo, demo_meta, pod, window)
+        print(f"Pod {pod}: {n_way} instruments, rendezvous completes {meeting}")
+        for instrument, pixels in sorted(passes.items(),
+                                         key=lambda kv: kv[1]['timestamp'].min()):
+            print(f"  {instrument:6s} {len(pixels):6d} px  "
+                  f"{pixels['timestamp'].min()} .. {pixels['timestamp'].max()}")
+        fig = plot_rendezvous(pod, passes, meeting, OVERLAP_DT)
+        rendezvous_path = os.path.join(PLOT_DIR, f"rendezvous_{n_way}way_{pod}.png")
+        fig.savefig(rendezvous_path, dpi=110, bbox_inches='tight')
+        plt.close(fig)
+        print(f"Written to: {rendezvous_path}")
+        print()
 
     print("Done.")
 
