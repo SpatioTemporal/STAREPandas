@@ -130,3 +130,36 @@ def test_path_prefix_composes_with_period(tmp_path):
         db, path_prefix='/data/mine',
         period=(pd.Timestamp('2025-02-01 00:00'), pd.Timestamp('2025-02-01 00:05')))
     assert miss.empty
+
+
+# ----- granule scoping for the S3 reconstitute path --------------------------
+
+def test_reconstitute_from_s3_accepts_a_granule_name():
+    """A prefix cannot isolate a granule in the flat layout.
+
+    S3 keys are ``<prefix>/<podcode>-<granule>-<dataset>.parquet``, so the
+    granule sits in the middle and ``s3_prefix`` (a startswith filter) cannot
+    select it. Without ``granule_name``, a prefix holding two granules of the
+    same dataset reconstitutes both merged — silently doubling the scan lines.
+    """
+    import inspect
+
+    from starepandas.demo_lib import StarePodsDemo
+    from starepandas.io.granules import reconstitute_hdf5_from_s3
+
+    assert 'granule_name' in inspect.signature(reconstitute_hdf5_from_s3).parameters
+    # ... and the demo wrapper must forward it, or the demo cannot use it.
+    assert 'granule_name' in inspect.signature(
+        StarePodsDemo.reconstitute_hdf5).parameters
+
+
+def test_granule_marker_is_bracketed_by_separators():
+    """The filter must not match a granule that merely *contains* the name."""
+    frame = pd.DataFrame({'group_path': [
+        's3://b/p/q03200-1C.GPM.GMI.20250101-S112952.061572.V07B-GMI_S1.parquet',
+        's3://b/p/q03200-1C.GPM.GMI.20250101-S204910.061578.V07B-GMI_S1.parquet',
+    ]})
+    wanted = '1C.GPM.GMI.20250101-S112952.061572.V07B'
+    hits = frame[frame['group_path'].str.contains(f'-{wanted}-', regex=False)]
+    assert len(hits) == 1
+    assert 'S112952' in hits.iloc[0]['group_path']

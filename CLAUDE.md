@@ -433,7 +433,26 @@ pip install -e .
 
 ---
 
-*Last Updated: 2026-08-07c (**`path_prefix` catalog filter** + **2-/3-/4-way
+*Last Updated: 2026-08-07d (**S3 reconstitution scoped to one granule**.
+Running both demos with ingest stubbed out (data already on disk/S3) surfaced
+a regression from the 4-instrument change: the S3 step-5 structure comparison
+showed the reconstituted granule at **(5966, 221) against the original's
+(2983, 221)** — exactly double — while local was correct. Cause: the S3
+`reconstitute_hdf5` had no `granule_name` parameter at all, and step 4 relied
+on a comment that had gone stale ("the bucket only holds this granule's
+data"). With two GMI granules under one prefix both were reconstituted merged.
+`s3_prefix` cannot express the scope either: the flat layout is
+`<prefix>/<podcode>-<granule>-<dataset>.parquet`, so the granule name sits in
+the *middle* of the key and a startswith filter can never isolate it. Added
+`granule_name=` to `reconstitute_hdf5_from_s3` (matching the `-<granule>-`
+span, bracketed so a granule that merely contains another's name cannot
+match), threaded it through `StarePodsDemo.reconstitute_hdf5`, and passed it
+in the demo — S3 now reconstitutes (2983, 221), matching the original and the
+local demo. Both demos verified end to end without re-ingesting; steps 10-14
+are byte-identical across backends. Suite 364 green, basic 8/8, STARE-PODS
+14/14.)*
+
+*Prior: 2026-08-07c (**`path_prefix` catalog filter** + **2-/3-/4-way
 rendezvous steps**. (1) The shared RDS catalog leaked other jobs into the demo:
 `Dataset`/`period` cannot separate two ingests of the same instrument over the
 same hours, so the S3 panels counted a `loadtest-jan` job's SSMIS chunks (814

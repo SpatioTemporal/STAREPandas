@@ -1273,7 +1273,7 @@ def _podcode_query_prefixes(podcode):
 def reconstitute_hdf5_from_s3(
     s3_root, dataset, output_hdf5_path,
     area_sids=None, bbox=None,
-    s3_prefix=None,
+    s3_prefix=None, granule_name=None,
     storage_options=None, pixel_width=None,
     compression='gzip', compression_opts=4,
     mode='w',
@@ -1310,8 +1310,16 @@ def reconstitute_hdf5_from_s3(
     s3_prefix : str, optional
         When ``s3_root`` is an S3 path, restrict matching to RDS metadata
         rows whose ``group_path`` starts with this prefix.  Use to scope a
-        reconstitute call to a single granule's ingest run.  Ignored for
-        local roots.
+        reconstitute call to one storage root.  Ignored for local roots.
+    granule_name : str, optional
+        Restrict to a single granule (its basename without extension). A
+        prefix cannot express this: the flat S3 layout is
+        ``<prefix>/<podcode>-<granule>-<dataset>.parquet``, so the granule
+        name sits in the middle of the key. Required whenever a prefix holds
+        more than one granule of the same dataset — otherwise they are
+        reconstituted merged into one file. Ignored for local roots, which
+        take the equivalent filter through
+        :func:`reconstitute_hdf5_from_local`.
     storage_options : dict, optional
         Passed to ``s3fs.S3FileSystem`` for S3 authentication / configuration.
         If ``None`` and ``s3_root`` starts with ``"s3://"``, the built-in
@@ -1385,6 +1393,15 @@ def reconstitute_hdf5_from_s3(
             # Filter to a specific S3 prefix when provided (e.g. a single granule path)
             if s3_prefix is not None:
                 meta_df = meta_df[meta_df['group_path'].str.startswith(s3_prefix)]
+            # Scope to one granule. A prefix cannot do this on its own: the flat
+            # S3 layout is <prefix>/<podcode>-<granule>-<dataset>.parquet, so the
+            # granule name sits in the *middle* of the key. Without this, a
+            # prefix holding two granules of the same instrument reconstitutes
+            # both merged together — silently doubling the scan lines.
+            if granule_name is not None:
+                meta_df = meta_df[
+                    meta_df['group_path'].str.contains(f'-{granule_name}-', regex=False)
+                ]
 
             if no_spatial_filter:
                 # Task 13 — no bbox/area_sids: take every partition for this dataset.

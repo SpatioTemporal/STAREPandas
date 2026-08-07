@@ -278,14 +278,16 @@ def main():
     print("Step 4: Reconstitute HDF5 (S1 + S2)")
     print("=" * 60)
     t0 = time.perf_counter()
-    # s3_prefix scope: with CLEAN_BEFORE_RUN=True the bucket only holds this
-    # granule's data, so passing the broad S3_PREFIX is correct and avoids
-    # the layout mismatch the old per-granule S3 prefix would create.
+    # Scope to the storage root AND to this granule. The prefix alone is not
+    # enough now that two GMI granules are ingested: the flat layout puts the
+    # granule name after the pod code, so both would be reconstituted merged
+    # into one file (with twice the scan lines of the original).
     recon_path = demo.reconstitute_hdf5(
         dataset=DATASETS,
         output_hdf5_path=OUTPUT_HDF5,
         bbox=BBOX,
         s3_prefix=S3_PREFIX,
+        granule_name=granule_basename,
     )
     print(f"Reconstitute wall: {time.perf_counter() - t0:.2f} s")
     print(f"Written to: {recon_path}")
