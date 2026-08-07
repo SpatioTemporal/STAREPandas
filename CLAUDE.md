@@ -433,7 +433,34 @@ pip install -e .
 
 ---
 
-*Last Updated: 2026-08-07 (demo notebooks: **two plot steps**. The analytics
+*Last Updated: 2026-08-07b (demo plots: **antimeridian fix**. Step 11's
+coverage map drew full-width horizontal bands across the globe — 22 of GMI's
+509 pods rendered with a ~357° longitude span. Cause: `make_trixels`' default
+`wrap_lon=True` normalises every longitude into [-180, 180], so a trixel with
+corners at 178° and -179° comes back as a polygon going the *long* way round,
+filling a band at that latitude. Fix uses the library's own facility rather
+than hand-rolled geometry — `make_trixels(wrap_lon=False)` (longitudes stay
+continuous) + `STAREDataFrame.split_antimeridian()` → MultiPolygon halves, as
+`split_antimeridian`'s own docstring prescribes. Widest single part is now
+27.6°; GMI's panel shows its true 65°-inclination sinusoid. (The polar bands
+on the sun-synchronous panels are **genuine** — their swaths really do cover
+all longitudes near the poles.) Regression tests:
+`tests/test_demo_plots.py` (11 — split/both-edges/interior-pod/order, a
+whole-octant sweep of 256 pods, plus `widest_rendezvous`); verified meaningful
+by confirming the pre-fix path yields 356–357° spans for exactly those pods.
+Notebook figures were refreshed **in place** (regenerate the image, swap the
+base64) rather than by re-executing — only `pod_trixels` changed and the
+figure is a pure function of the unchanged catalog, so no re-ingest was
+needed. **Open finding (not fixed):** the S3 step-7/11 panels bleed in other
+ingests — SSMIS shows 814 pods vs the local 672, because two `loadtest-jan`
+granules (`…S094621-E112812`, `…S131005-E145155`) straddle the edges of
+`DEMO_WINDOWS`. The slide-8/9 matrix is unaffected (those passes never go
+co-active with another instrument), but the coverage panel overstates what
+this demo wrote; `DEMO_WINDOWS` scoping is not by itself enough to isolate a
+demo's rows from the shared RDS catalog. Suite 343 green, basic 8/8,
+STARE-PODS 14/14.)*
+
+*Prior: 2026-08-07 (demo notebooks: **two plot steps**. The analytics
 said *which* pods hold a rendezvous but showed none of the geometry that
 produces it, so all four demo files gained **Step 11** (pod coverage map — one
 world-map panel per instrument shading the level-4 pods its chunks occupy,

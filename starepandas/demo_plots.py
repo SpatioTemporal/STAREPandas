@@ -21,6 +21,7 @@ decide whether to ``savefig`` (scripts) or let the notebook display it.
 
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
+import geopandas
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -47,6 +48,14 @@ def _color(instrument):
 def pod_trixels(podcodes):
     """Trixel polygons for pod codes, ready to hand to cartopy.
 
+    Built with ``wrap_lon=False`` and then split at the antimeridian. The
+    default ``wrap_lon=True`` normalises every longitude into [-180, 180],
+    which silently ruins any trixel straddling the antimeridian: a triangle
+    with corners at 178° and -179° becomes a polygon spanning ~357° the wrong
+    way round, and fills a band clean across the map at that latitude. Keeping
+    longitudes continuous and splitting into a MultiPolygon draws both halves
+    where they belong.
+
     Parameters
     ----------
     podcodes : iterable of str
@@ -55,12 +64,14 @@ def pod_trixels(podcodes):
     Returns
     -------
     geopandas.GeoSeries
-        One polygon per pod code, in lon/lat degrees.
+        One (multi)polygon per pod code, in lon/lat degrees.
     """
     sids = [podcode_to_sid(podcode) for podcode in podcodes]
     frame = starepandas.STAREDataFrame({'sids': sids})
     frame.set_sids('sids', inplace=True)
-    return frame.make_trixels()
+    frame.set_trixels(frame.make_trixels(wrap_lon=False), inplace=True)
+    split = frame.split_antimeridian()
+    return geopandas.GeoSeries(split[split._trixel_column_name])
 
 
 def widest_rendezvous(events):
