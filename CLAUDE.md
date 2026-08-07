@@ -62,7 +62,10 @@ starepandas/
 │   │   ├── gmi.py          # GMI instrument reader
 │   │   ├── amsr2.py        # AMSR2 instrument reader
 │   │   ├── ssmis.py        # SSMIS instrument reader
-│   │   ├── atms.py         # ATMS instrument reader (updated for 2025 format)
+│   │   ├── atms.py         # ATMS instrument reader (2025 format; ingest-safe
+│   │   │                   # since 2026-08-04 — read_timestamps no longer
+│   │   │                   # touches self.lat before read_latlon, and
+│   │   │                   # read_data reads self.dataset not self.netcdf)
 │   │   └── utils.py        # Granule utilities
 │   └── s3.py               # S3 Parquet storage functions
 ├── tools/
@@ -77,7 +80,8 @@ starepandas/
 │                           #  issue 01 local seam; test_temporal_query —
 │                           #  issue 03 period filter; test_vcf_rollup —
 │                           #  issue 04 VCF roll-up; test_overlap_analytics —
-│                           #  issue 05 pure seam; _temporal_fixtures.py =
+│                           #  issue 05 pure seam; test_atms_reader —
+│                           #  ATMS ingest regressions; _temporal_fixtures.py =
 │                           #  shared local-seam helpers)
 └── examples/               # Example notebooks and scripts
 ```
@@ -350,7 +354,9 @@ All skills run exclusively inside the `starepandas_3.12_v3` conda environment.
    for the pair)
 9. `reconstitute_hdf5_from_local` round-trips through Parquet
 10. `reconstitute_hdf5_from_s3` (local path) walks pod-code tree
-11. `local_starepods_examples.py` end-to-end against the real GMI granule
+11. `local_starepods_examples.py` end-to-end against the real granules
+    (6 granules across 4 instruments — the GMI+SSMIS pair plus the
+    4-instrument rendezvous set; ~7156 Parquet partitions at level 4)
 12. `pods_unique` UNIQUE constraint exists on `PodsMetadata` (§C10 #1 gate)
     + `t_start`/`t_end`/`podcode` columns present on the live catalog
     + issue-06 index set present (`idx_pods_podcode`, `idx_pods_temporal`,
@@ -360,8 +366,8 @@ All skills run exclusively inside the `starepandas_3.12_v3` conda environment.
 14. C-1..C-6 unit tests pass (cloud.ticket_sizing + metadata + granule_timestamps
     + s3_layout + ingest_module + config_env_secret + control_plane_lambdas
     + completion_watcher + cloud_client + podcode_layout + temporal_catalog
-    + temporal_query + vcf_rollup + overlap_analytics — currently 210 unit
-    tests)
+    + temporal_query + vcf_rollup + overlap_analytics + atms_reader —
+    currently 216 unit tests)
 
 ### Verified checks (cloud SDK, env-gated — C-6)
 `~/.claude/scripts/starepods_cloud_verify.py` (run with `STAREPANDAS_CLOUD_VERIFY=1`;
@@ -419,7 +425,45 @@ pip install -e .
 
 ---
 
-*Last Updated: 2026-07-12 (temporal-stare-pods issue 06 COMPLETE — measured
+*Last Updated: 2026-08-04 (demo notebooks: **four instruments** in the
+slide-8/9 overlap analytics. The example demos previously ingested a GMI+SSMIS
+pair, so the slide-9 table only ever had an n=2 column. All 56 healthy granules
+of 2025-01-01 (GMI/SSMIS/AMSR2/ATMS, fetched from the Bayesics EC2) were
+screened for a genuine **4-way** rendezvous by building the ingest's
+`(podcode, Dataset, t_start, t_end)` catalog straight from each granule's
+Latitude/Longitude/ScanTime — subsampled, so conservative — and sweeping it
+with the shipped `rendezvous_events`. Exactly three 4-way events exist that
+day; the chosen set (SSMIS `…S195732`, AMSR2 `…S201914`, ATMS-NOAA-21
+`…S201707`, GMI `…S204910`) rendezvouses over pods **q03200/q03203**, the
+passes arriving SSMIS 21:29 → AMSR2 21:46 → ATMS 21:47 → GMI 22:13 — so a
+4-way needs **Δt≥45 min**. Confirmed by full-resolution ingest, not just the
+probe. All four demo files (`local_`/`s3_starepods_examples`, `.py` +
+`.ipynb`) now ingest **6 granules across 4 instruments** — the original
+co-located pair is *kept* (it is the tightest rendezvous, ≤3 min, and keeps
+the GMI–SSMIS matrix cell at 47 rather than 5) plus the quadruple; the two
+windows are ~9 h apart so they never cross-contaminate. Step 10 gained the Δt
+progression (15/30/45 min, showing where n=3 and then n=4 appear), the widest-
+first pod table and a `pod_drilldown` of a 4-way pod (all 6 pairs + all 4
+triples + the 4-way). Step 8 now separates the **two GMI passes** by their
+data-level range — a sharper period-filter demo than the old bracket/miss pair
+— and steps 2–5 stay scoped to the reconstituted granule via the granule-level
+`end_date`. Headline (Δt=45 min): 442 pods, 101 with a 3-way, 2 with a 4-way;
+matrix AMSR2–ATMS 359 (near-co-orbiting), ATMS–SSMIS 81, ATMS–GMI 68,
+AMSR2–SSMIS 58, GMI–SSMIS 47, AMSR2–GMI 43. **Bug fixed:** ATMS could never be
+ingested at all — `ATMS.read_timestamps` indexed `self.lat` although callers
+run it *before* `read_latlon` (`read_granule` ordering) → `TypeError: argument
+of type 'NoneType' is not iterable`, and it emitted one timestamp per scan
+*line* instead of per pixel, which cannot align with the flattened grid
+`to_df` builds; `ATMS.read_data` read a `self.netcdf` attribute this reader
+never sets. Now reads the pixel width from the file (`scan_width` /
+`scan_variable`, shape only) and takes up to 6 channels per scan from
+`self.dataset`. Regression tests: `tests/test_atms_reader.py` (5). Data:
+4 new granules committed to Git LFS (~188 MB; `git check-attr filter`
+verified). Verification: basic 8/8, STARE-PODS 14/14 online (check 11 now
+6 granules / ~7156 partitions; check 14 = 216 unit tests), full suite 332
+green.)*
+
+*Prior: 2026-07-12 (temporal-stare-pods issue 06 COMPLETE — measured
 index upgrades. The ADR-0002 "measure before building" gate opened (issues
 03 + 05 shipped), so the deferred index menu was profiled at realistic scale:
 live 14,739-row RDS catalog + a 2M-row RDS scratch table (server-side
