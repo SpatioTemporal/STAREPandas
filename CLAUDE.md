@@ -433,7 +433,27 @@ pip install -e .
 
 ---
 
-*Last Updated: 2026-08-07d (**S3 reconstitution scoped to one granule**.
+*Last Updated: 2026-08-07e (**`SKIP_INGEST` + S3 notebook outputs restored**.
+The committed `s3_starepods_examples.ipynb` had **no cell outputs at all** — a
+step-12→12/13/14 rework script ended with a blanket `cell.outputs = []` so the
+re-run would be honest, the *local* notebook was then re-executed but the S3
+one was not (its re-run implied the ~16 min ingest), and it was committed
+stripped. Fixed properly rather than by monkeypatching: new `SKIP_INGEST` flag
+on the S3 demo (`.py` + `.ipynb`, default **True**) reuses whatever is already
+under `S3_PREFIX`. The skip branch is guarded — it loads the catalog and
+raises with instructions if the prefix is empty, so a first-time reader gets a
+clear error instead of a demo silently running on nothing — and it prints what
+it reused, so the notebook's code and its outputs agree (unlike an external
+stub, which would have left "stored 0 dataset path(s)" in a worked example).
+Full notebook execution drops **20 min → 2.5 min**. The notebook's step 4 also
+still lacked the `granule_name=` scoping fixed in the `.py` the round before,
+so its reconstitution was still doubled (5966 vs 2983) — now corrected; both
+notebooks carry 4 figures, no errors, and the S3 analytics match local
+exactly. Timing summary now shows the step-3 partition download (243 s) as the
+dominant cost once ingest is skipped. Suite 364 green, basic 8/8, STARE-PODS
+14/14.)*
+
+*Prior: 2026-08-07d (**S3 reconstitution scoped to one granule**.
 Running both demos with ingest stubbed out (data already on disk/S3) surfaced
 a regression from the 4-instrument change: the S3 step-5 structure comparison
 showed the reconstituted granule at **(5966, 221) against the original's

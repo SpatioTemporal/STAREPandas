@@ -149,9 +149,17 @@ RENDEZVOUS_STEPS = [12, 13, 14]
 # Where steps 11-14 write their PNGs.
 PLOT_DIR = "/tmp/stare_pods_plots_s3"
 
+# Reuse the ingest already under S3_PREFIX instead of writing it again.
+# Ingest is by far the most expensive step (~16 min for the six granules) and
+# is idempotent, so once the data is there every later step can be re-run
+# against it in seconds. The skip branch checks the catalog first and fails
+# with instructions rather than letting the rest of the demo run on nothing.
+# Set False for a first run, or to re-ingest from scratch.
+SKIP_INGEST = True
+
 # Set to True to wipe S3_PREFIX (S3 objects + RDS metadata rows) before
 # ingesting. Mirrors the local demo's CLEAN_BEFORE_RUN flag — prevents
-# duplicate RDS rows on re-runs. Default True for clean reproducible runs.
+# duplicate RDS rows on re-runs. Ignored when SKIP_INGEST is True.
 CLEAN_BEFORE_RUN = True
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -199,34 +207,46 @@ def main():
     print("Step 1: Ingest granules → S3 Parquet + RDS")
     print("=" * 60)
     t0 = time.perf_counter()
-    s3_paths = demo.ingest_granules(
-        data_path=GRANULE_FILE,
-        instrument="GMI",
-        s3_prefix=S3_PREFIX,
-        level=STARE_LEVEL,
-        clean_before_run=CLEAN_BEFORE_RUN,   # wipes the prefix before GMI
-    )
-    # Second instrument appends — clean_before_run=False so it does NOT wipe
-    # the GMI data just written to the same prefix.
-    ssmis_paths = demo.ingest_granules(
-        data_path=SSMIS_GRANULE_FILE,
-        instrument="SSMIS",
-        s3_prefix=S3_PREFIX,
-        level=STARE_LEVEL,
-        clean_before_run=False,
-    )
-    print(f"GMI  : stored {len(s3_paths)} dataset path(s)")
-    print(f"SSMIS: stored {len(ssmis_paths)} dataset path(s)")
-    for instrument, path in RENDEZVOUS_GRANULES:
-        paths = demo.ingest_granules(
-            data_path=path,
-            instrument=instrument,
+    if SKIP_INGEST:
+        from starepandas.io.granules import load_s3_temporal_catalog
+        existing = load_s3_temporal_catalog(path_prefix=S3_PREFIX)
+        if existing.empty:
+            raise RuntimeError(
+                f"SKIP_INGEST=True but nothing is stored under {S3_PREFIX}. "
+                f"Set SKIP_INGEST=False to ingest the granules first."
+            )
+        print(f"SKIP_INGEST=True — reusing the {len(existing)} chunk(s) already "
+              f"under {S3_PREFIX}, across {existing['Dataset'].nunique()} dataset(s).")
+        print("Set SKIP_INGEST=False to re-ingest from the granule files.")
+    else:
+        s3_paths = demo.ingest_granules(
+            data_path=GRANULE_FILE,
+            instrument="GMI",
+            s3_prefix=S3_PREFIX,
+            level=STARE_LEVEL,
+            clean_before_run=CLEAN_BEFORE_RUN,   # wipes the prefix before GMI
+        )
+        print(f"GMI  : stored {len(s3_paths)} dataset path(s)")
+        # Every later granule appends — clean_before_run=False so it does NOT
+        # wipe the data already written to the same prefix.
+        ssmis_paths = demo.ingest_granules(
+            data_path=SSMIS_GRANULE_FILE,
+            instrument="SSMIS",
             s3_prefix=S3_PREFIX,
             level=STARE_LEVEL,
             clean_before_run=False,
         )
-        print(f"{instrument:5s}: stored {len(paths)} dataset path(s)  "
-              f"({os.path.basename(path)})")
+        print(f"SSMIS: stored {len(ssmis_paths)} dataset path(s)")
+        for instrument, path in RENDEZVOUS_GRANULES:
+            paths = demo.ingest_granules(
+                data_path=path,
+                instrument=instrument,
+                s3_prefix=S3_PREFIX,
+                level=STARE_LEVEL,
+                clean_before_run=False,
+            )
+            print(f"{instrument:5s}: stored {len(paths)} dataset path(s)  "
+                  f"({os.path.basename(path)})")
     print(f"Ingest wall: {time.perf_counter() - t0:.2f} s")
     print()
 
