@@ -14,49 +14,49 @@ class ATMS(SSMIS):
         super().__init__(file_path, sidecar_path, scans)
 
     def read_timestamps(self):
-        """Read timestamps for ATMS scans."""
+        """Read timestamps for ATMS scans.
+
+        ATMS carries one timestamp per scan line, while ``to_df`` flattens the
+        per-pixel grid — so each scan line's timestamp is repeated across the
+        scan's pixel dimension, giving the same ``(scan_lines, pixels)`` shape
+        as the latitude grid. SSMIS hard-codes that width (90/180); ATMS reads
+        it from the file, where it varies by product.
+
+        Read straight from the file rather than from ``self.lat``: callers run
+        ``read_timestamps()`` before ``read_latlon()`` (see
+        ``starepandas.io.granules.read_granule``), so ``self.lat`` is still
+        ``None`` here.
+        """
         self.timestamps = {}
 
         for scan in self.scans:
             ts = self.read_timestamp_scan(scan)
-            if ts is not None:
-                ts_len = ts.shape[0]
-# ATMS has different scan line counts than SSMIS
-                # Use the actual scan line count from latitude dimension
-                if hasattr(self, 'lat') and scan in self.lat and hasattr(self.lat[scan], 'shape'):
-                    scan_lines = self.lat[scan].shape[0] if len(self.lat[scan].shape) > 0 else ts_len
-                else:
-                    scan_lines = ts_len
-                
-                ts = numpy.repeat(ts, scan_lines)
-                ts = ts.reshape(scan_lines, -1)
-                # Only take the first column to match timestamp structure
-                ts = ts[:, 0] if ts.shape[1] > 0 else ts.flatten()
-                self.timestamps[scan] = ts
+            if ts is None:
+                continue
+            pixels = self.scan_width(scan)
+            self.timestamps[scan] = numpy.repeat(ts, pixels).reshape(ts.shape[0], pixels)
+
+    def scan_width(self, scan):
+        """Number of pixels per scan line, from the Latitude dataset's shape.
+
+        Only the shape is touched, so no pixel data is read.
+        """
+        return self.scan_variable(scan, 'Latitude').shape[1]
 
     def read_data(self):
         """Read brightness temperature data for ATMS scans.
-        
-        ATMS 2025 format:
-        - S1: Single channel temperature data (Tc[:, :, 0])
-        - S2: Multiple channel temperature data (Tc[:, :, 0:5])
-        """
-        if 'S1' in self.scans:
-            # S1 has single channel - take first channel
-            self.data['S1']['Tc1'] = self.netcdf.groups['S1']['Tc'][:, :, 0]
 
-        if 'S2' in self.scans:
-            # S2 has multiple channels - take first 6 channels like SSMIS S4
-            tc_data = self.netcdf.groups['S2']['Tc']
-            if tc_data.shape[-1] >= 1:
-                self.data['S2']['Tc1'] = tc_data[:, :, 0]
-            if tc_data.shape[-1] >= 2:
-                self.data['S2']['Tc2'] = tc_data[:, :, 1]
-            if tc_data.shape[-1] >= 3:
-                self.data['S2']['Tc3'] = tc_data[:, :, 2]
-            if tc_data.shape[-1] >= 4:
-                self.data['S2']['Tc4'] = tc_data[:, :, 3]
-            if tc_data.shape[-1] >= 5:
-                self.data['S2']['Tc5'] = tc_data[:, :, 4]
-            if tc_data.shape[-1] >= 6:
-                self.data['S2']['Tc6'] = tc_data[:, :, 5]
+        Channel count per scan varies across the ATMS products (NPP,
+        NOAA-20, NOAA-21), so every scan takes up to the first 6 channels
+        it actually has, as ``Tc1``..``Tc6``.
+        """
+        for scan in self.scans:
+            tc = self.scan_variable(scan, 'Tc')
+            for channel in range(min(tc.shape[-1], 6)):
+                self.data[scan][f'Tc{channel + 1}'] = tc[:, :, channel]
+
+    def scan_variable(self, scan, name):
+        """The named variable of a scan group, for either backing file type."""
+        if self.file_type == 'hdf5':
+            return self.dataset[scan][name]
+        return self.dataset.groups[scan][name]
