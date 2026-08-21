@@ -468,8 +468,15 @@ rows carry a single `group_path` — running the two ingests concurrently let
 the loadtest's DO UPDATE steal the demo's 1,469 SSMIS rows (scoped catalog
 5,687, sweep 403 pods instead of 442) until a re-ingest of that one granule
 re-claimed them. Whichever job ingests a shared granule *last* owns its
-catalog rows; the loadtest root's 12,756-rows-vs-14,225-objects gap is this
-same overlap and is the historical steady state. All analytics verified
+catalog rows; the loadtest root's 12,756-rows-vs-14,225-objects gap was this
+same overlap. **Resolved same day by making the input sets disjoint** (option
+2 of the trap-2 menu, user's pick over widening `pods_unique` with a
+storage-root column): the loadtest set swaps orbit 078441 for 078447
+(`…S213924-E232114`, still a 2025-01-01 F18 pass; 078446 also stays excluded
+— it's the demo's other SSMIS granule), documented in the notebook's step-1
+markdown. Re-run as job `35422080`: 10/10, 0 failed, **14,248 objects ==
+14,248 catalog rows** — the rows-vs-objects gap is gone and ingest order no
+longer matters. Demo root unaffected (still 7,156). All analytics verified
 identical to pre-cutover modulo spelling: 442 pods at Δt=45 min
 ({2: 442, 3: 101, 4: 2}), AMSR2–ATMS 359, 4-way pods `q003200`/`q003203`,
 pixel counts 139/578/146/9573, local == S3 row for row. Tests: all literal
