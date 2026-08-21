@@ -1,9 +1,9 @@
 # STARE-PODS cloud worker — Path C C-2.
 #
-# Build context: project root.
-#   conda run -n starepandas_3.12_v3 python setup.py bdist_wheel -d infra/worker/dist
-#   docker buildx build --platform=linux/amd64 \
-#       -f infra/worker/Dockerfile -t starepods/worker:dev --load .
+# Build context: project root. Build via the wrapper script — it rebuilds the
+# wheel first and verifies the image isn't a stale-cache reproduction:
+#   ./infra/worker/build.sh          # build + verify
+#   ./infra/worker/build.sh --push   # …then ECR login, tag, push
 #
 # Two-stage build:
 #   Stage 1 (builder) — has compilers + libpq-dev so source-only deps

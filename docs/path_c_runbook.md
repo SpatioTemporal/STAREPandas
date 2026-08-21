@@ -228,7 +228,20 @@ Image: `637388276731.dkr.ecr.us-west-2.amazonaws.com/starepods/worker:<tag>`
 - New tasks only — running tasks keep their image until they exit.
 
 **Rebuild + repush** (after any change to the podding writer / worker code —
-performed 2026-05-30, 2026-06-21, 2026-07-11):
+performed 2026-05-30, 2026-06-21, 2026-07-11, 2026-08-21):
+```bash
+./infra/worker/build.sh          # wheel + image + stale-cache verification
+./infra/worker/build.sh --push   # …then ECR login, tag, push
+```
+The script exists because the Dockerfile installs a **pre-built wheel** from
+`infra/worker/dist/` — building the image against a stale wheel cache-hits
+every layer and silently reproduces the *old* image byte-for-byte (same
+digest, none of your changes; this happened 2026-08-21). It always rebuilds
+the wheel first and then fails unless the version baked into the image
+matches the wheel it just built (checked by extracting
+`starepandas/_version.py` from the image filesystem — no amd64 emulation).
+
+The manual steps it wraps, for reference / debugging:
 ```bash
 # 1. Wheel on the HOST (versioneer can't resolve the worktree .git in Docker)
 rm -f infra/worker/dist/*.whl
