@@ -469,7 +469,7 @@ def test_performance_smoke_100k_rows():
     generous CI-stable bound (the target is tens of milliseconds); a
     combinatorial subset search or quadratic sweep blows it by orders of
     magnitude."""
-    pods = [f'q{o}{a}{b}{c}0'
+    pods = [f'q{o // 4}{o % 4}{a}{b}{c}0'
             for o in range(8) for a in range(4) for b in range(4)
             for c in range(2)]                          # 8*4*4*2 = 256 pods
     instruments = ['GMI_S1', 'SSMIS_S1', 'ATMS_S1', 'AMSR2_S1']

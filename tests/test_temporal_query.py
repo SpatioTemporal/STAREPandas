@@ -311,7 +311,7 @@ def test_local_temporal_catalog_is_thin_and_parsed(tmp_path):
 
     assert list(df.columns) == ['podcode', 'Dataset', 't_start', 't_end']
     assert len(df) == 2
-    assert df['podcode'].str.match(r'^q[0-7][0-3]*$').all()
+    assert df['podcode'].str.match(r'^q[01][0-3]+$').all()
     assert (df['Dataset'] == 'GMI_S1').all()
     # Parsed to timestamps, ready for the sweep kernel.
     assert pd.api.types.is_datetime64_any_dtype(df['t_start'])

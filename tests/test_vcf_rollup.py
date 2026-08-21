@@ -157,10 +157,12 @@ def test_rollup_rejects_invalid_subtree():
 
 
 def test_rollup_rejects_subtree_deeper_than_level():
-    """A level-1 row labeled 'q13' but aggregating only q13211's sliver would
-    be indistinguishable from the pod's true envelope — must raise, both in
-    the pure roll-up and in the loaders' pre-query fail-fast."""
-    with pytest.raises(ValueError, match='deeper'):
+    """A level-1 row labeled 'q013' but aggregating only q013211's sliver
+    would be indistinguishable from the pod's true envelope — must raise,
+    both in the pure roll-up and in the loaders' pre-query fail-fast."""
+    # The message must state the subtree's true level (len - 3, level 4 here)
+    # so the "roll up at level >= N" advice is actionable.
+    with pytest.raises(ValueError, match=r'deeper.*level >= 4'):
         vcf_rollup(_fixture_catalog(), level=1, subtree='q013211')
     with pytest.raises(ValueError, match='deeper'):
         load_local_vcf('/nonexistent/never-touched.db', level=0, subtree='q0132')

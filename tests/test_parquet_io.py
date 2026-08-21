@@ -90,7 +90,7 @@ def test_parquet_local_with_granule_name():
                           granule_name=granule)
 
         from pathlib import Path
-        # Top level is the pod-code dir tree (q<octant><digit>), not Q-dirs.
+        # Top level is the pod-code dir tree (q + 2-digit root), not Q-dirs.
         top_level = [p.name for p in Path(local_path).iterdir() if p.is_dir()]
         assert top_level, f"Nothing written under {local_path}"
         assert all(name.startswith("q") for name in top_level), \

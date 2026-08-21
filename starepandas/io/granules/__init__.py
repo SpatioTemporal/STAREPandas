@@ -2090,11 +2090,11 @@ def _validate_vcf_args(level, subtree=None):
         podcode_to_sid(subtree)              # grammar check (raises ValueError)
         if len(subtree) > n:
             raise ValueError(
-                f"subtree {subtree!r} (level {len(subtree) - 2}) is deeper "
+                f"subtree {subtree!r} (level {len(subtree) - 3}) is deeper "
                 f"than the requested roll-up level {level}: a level-{level} "
                 f"row would cover only that subtree's chunks while carrying "
                 f"the coarser pod's code. Roll up at level >= "
-                f"{len(subtree) - 2} instead."
+                f"{len(subtree) - 3} instead."
             )
     return n
 
