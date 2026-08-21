@@ -59,7 +59,7 @@ def pod_trixels(podcodes):
     Parameters
     ----------
     podcodes : iterable of str
-        Pod codes (e.g. ``"q03200"``).
+        Pod codes (e.g. ``"q003200"``).
 
     Returns
     -------
@@ -315,9 +315,12 @@ def plot_pod_coverage(catalog, highlight=(), instruments=None, figsize=(14, 7)):
     catalog : pandas.DataFrame
         Temporal catalog (``podcode`` + ``Dataset`` columns). Scan groups are
         folded, so ``GMI_S1``/``GMI_S2`` share the ``GMI`` panel.
-    highlight : iterable of str, optional
-        Pod codes to outline in every panel — typically the pods holding the
-        widest rendezvous.
+    highlight : optional
+        Pods to outline in every panel. Either an iterable of pod codes
+        (outlined in black — typically the pods holding the widest
+        rendezvous), or an iterable of ``(podcodes, color, label)`` groups
+        drawn in order, e.g. ``[(quad_pods, 'black', '4-way'),
+        (trio_pods, 'gold', '3-way')]``. Empty groups are skipped.
     instruments : list of str, optional
         Panel order. Defaults to every instrument in ``catalog``, sorted.
     figsize : tuple, optional
@@ -332,7 +335,11 @@ def plot_pod_coverage(catalog, highlight=(), instruments=None, figsize=(14, 7)):
         instruments = sorted(folded['instrument'].unique())
 
     highlight = list(highlight)
-    highlight_geoms = pod_trixels(highlight) if highlight else None
+    if highlight and isinstance(highlight[0], str):
+        highlight = [(highlight, 'black', None)]
+    groups = [(list(pods), color, label)
+              for pods, color, label in highlight if len(list(pods))]
+    group_geoms = [(pod_trixels(pods), color) for pods, color, _ in groups]
 
     columns = 2 if len(instruments) > 1 else 1
     rows = -(-len(instruments) // columns)
@@ -343,9 +350,9 @@ def plot_pod_coverage(catalog, highlight=(), instruments=None, figsize=(14, 7)):
         pods = sorted(folded.loc[folded['instrument'] == instrument, 'podcode'].unique())
         ax.add_geometries(pod_trixels(pods), crs=ccrs.PlateCarree(),
                           facecolor=_color(instrument), edgecolor='none', alpha=0.45)
-        if highlight_geoms is not None:
-            ax.add_geometries(highlight_geoms, crs=ccrs.PlateCarree(),
-                              facecolor='none', edgecolor='black', linewidth=1.6)
+        for geoms, color in group_geoms:
+            ax.add_geometries(geoms, crs=ccrs.PlateCarree(),
+                              facecolor='none', edgecolor=color, linewidth=1.6)
         ax.add_feature(cfeature.COASTLINE, linewidth=0.4)
         ax.set_global()
         ax.set_title(f"{instrument} — {len(pods)} level-4 pods", fontsize=10)
@@ -353,9 +360,12 @@ def plot_pod_coverage(catalog, highlight=(), instruments=None, figsize=(14, 7)):
     for ax in axes.ravel()[len(instruments):]:
         ax.set_visible(False)
 
+    legend = " · ".join(
+        f"{color} = {label + ': ' if label else ''}{', '.join(pods)}"
+        for pods, color, label in groups)
     subtitle = ("Pods each instrument's chunks occupy"
-                + (f"  (black outline = {', '.join(highlight)})" if highlight else ""))
-    fig.suptitle(subtitle)
+                + (f"\n{legend}" if legend else ""))
+    fig.suptitle(subtitle, fontsize=11)
     fig.tight_layout()
     return fig
 

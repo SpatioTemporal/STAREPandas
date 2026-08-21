@@ -1260,12 +1260,13 @@ def _podcode_query_prefixes(podcode):
     stored exactly at that ancestor level rather than re-matching the query's
     own subtree — the dynamic-length mixed-level caveat, plan §4.3 / Q4).
 
-    >>> _podcode_query_prefixes("q13211")
-    ['q13211', 'q1-', 'q13-', 'q132-', 'q1321-']
+    >>> _podcode_query_prefixes("q132110")
+    ['q132110', 'q13-', 'q132-', 'q1321-', 'q13211-']
     """
     prefixes = [podcode]
     body = podcode[1:]
-    for n in range(1, len(body)):
+    # Ancestors start at the level-0 root, whose body is the 2-digit octant.
+    for n in range(2, len(body)):
         prefixes.append('q' + body[:n] + '-')
     return prefixes
 

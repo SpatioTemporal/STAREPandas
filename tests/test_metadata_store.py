@@ -216,13 +216,13 @@ def test_partition_row_carries_temporal_range_and_podcode():
         data_level="L1C",
         t_start=datetime.datetime(2024, 1, 15, 0, 1, 30),
         t_end=datetime.datetime(2024, 1, 15, 0, 3, 45),
-        podcode="q13211",
+        podcode="q132110",
     )
     tup = row.as_insert_tuple()
     assert len(tup) == 10
     assert tup[7] == datetime.datetime(2024, 1, 15, 0, 1, 30)  # t_start
     assert tup[8] == datetime.datetime(2024, 1, 15, 0, 3, 45)  # t_end
-    assert tup[9] == "q13211"                                  # podcode
+    assert tup[9] == "q132110"                                  # podcode
     assert tup[7] <= tup[8]
 
 

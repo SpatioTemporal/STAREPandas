@@ -121,7 +121,7 @@ def _validate_pod_prefix(podcode):
     podcode_to_sid(podcode)                  # grammar check (raises ValueError)
     if len(podcode) > podcode_prefix_length(MAX_PARTITION_LEVEL):
         raise ValueError(
-            f"pod code {podcode!r} (level {len(podcode) - 2}) is finer than "
+            f"pod code {podcode!r} (level {len(podcode) - 3}) is finer than "
             f"the partition level {MAX_PARTITION_LEVEL} — chunks are "
             f"cataloged at pods of at most that level, so it can never match "
             f"one; pass the covering level-{MAX_PARTITION_LEVEL} (or coarser) "

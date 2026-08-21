@@ -345,9 +345,9 @@ def test_finish_temporal_catalog_parses_mixed_precision_and_null():
     ``.%f`` format inferred from the first row rejected the rest; ISO8601 does
     not. ``None`` (null-range chunks) parses to ``NaT``."""
     rows = [
-        ('q13011', 'GMI_S1', '2025-01-01T04:36:55', '2025-01-01T04:36:57.123456'),
-        ('q13012', 'GMI_S1', '2025-01-01T04:36:55.500000', '2025-01-01T04:37:00'),
-        ('q13013', 'GMI_S1', None, None),
+        ('q013011', 'GMI_S1', '2025-01-01T04:36:55', '2025-01-01T04:36:57.123456'),
+        ('q013012', 'GMI_S1', '2025-01-01T04:36:55.500000', '2025-01-01T04:37:00'),
+        ('q013013', 'GMI_S1', None, None),
     ]
     df = _finish_temporal_catalog(rows)
 

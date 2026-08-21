@@ -591,8 +591,8 @@ class LocalStarePodsDemo:
 
         <local_root>/
         ├── metadata.db                          # SQLite — PodsMetadata table
-        └── q13/q132/q1321/q13211/
-            └── q13211-<granule_basename>-<dataset>.parquet  # one chunk per pod
+        └── q13/q132/q1321/q13211/q132110/
+            └── q132110-<granule_basename>-<dataset>.parquet  # one chunk per pod
 
     Parameters
     ----------

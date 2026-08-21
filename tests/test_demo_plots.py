@@ -7,18 +7,22 @@ came back as a polygon spanning ~357° the wrong way round — which painted a
 band clean across the world map at that trixel's latitude.
 """
 
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
 import pandas as pd
 import pytest
 
 from starepandas.demo_plots import (
-    pod_trixels, rendezvous_examples, rendezvous_of_size, widest_rendezvous,
+    plot_pod_coverage, pod_trixels, rendezvous_examples, rendezvous_of_size,
+    widest_rendezvous,
 )
 from starepandas.overlap import rendezvous_events
 
 # Level-4 pods whose trixels straddle the antimeridian (their corners sit on
 # both sides of ±180°), and one that does not.
-ANTIMERIDIAN_PODS = ['q23233', 'q20123', 'q21133']
-INTERIOR_POD = 'q03203'
+ANTIMERIDIAN_PODS = ['q023233', 'q020123', 'q021133']
+INTERIOR_POD = 'q003203'
 
 
 def parts(geometry):
@@ -63,14 +67,14 @@ def test_pod_trixels_preserves_order_and_length():
 
 def test_no_pod_of_a_realistic_set_spans_the_globe():
     """A whole octant's worth of level-4 pods, none of them smeared."""
-    podcodes = [f'q2{a}{b}{c}{d}' for a in range(4) for b in range(4)
+    podcodes = [f'q02{a}{b}{c}{d}' for a in range(4) for b in range(4)
                 for c in range(4) for d in range(4)]
     assert max(lon_span(g) for g in pod_trixels(podcodes)) < 180
 
 
 def test_widest_rendezvous_picks_the_widest_and_its_completion():
     catalog = pd.DataFrame({
-        'podcode': ['q03200'] * 3 + ['q03201'] * 2,
+        'podcode': ['q003200'] * 3 + ['q003201'] * 2,
         'Dataset': ['GMI_S1', 'SSMIS_S1', 'ATMS_S1', 'GMI_S1', 'SSMIS_S1'],
         't_start': pd.to_datetime([
             '2025-01-01 00:00', '2025-01-01 00:10', '2025-01-01 00:20',
@@ -83,7 +87,7 @@ def test_widest_rendezvous_picks_the_widest_and_its_completion():
     })
     events = rendezvous_events(catalog, pd.Timedelta(minutes=45))
     podcode, meeting, n_way = widest_rendezvous(events)
-    assert (podcode, n_way) == ('q03200', 3)
+    assert (podcode, n_way) == ('q003200', 3)
     # The rendezvous completes when the last of the three arrives.
     assert meeting == pd.Timestamp('2025-01-01 00:20')
 
@@ -114,12 +118,12 @@ def _catalog(rows):
 def _mixed_catalog():
     """One pod with a genuine 3-way, two pods with only pairs."""
     return _catalog([
-        # q00000 — three instruments, all within the window.
-        ('q00000', 'GMI_S1', '00:00'), ('q00000', 'SSMIS_S1', '00:05'),
-        ('q00000', 'ATMS_S1', '00:10'),
-        # q00001 / q00002 — pairs only.
-        ('q00001', 'GMI_S1', '00:00'), ('q00001', 'SSMIS_S1', '00:05'),
-        ('q00002', 'GMI_S1', '00:00'), ('q00002', 'AMSR2_S1', '00:05'),
+        # q000000 — three instruments, all within the window.
+        ('q000000', 'GMI_S1', '00:00'), ('q000000', 'SSMIS_S1', '00:05'),
+        ('q000000', 'ATMS_S1', '00:10'),
+        # q000001 / q000002 — pairs only.
+        ('q000001', 'GMI_S1', '00:00'), ('q000001', 'SSMIS_S1', '00:05'),
+        ('q000002', 'GMI_S1', '00:00'), ('q000002', 'AMSR2_S1', '00:05'),
     ])
 
 
@@ -131,12 +135,12 @@ def test_size_two_never_returns_a_pod_that_also_holds_a_trio():
     """The whole point of 'exactly n' — else a 2-way is drawn with 3 swaths."""
     podcode, _meeting, n_way = rendezvous_of_size(_events(), 2)
     assert n_way == 2
-    assert podcode in {'q00001', 'q00002'}
+    assert podcode in {'q000001', 'q000002'}
 
 
 def test_size_three_finds_the_trio_pod():
     podcode, meeting, n_way = rendezvous_of_size(_events(), 3)
-    assert (podcode, n_way) == ('q00000', 3)
+    assert (podcode, n_way) == ('q000000', 3)
     assert meeting == pd.Timestamp('2025-01-01 00:10')
 
 
@@ -158,13 +162,13 @@ def test_selection_is_deterministic():
 def test_metadata_breaks_the_tie_towards_the_larger_footprint():
     """Without footprints the pair pods tie; num_rows must decide."""
     metadata = pd.DataFrame({
-        'podcode': ['q00001', 'q00001', 'q00002', 'q00002'],
+        'podcode': ['q000001', 'q000001', 'q000002', 'q000002'],
         'Dataset': ['GMI_S1', 'SSMIS_S1', 'GMI_S1', 'AMSR2_S1'],
-        # q00002's smallest participant (900) beats q00001's (10).
+        # q000002's smallest participant (900) beats q000001's (10).
         'num_rows': [5000, 10, 5000, 900],
     })
     podcode, _meeting, n_way = rendezvous_of_size(_events(), 2, metadata=metadata)
-    assert (podcode, n_way) == ('q00002', 2)
+    assert (podcode, n_way) == ('q000002', 2)
 
 
 # ----- several examples of one width -----------------------------------------
@@ -172,16 +176,16 @@ def test_metadata_breaks_the_tie_towards_the_larger_footprint():
 def _repeated_combination_events():
     """Two pods hold GMI+SSMIS, a third holds GMI+AMSR2."""
     return rendezvous_events(_catalog([
-        ('q00001', 'GMI_S1', '00:00'), ('q00001', 'SSMIS_S1', '00:05'),
-        ('q00003', 'GMI_S1', '00:00'), ('q00003', 'SSMIS_S1', '00:05'),
-        ('q00002', 'GMI_S1', '00:00'), ('q00002', 'AMSR2_S1', '00:05'),
+        ('q000001', 'GMI_S1', '00:00'), ('q000001', 'SSMIS_S1', '00:05'),
+        ('q000003', 'GMI_S1', '00:00'), ('q000003', 'SSMIS_S1', '00:05'),
+        ('q000002', 'GMI_S1', '00:00'), ('q000002', 'AMSR2_S1', '00:05'),
     ]), pd.Timedelta(minutes=45))
 
 
 def _footprints(amsr2_pixels=1000):
-    """q00003 is the most legible GMI+SSMIS pod; q00002 the only GMI+AMSR2."""
+    """q000003 is the most legible GMI+SSMIS pod; q000002 the only GMI+AMSR2."""
     return pd.DataFrame({
-        'podcode': ['q00001', 'q00001', 'q00003', 'q00003', 'q00002', 'q00002'],
+        'podcode': ['q000001', 'q000001', 'q000003', 'q000003', 'q000002', 'q000002'],
         'Dataset': ['GMI_S1', 'SSMIS_S1', 'GMI_S1', 'SSMIS_S1',
                     'GMI_S1', 'AMSR2_S1'],
         'num_rows': [5000, 3000, 5000, 4000, 5000, amsr2_pixels],
@@ -192,16 +196,16 @@ def test_examples_prefers_a_second_combination_over_a_second_pod():
     """Three pods of the same pair tell one story three times."""
     picked = rendezvous_examples(_repeated_combination_events(), 2, count=2,
                                  metadata=_footprints())
-    # Ranked by legibility alone this would be q00003 then q00001 — both
-    # GMI+SSMIS. The lower-scoring q00002 wins its place by being a *different*
+    # Ranked by legibility alone this would be q000003 then q000001 — both
+    # GMI+SSMIS. The lower-scoring q000002 wins its place by being a *different*
     # pair.
-    assert [p for p, _, _ in picked] == ['q00003', 'q00002']
+    assert [p for p, _, _ in picked] == ['q000003', 'q000002']
 
 
 def test_examples_returns_every_pod_when_count_exceeds_the_combinations():
     picked = rendezvous_examples(_repeated_combination_events(), 2, count=3,
                                  metadata=_footprints())
-    assert [p for p, _, _ in picked] == ['q00003', 'q00002', 'q00001']
+    assert [p for p, _, _ in picked] == ['q000003', 'q000002', 'q000001']
 
 
 def test_examples_never_returns_more_than_the_catalog_holds():
@@ -213,14 +217,14 @@ def test_examples_never_returns_more_than_the_catalog_holds():
 
 def test_a_sliver_pod_is_held_back_but_used_rather_than_returning_fewer():
     """The legibility floor ranks examples; it must not shrink the answer."""
-    slivered = _footprints(amsr2_pixels=10)   # q00002's AMSR2 barely clips
+    slivered = _footprints(amsr2_pixels=10)   # q000002's AMSR2 barely clips
     two = rendezvous_examples(_repeated_combination_events(), 2, count=2,
                               metadata=slivered)
-    assert [p for p, _, _ in two] == ['q00003', 'q00001'], \
+    assert [p for p, _, _ in two] == ['q000003', 'q000001'], \
         "the sliver pod must lose to a repeat of a legible combination"
     three = rendezvous_examples(_repeated_combination_events(), 2, count=3,
                                 metadata=slivered)
-    assert [p for p, _, _ in three] == ['q00003', 'q00001', 'q00002'], \
+    assert [p for p, _, _ in three] == ['q000003', 'q000001', 'q000002'], \
         "but it is still better than showing only two examples"
 
 
@@ -244,7 +248,7 @@ def test_window_counts_only_the_chunks_present_at_the_rendezvous():
     """
     events = _repeated_combination_events()          # every meeting at 00:05
     metadata = _footprints()
-    # q00002's AMSR2 chunk spans four hours around the meeting; only a
+    # q000002's AMSR2 chunk spans four hours around the meeting; only a
     # sliver of it is anywhere near. The others are tight on the meeting.
     metadata['t_start'] = ['2025-01-01 00:00'] * 4 + ['2025-01-01 00:00',
                                                       '2025-01-01 00:00']
@@ -255,13 +259,13 @@ def test_window_counts_only_the_chunks_present_at_the_rendezvous():
     unscoped = rendezvous_examples(events, 2, count=1, metadata=metadata)
     scoped = rendezvous_examples(events, 2, count=1, metadata=metadata,
                                  window=window)
-    # Unscoped, q00002 is a legible alternative pair and leads the round-robin
+    # Unscoped, q000002 is a legible alternative pair and leads the round-robin
     # of its own combination; scoped, its 1000 rows shrink to a sliver.
-    assert unscoped[0][0] == 'q00003'
-    assert scoped[0][0] == 'q00003'
+    assert unscoped[0][0] == 'q000003'
+    assert scoped[0][0] == 'q000003'
     two_scoped = [p for p, _, _ in rendezvous_examples(
         events, 2, count=2, metadata=metadata, window=window)]
-    assert two_scoped == ['q00003', 'q00001'], \
+    assert two_scoped == ['q000003', 'q000001'], \
         "the long-envelope pod must lose its place to a legible repeat"
 
 
@@ -270,7 +274,7 @@ def test_window_scoping_is_skipped_when_the_catalog_has_no_timestamps():
     picked = rendezvous_examples(_repeated_combination_events(), 2, count=2,
                                  metadata=_footprints(),
                                  window=pd.Timedelta(minutes=6))
-    assert [p for p, _, _ in picked] == ['q00003', 'q00002']
+    assert [p for p, _, _ in picked] == ['q000003', 'q000002']
 
 
 def test_examples_and_the_single_pod_helper_agree():
@@ -283,3 +287,32 @@ def test_examples_and_the_single_pod_helper_agree():
 def test_examples_raises_for_an_absent_width():
     with pytest.raises(ValueError, match='exactly 4'):
         rendezvous_examples(_events(), 4, count=2)
+
+
+# ── plot_pod_coverage highlight groups ───────────────────────────────────────
+
+def _tiny_catalog():
+    return pd.DataFrame({
+        'podcode': ['q003200', 'q003203', 'q123333'],
+        'Dataset': ['GMI_S1', 'GMI_S1', 'SSMIS_S1'],
+    })
+
+
+def test_coverage_highlight_accepts_a_plain_pod_list():
+    """The pre-existing form — a list of pod codes — still outlines in black."""
+    fig = plot_pod_coverage(_tiny_catalog(), highlight=['q003200'])
+    assert 'black = q003200' in fig._suptitle.get_text()
+    plt.close(fig)
+
+
+def test_coverage_highlight_accepts_labelled_color_groups():
+    fig = plot_pod_coverage(_tiny_catalog(), highlight=[
+        (['q003200', 'q003203'], 'black', '4-way'),
+        (['q123333'], 'gold', '3-way examples'),
+        ([], 'darkgreen', '2-way examples'),   # empty group: skipped entirely
+    ])
+    text = fig._suptitle.get_text()
+    assert 'black = 4-way: q003200, q003203' in text
+    assert 'gold = 3-way examples: q123333' in text
+    assert 'darkgreen' not in text
+    plt.close(fig)

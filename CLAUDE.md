@@ -101,17 +101,23 @@ local disk** — with self-describing filenames. This replaced the earlier
 "unified HTM-tree" layout (task-12, 2026-05-25); S3 and local now **diverge**.
 See `docs/quaternary_storage_plan.md` (local/uncommitted) for the full design.
 
-A **pod code** is a compact, dynamic-length base-4 string for a trixel:
-`q` + octant(0-7) + one quaternary digit(0-3) per level. Its length follows the
-trixel's actual STARE level (level-2 → `q132`; level-4 → `q13211`). It encodes
-the same address the old `Q00_1/Q01_3/Q02_2/Q03_1/Q04_1` chain did.
+A **pod code** is a compact, dynamic-length, **uniformly base-4** string for a
+trixel: `q` + two root digits (d0 ∈ {0,1}, d1 ∈ {0-3}; `octant = d0·4 + d1`) +
+one quaternary digit(0-3) per level — every digit is one 4-way step. Its length
+follows the trixel's actual STARE level (`level + 3` chars: level-2 → `q1321`;
+level-4 → `q132110`). It encodes the same address the old
+`Q00_1/Q01_3/Q02_2/Q03_1/Q04_1` chain did. (Pre-2026-08-21 codes used a single
+base-8 octant digit — `q03200` — one char shorter per level; the two formats
+are indistinguishable by inspection when the old octant digit was 0-1, so the
+cutover wiped + re-ingested every store, and old/new codes must never share a
+prefix or catalog.)
 
 ```
 LOCAL (hierarchical — cumulative pod-code dir tree, self-describing leaf):
-  <root>/q13/q132/q1321/q13211/q13211-<granule_basename>-<dataset>.parquet
+  <root>/q13/q132/q1321/q13211/q132110/q132110-<granule_basename>-<dataset>.parquet
 
 S3 (FLAT — every chunk directly under the storage prefix; pod code IS the key prefix):
-  s3://zarrpods/storage/q13211-<granule_basename>-<dataset>.parquet
+  s3://zarrpods/storage/q132110-<granule_basename>-<dataset>.parquet
                        └─ default_s3_prefix (.config field) ─┘
 ```
 
@@ -433,7 +439,50 @@ pip install -e .
 
 ---
 
-*Last Updated: 2026-08-07f (**steps 12/13/14 build up 2- → 3- → 4-way, with
+*Last Updated: 2026-08-21 (**uniform quaternary pod codes — 2-digit root**.
+The pod-code grammar's one base-8 digit (the level-0 octant) became two
+quaternary digits: `q` + `d0∈{0,1}` + `d1∈{0-3}` with `octant = d0·4 + d1`, so
+*every* digit is now one 4-way step. `podcode_prefix_length(level)` = `level+3`
+(was `+2`); level-4 codes are 7 chars (`q03200 → q003200`, `q63333 → q123333`);
+`d0∈{2,3}` invalid. Old codes with leading 2-7 are rejected with an explicit
+pre-2026-08-21 hint; old codes with leading 0/1 are *indistinguishable* from
+new codes (an old level-4 parses as a new level-3), so this was a **hard
+cutover**: every store we own was wiped + re-ingested (local
+`/tmp/stare_pods_local`; S3+RDS `gmi-demo-parquet` 7,156 chunks re-ingested
+from the host, `loadtest-jan/storage` 14,225 via cloud job `971b946c` — 10/10,
+0 failed, on the redeployed worker; 2,000 keys sampled, all 7-char
+grammar-valid). Codec changes are confined to `sid_to_podcode` /
+`podcode_to_sid` / `podcode_prefix_length`; `podcode_to_local_dirs` rode
+through unchanged and now naturally emits the level-0 root dir (`q13/…`), and
+the only two call sites with old-grammar arithmetic were
+`_podcode_query_prefixes` (ancestor loop now starts at the 2-digit root — the
+old start emitted an impossible 1-digit-body `q0-` prefix) and an `overlap.py`
+error message (`len-2 → len-3`). **Two operational traps recorded:** (1) the
+worker Dockerfile installs a pre-built wheel from `infra/worker/dist/`, so a
+rebuild without `python setup.py bdist_wheel` first silently cache-hits the
+old image byte-for-byte (same digest) — the push only went out after the wheel
+rebuild (digest `8736fd06… → 2a40d17e…`); (2) SSMIS granule
+`…S112813-E131004` is in **both** the example-demo set and the 10-granule
+loadtest set, and `pods_unique(Dataset, "RawData Collected Time", grouped_id)`
+rows carry a single `group_path` — running the two ingests concurrently let
+the loadtest's DO UPDATE steal the demo's 1,469 SSMIS rows (scoped catalog
+5,687, sweep 403 pods instead of 442) until a re-ingest of that one granule
+re-claimed them. Whichever job ingests a shared granule *last* owns its
+catalog rows; the loadtest root's 12,756-rows-vs-14,225-objects gap is this
+same overlap and is the historical steady state. All analytics verified
+identical to pre-cutover modulo spelling: 442 pods at Δt=45 min
+({2: 442, 3: 101, 4: 2}), AMSR2–ATMS 359, 4-way pods `q003200`/`q003203`,
+pixel counts 139/578/146/9573, local == S3 row for row. Tests: all literal
+codes updated across 10 test files; +2 new (all-8-roots round-trip `q00…q13`,
+old-format rejection hint). Docs: grammar section above, CONTEXT.md,
+`docs/quaternary_storage_plan.md` amendment banner (its 2026-06-14 examples
+stay historical), both video-script docs incl. spoken forms
+("q-zero-zero-three-two-zero-zero"); MP4s not regenerated (scripts-only per
+user). Basic verify script's fixture codes updated; the STARE-PODS script
+needed nothing (derives every code from the codec). Suite 376 green, basic
+8/8, STARE-PODS 14/14 online.)*
+
+*Prior: 2026-08-07f (**steps 12/13/14 build up 2- → 3- → 4-way, with
 several examples each**. The three rendezvous steps ran widest-first and showed
 **one** pod apiece, so the narrowest case came last and every width rested on a
 single example. Reordered to 2 → 3 → 4 (a demo should build up, not down) and

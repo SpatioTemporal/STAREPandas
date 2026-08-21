@@ -79,7 +79,7 @@ def _seed_two_roots(tmp_path):
     db = str(tmp_path / 'metadata.db')
     conn = _ensure_sqlite_db_and_table(db)
     for grouped_id, (root, pod) in enumerate(
-            (('/data/mine', 'q03200'), ('/data/other', 'q03201')), start=1):
+            (('/data/mine', 'q003200'), ('/data/other', 'q003201')), start=1):
         conn.execute(
             'INSERT INTO "PodsMetadata" '
             '("Dataset", "DataLevel", "RawData Collected Time", grouped_id, '
@@ -98,13 +98,13 @@ def test_temporal_catalog_selects_only_the_named_root(tmp_path):
     db = _seed_two_roots(tmp_path)
     assert len(load_local_temporal_catalog(db)) == 2
     mine = load_local_temporal_catalog(db, path_prefix='/data/mine')
-    assert list(mine['podcode']) == ['q03200']
+    assert list(mine['podcode']) == ['q003200']
 
 
 def test_metadata_loader_selects_only_the_named_root(tmp_path):
     db = _seed_two_roots(tmp_path)
     mine = load_local_metadata(db, path_prefix='/data/other')
-    assert list(mine['podcode']) == ['q03201']
+    assert list(mine['podcode']) == ['q003201']
 
 
 def test_a_root_matching_nothing_yields_an_empty_frame(tmp_path):
@@ -125,7 +125,7 @@ def test_path_prefix_composes_with_period(tmp_path):
     hit = load_local_temporal_catalog(
         db, path_prefix='/data/mine',
         period=(pd.Timestamp('2025-01-01 00:00'), pd.Timestamp('2025-01-01 00:05')))
-    assert list(hit['podcode']) == ['q03200']
+    assert list(hit['podcode']) == ['q003200']
     miss = load_local_temporal_catalog(
         db, path_prefix='/data/mine',
         period=(pd.Timestamp('2025-02-01 00:00'), pd.Timestamp('2025-02-01 00:05')))
@@ -156,8 +156,8 @@ def test_reconstitute_from_s3_accepts_a_granule_name():
 def test_granule_marker_is_bracketed_by_separators():
     """The filter must not match a granule that merely *contains* the name."""
     frame = pd.DataFrame({'group_path': [
-        's3://b/p/q03200-1C.GPM.GMI.20250101-S112952.061572.V07B-GMI_S1.parquet',
-        's3://b/p/q03200-1C.GPM.GMI.20250101-S204910.061578.V07B-GMI_S1.parquet',
+        's3://b/p/q003200-1C.GPM.GMI.20250101-S112952.061572.V07B-GMI_S1.parquet',
+        's3://b/p/q003200-1C.GPM.GMI.20250101-S204910.061578.V07B-GMI_S1.parquet',
     ]})
     wanted = '1C.GPM.GMI.20250101-S112952.061572.V07B'
     hits = frame[frame['group_path'].str.contains(f'-{wanted}-', regex=False)]

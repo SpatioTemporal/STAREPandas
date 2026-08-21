@@ -16,7 +16,7 @@ Seams:
 
 The level → prefix-length mapping is centralized next to the pod-code codec
 (:func:`starepandas.staredataframe.podcode_prefix_length`) so it cannot drift
-from the grammar: ``'q'`` + octant + one quaternary digit per level.
+from the grammar: ``'q'`` + two root digits + one quaternary digit per level.
 """
 
 import inspect
@@ -56,9 +56,9 @@ def _hours(h):
 
 def _fixture_catalog():
     """Six level-4 chunks across two octant-1 subtrees and one octant-2 pod;
-    one chunk (in q1320…) has a null temporal range."""
+    one chunk (in q01320…) has a null temporal range."""
     return pd.DataFrame({
-        'podcode': ['q13211', 'q13211', 'q13210', 'q13201', 'q13011', 'q20123'],
+        'podcode': ['q013211', 'q013211', 'q013210', 'q013201', 'q013011', 'q020123'],
         'Dataset': ['GMI_S1'] * 6,
         't_start': [_hours(0), _hours(5), _hours(2), pd.NaT, _hours(1), _hours(7)],
         't_end':   [_hours(1), _hours(6), _hours(3), pd.NaT, _hours(2), _hours(8)],
@@ -71,8 +71,8 @@ def _fixture_catalog():
 def test_prefix_length_matches_codec():
     """prefix length at a level == length of a pod code the codec emits at
     that level — the 'cannot drift' contract."""
-    for podcode in ('q1', 'q13', 'q132', 'q1321', 'q13211'):
-        level = len(podcode) - 2
+    for podcode in ('q13', 'q132', 'q1321', 'q13211', 'q132110'):
+        level = len(podcode) - 3
         assert podcode_prefix_length(level) == len(podcode)
         assert len(sid_to_podcode(podcode_to_sid(podcode))) == \
             podcode_prefix_length(level)
@@ -95,16 +95,16 @@ def test_rollup_union_range_matches_manual_aggregation():
     vcf = vcf_rollup(catalog, level=1)
 
     assert list(vcf.columns) == VCF_COLUMNS
-    assert list(vcf['podcode']) == ['q13', 'q20']
+    assert list(vcf['podcode']) == ['q013', 'q020']
 
-    q13 = vcf[vcf['podcode'] == 'q13'].iloc[0]
-    beneath = catalog[catalog['podcode'].str.startswith('q13')]
+    q13 = vcf[vcf['podcode'] == 'q013'].iloc[0]
+    beneath = catalog[catalog['podcode'].str.startswith('q013')]
     assert q13['t_start'] == beneath['t_start'].min()   # NaT-skipping min
     assert q13['t_end'] == beneath['t_end'].max()
     assert q13['t_start'] == _hours(0)
     assert q13['t_end'] == _hours(6)
 
-    q20 = vcf[vcf['podcode'] == 'q20'].iloc[0]
+    q20 = vcf[vcf['podcode'] == 'q020'].iloc[0]
     assert q20['t_start'] == _hours(7)
     assert q20['t_end'] == _hours(8)
 
@@ -112,45 +112,46 @@ def test_rollup_union_range_matches_manual_aggregation():
 def test_rollup_child_count_counts_chunks_and_reports_missing_ranges():
     vcf = vcf_rollup(_fixture_catalog(), level=1).set_index('podcode')
     # Null-range chunks count as children but are noted as range-less.
-    assert vcf.loc['q13', 'n_chunks'] == 5
-    assert vcf.loc['q13', 'n_without_range'] == 1
-    assert vcf.loc['q20', 'n_chunks'] == 1
-    assert vcf.loc['q20', 'n_without_range'] == 0
+    assert vcf.loc['q013', 'n_chunks'] == 5
+    assert vcf.loc['q013', 'n_without_range'] == 1
+    assert vcf.loc['q020', 'n_chunks'] == 1
+    assert vcf.loc['q020', 'n_without_range'] == 0
 
 
 def test_rollup_at_leaf_level_returns_per_chunk_pods():
     catalog = _fixture_catalog()
     vcf = vcf_rollup(catalog, level=MAX_PARTITION_LEVEL).set_index('podcode')
 
-    assert len(vcf) == 5                    # q13211 holds two chunks
-    assert vcf.loc['q13211', 'n_chunks'] == 2
-    assert vcf.loc['q13211', 't_start'] == _hours(0)
-    assert vcf.loc['q13211', 't_end'] == _hours(6)
-    assert vcf.loc['q13011', 'n_chunks'] == 1
+    assert len(vcf) == 5                    # q013211 holds two chunks
+    assert vcf.loc['q013211', 'n_chunks'] == 2
+    assert vcf.loc['q013211', 't_start'] == _hours(0)
+    assert vcf.loc['q013211', 't_end'] == _hours(6)
+    assert vcf.loc['q013011', 'n_chunks'] == 1
 
 
 def test_rollup_intermediate_level_splits_subtrees():
     vcf = vcf_rollup(_fixture_catalog(), level=3).set_index('podcode')
-    assert set(vcf.index) == {'q1321', 'q1320', 'q1301', 'q2012'}
-    # q1320 holds only the null-range chunk → union range is null.
-    assert pd.isna(vcf.loc['q1320', 't_start'])
-    assert pd.isna(vcf.loc['q1320', 't_end'])
-    assert vcf.loc['q1320', 'n_chunks'] == 1
-    assert vcf.loc['q1320', 'n_without_range'] == 1
+    assert set(vcf.index) == {'q01321', 'q01320', 'q01301', 'q02012'}
+    # q01320 holds only the null-range chunk → union range is null.
+    assert pd.isna(vcf.loc['q01320', 't_start'])
+    assert pd.isna(vcf.loc['q01320', 't_end'])
+    assert vcf.loc['q01320', 'n_chunks'] == 1
+    assert vcf.loc['q01320', 'n_without_range'] == 1
 
 
 def test_rollup_subtree_scopes_to_prefix():
-    vcf = vcf_rollup(_fixture_catalog(), level=4, subtree='q132')
-    assert set(vcf['podcode']) == {'q13211', 'q13210', 'q13201'}
-    vcf_deep = vcf_rollup(_fixture_catalog(), level=4, subtree='q13211')
-    assert list(vcf_deep['podcode']) == ['q13211']
-    assert vcf_rollup(_fixture_catalog(), level=4, subtree='q3').empty
+    vcf = vcf_rollup(_fixture_catalog(), level=4, subtree='q0132')
+    assert set(vcf['podcode']) == {'q013211', 'q013210', 'q013201'}
+    vcf_deep = vcf_rollup(_fixture_catalog(), level=4, subtree='q013211')
+    assert list(vcf_deep['podcode']) == ['q013211']
+    assert vcf_rollup(_fixture_catalog(), level=4, subtree='q03').empty
 
 
 def test_rollup_rejects_invalid_subtree():
     # 'q٣3' has an Arabic-Indic THREE: int('٣') == 3, but it can never match
     # the ASCII pod codes the writer emits — the grammar gate must reject it.
-    for bad in ('x13', 'q8', 'q14', 'q1%', '', 'q٣3'):
+    # 'q23' is an old-format single-octant-digit code (d0 must be 0-1 now).
+    for bad in ('x13', 'q8', 'q14', 'q1%', '', 'q٣3', 'q23'):
         with pytest.raises(ValueError):
             vcf_rollup(_fixture_catalog(), level=4, subtree=bad)
 
@@ -160,12 +161,12 @@ def test_rollup_rejects_subtree_deeper_than_level():
     be indistinguishable from the pod's true envelope — must raise, both in
     the pure roll-up and in the loaders' pre-query fail-fast."""
     with pytest.raises(ValueError, match='deeper'):
-        vcf_rollup(_fixture_catalog(), level=1, subtree='q13211')
+        vcf_rollup(_fixture_catalog(), level=1, subtree='q013211')
     with pytest.raises(ValueError, match='deeper'):
-        load_local_vcf('/nonexistent/never-touched.db', level=0, subtree='q132')
+        load_local_vcf('/nonexistent/never-touched.db', level=0, subtree='q0132')
     # Equal depth is the boundary and is fine (leaf-level identity).
     assert list(vcf_rollup(_fixture_catalog(), level=4,
-                           subtree='q13211')['podcode']) == ['q13211']
+                           subtree='q013211')['podcode']) == ['q013211']
 
 
 def test_rollup_raises_on_null_podcode():
@@ -181,7 +182,7 @@ def test_rollup_half_null_range_never_joins_the_union():
     """A chunk with t_start but no t_end has no usable range: it must count
     in n_without_range AND contribute neither end to the union."""
     catalog = pd.DataFrame({
-        'podcode': ['q13211', 'q13210'],
+        'podcode': ['q013211', 'q013210'],
         'Dataset': ['GMI_S1'] * 2,
         't_start': [_hours(-240), _hours(2)],   # rogue early half-null start
         't_end':   [pd.NaT, _hours(3)],

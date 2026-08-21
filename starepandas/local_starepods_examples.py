@@ -27,11 +27,17 @@ Temporal features
 
 Plots
 -----
-11. Pod coverage map — the level-4 pods each instrument's chunks occupy
+11. Pod coverage map — the level-4 pods each instrument's chunks occupy;
+    the rendezvous pods of steps 12-14 outlined (2-/3-/4-way)
 12. Three 2-way rendezvous up close — the swaths (where) beside their pass
     windows (when)
 13. Three 3-way rendezvous — the same view for trios
 14. Two 4-way rendezvous — all four instruments over one pod
+
+Spatial + temporal combined
+---------------------------
+15. Spatial+temporal intersection — a bbox region (→ STARE SIDs) ANDed with
+    the 4-way rendezvous window in a single ``find_intersecting_data`` call
 
 Usage
 -----
@@ -73,7 +79,7 @@ SSMIS_GRANULE_FILE = os.environ.get(
 
 # A pair only ever fills the n=2 column of the slide-9 table. These four
 # granules — one per instrument, all later the same day — are a verified
-# **4-way** rendezvous: over pods q03200 and q03203 the passes arrive
+# **4-way** rendezvous: over pods q003200 and q003203 the passes arrive
 # SSMIS 21:29 → AMSR2 21:46 → ATMS 21:47 → GMI 22:13, i.e. all four within
 # ~45 min. Ingesting them alongside the pair above populates every cell of
 # the slide-8 matrix and the n=2/3/4 columns of the slide-9 table from real
@@ -88,6 +94,8 @@ RENDEZVOUS_GRANULES = [
     ("GMI",   os.path.join(_GRANULE_DIR,
               "1C.GPM.GMI.XCAL2016-C.20250101-S204910-E222221.061578.V07B.HDF5")),
 ]
+
+INSTRUMENTS = ["GMI", "SSMIS", "AMSR2", "ATMS"]
 
 # Coincidence window for step 10. The four passes above span ~45 min, so a
 # narrower window still shows 2- and 3-way rendezvous but no 4-way; step 10
@@ -141,6 +149,13 @@ PLOT_DIR = "/tmp/stare_pods_plots"
 # which inflates the reconstituted HDF5 (e.g. 3× the expected scan count).
 # Keep True unless you intentionally want to append more granules.
 CLEAN_BEFORE_RUN = True
+
+# Reuse whatever a previous run already ingested under LOCAL_ROOT instead of
+# wiping and re-ingesting (~85 s). On by default, like the S3 demo's flag;
+# run with STAREPODS_SKIP_INGEST=0 to force a fresh ingest (the verification
+# script does exactly that, so its end-to-end check still exercises ingest).
+# When skipping, the CLEAN_BEFORE_RUN wipe is skipped too.
+SKIP_INGEST = os.environ.get("STAREPODS_SKIP_INGEST", "1") != "0"
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -167,7 +182,7 @@ def main():
     print()
 
     # ── Clean up previous run ─────────────────────────────────────────────────
-    if CLEAN_BEFORE_RUN and os.path.exists(LOCAL_ROOT):
+    if CLEAN_BEFORE_RUN and not SKIP_INGEST and os.path.exists(LOCAL_ROOT):
         import shutil
         print(f"Cleaning up {LOCAL_ROOT} (CLEAN_BEFORE_RUN=True) ...")
         shutil.rmtree(LOCAL_ROOT)
@@ -179,14 +194,27 @@ def main():
     print("=" * 60)
     print("Step 1: Ingest granules → local Parquet + SQLite")
     print("=" * 60)
-    local_paths = demo.ingest_granules(GRANULE_FILE, instrument='GMI', level=STARE_LEVEL)
-    print(f"GMI  : written {len(local_paths)} scan path(s).")
-    ssmis_paths = demo.ingest_granules(SSMIS_GRANULE_FILE, instrument='SSMIS', level=STARE_LEVEL)
-    print(f"SSMIS: written {len(ssmis_paths)} scan path(s).")
-    for instrument, path in RENDEZVOUS_GRANULES:
-        paths = demo.ingest_granules(path, instrument=instrument, level=STARE_LEVEL)
-        print(f"{instrument:5s}: written {len(paths)} scan path(s).  "
-              f"({os.path.basename(path)})")
+    if SKIP_INGEST:
+        from starepandas.io.granules import load_local_temporal_catalog
+        existing = (load_local_temporal_catalog(demo.db_path)
+                    if os.path.exists(demo.db_path) else pd.DataFrame())
+        if existing.empty:
+            raise RuntimeError(
+                f"SKIP_INGEST is on but nothing is stored under {LOCAL_ROOT}. "
+                f"Run with STAREPODS_SKIP_INGEST=0 to ingest the granules first."
+            )
+        print(f"SKIP_INGEST=True — reusing the {len(existing)} chunk(s) already "
+              f"under {LOCAL_ROOT}, across {existing['Dataset'].nunique()} dataset(s).")
+        print("Run with STAREPODS_SKIP_INGEST=0 to re-ingest from the granule files.")
+    else:
+        local_paths = demo.ingest_granules(GRANULE_FILE, instrument='GMI', level=STARE_LEVEL)
+        print(f"GMI  : written {len(local_paths)} scan path(s).")
+        ssmis_paths = demo.ingest_granules(SSMIS_GRANULE_FILE, instrument='SSMIS', level=STARE_LEVEL)
+        print(f"SSMIS: written {len(ssmis_paths)} scan path(s).")
+        for instrument, path in RENDEZVOUS_GRANULES:
+            paths = demo.ingest_granules(path, instrument=instrument, level=STARE_LEVEL)
+            print(f"{instrument:5s}: written {len(paths)} scan path(s).  "
+                  f"({os.path.basename(path)})")
     print()
 
     # ── Step 2: Find intersecting data ────────────────────────────────────────
@@ -268,7 +296,7 @@ def main():
     )
     from starepandas.overlap import (
         rendezvous_events, overlap_matrix, overlap_pod_table, pair_drilldown,
-        pod_drilldown,
+        pod_drilldown, fold_instrument,
     )
 
     # ── Step 7: Temporal catalog columns ──────────────────────────────────────
@@ -332,7 +360,7 @@ def main():
         by_n = {int(n): int(table[n].gt(0).sum()) for n in table.columns}
         print(f"  Δt={str(dt).split()[-1]}  {len(ev):5d} event(s)  "
               f"{ev['podcode'].nunique():4d} pod(s)   pods by n-way: {by_n}")
-    print("  (A 4-way needs Δt≥45 min: the four passes over q03200/q03203")
+    print("  (A 4-way needs Δt≥45 min: the four passes over q003200/q003203")
     print("   arrive SSMIS 21:29 → AMSR2 21:46 → ATMS 21:47 → GMI 22:13.)")
     print()
 
@@ -367,21 +395,41 @@ def main():
     # PLOTS
     # ══════════════════════════════════════════════════════════════════════════
     from starepandas.demo_plots import (
-        plot_pod_coverage, plot_rendezvous, pod_pixels, rendezvous_examples,
+        plot_pod_coverage, plot_rendezvous, pod_pixels, pod_trixels,
+        rendezvous_examples,
     )
 
     # ── Step 11: Pod coverage map ─────────────────────────────────────────────
     print("=" * 60)
     print("Step 11: Where each instrument flew — pod coverage map")
     print("=" * 60)
+    # The pods steps 12-14 visit up close are outlined here so they can be
+    # located on the world map: every 4-way pod in black, and the 3-way /
+    # 2-way *example* pods in darkred / darkgreen. (Outlining every pod of a
+    # width would blanket the map — 341 pods hold a 2-way.) The examples are
+    # selected once, before the map, and steps 12-14 reuse the same picks.
+    demo_meta = load_local_metadata(demo.db_path)
+    examples_by_width = {
+        n_way: rendezvous_examples(events, n_way, count=wanted,
+                                   metadata=demo_meta, window=OVERLAP_DT)
+        for _, n_way, wanted in RENDEZVOUS_PLAN
+    }
     quad_pods = list(pod_table[pod_table[widest].gt(0)].index)
-    fig = plot_pod_coverage(catalog, highlight=quad_pods)
+    outlines = [
+        (quad_pods, 'black', f'{widest}-way'),
+        ([p for p, _, _ in examples_by_width.get(3, [])], 'darkred',
+         '3-way examples'),
+        ([p for p, _, _ in examples_by_width.get(2, [])], 'darkgreen',
+         '2-way examples'),
+    ]
+    fig = plot_pod_coverage(catalog, highlight=outlines)
     coverage_path = os.path.join(PLOT_DIR, "pod_coverage.png")
     os.makedirs(PLOT_DIR, exist_ok=True)
     fig.savefig(coverage_path, dpi=110)
     plt.close(fig)
     print(f"One panel per instrument, level-4 pods shaded; the {widest}-way pod(s)")
-    print(f"{quad_pods} outlined in black.")
+    print(f"{quad_pods} outlined in black, the 3-way example pods in dark red")
+    print("and the 2-way example pods in dark green.")
     print("GMI's 65° inclination confines it to a ±67° band, while the")
     print("sun-synchronous instruments run pole to pole — which is why a")
     print("4-way needs them to converge at a mid-southern latitude.")
@@ -394,7 +442,6 @@ def main():
     # rendezvous, and neither is same time. Note the granularity: co-location
     # means the same level-4 pod (~500 km across), not the same pixel, so the
     # swaths need not touch.
-    demo_meta = load_local_metadata(demo.db_path)
     for step, n_way, wanted in RENDEZVOUS_PLAN:
         print("=" * 60)
         print(f"Step {step}: {n_way}-way rendezvous up close — where *and* when")
@@ -404,8 +451,8 @@ def main():
         # across different instrument combinations, and `window` scopes the
         # legibility score to the chunks present *at* the meeting — without it
         # a pod qualifies on an instrument that crossed it on another orbit.
-        examples = rendezvous_examples(events, n_way, count=wanted,
-                                       metadata=demo_meta, window=OVERLAP_DT)
+        # Selected up front in step 11, whose map outlines these same pods.
+        examples = examples_by_width[n_way]
         print(f"{len(examples)} example(s) of a {n_way}-way "
               f"({wanted} requested):")
         for pod, meeting, _ in examples:
@@ -424,6 +471,64 @@ def main():
             plt.close(fig)
             print(f"  Written to: {rendezvous_path}")
         print()
+
+    # ── Step 15: Spatial+temporal intersection — both filters in one query ────
+    print("=" * 60)
+    print("Step 15: Spatial+temporal intersection over the 4-way pod")
+    print("=" * 60)
+    # The production question behind the rendezvous plots: "which chunks are
+    # over THIS region during THIS window?" — the spatial pod match and the
+    # data-level period filter ANDed inside one find_intersecting_data call.
+    # The region is a bbox around the 4-way pod's trixel (a scientist's query
+    # arrives as lat/lon, not as a pod code); the window is that rendezvous's
+    # own [meeting ± Δt]. Steps 2 and 8 each showed one filter alone — this is
+    # the first query to apply both at once.
+    pod, meeting, _ = examples_by_width[widest][0]
+    lon_min, lat_min, lon_max, lat_max = pod_trixels([pod]).total_bounds
+    location_sids = demo.get_sids_for_bbox(lon_min, lat_min, lon_max, lat_max,
+                                           level=STARE_LEVEL)
+    window = (meeting - OVERLAP_DT, meeting + OVERLAP_DT)
+    print(f"Region: bbox around pod {pod}'s trixel — "
+          f"lon [{lon_min:.1f}, {lon_max:.1f}], lat [{lat_min:.1f}, {lat_max:.1f}]"
+          f" → {len(location_sids)} level-{STARE_LEVEL} cover SID(s)")
+    print(f"Window: {window[0]} .. {window[1]}  "
+          f"(the {widest}-way meeting ± Δt)")
+    print()
+
+    spatial_only = demo.find_intersecting_data(location_sids, INSTRUMENTS)
+    temporal_only = load_local_metadata(demo.db_path, period=window)
+    both = demo.find_intersecting_data(location_sids, INSTRUMENTS,
+                                       period=window)
+    print(f"Temporal only (whole demo footprint in the window): "
+          f"{len(temporal_only):4d} chunk(s)")
+    print(f"Spatial only  (this region, any time of day):       "
+          f"{len(spatial_only):4d} chunk(s)")
+    print(f"Spatial AND temporal:                               "
+          f"{len(both):4d} chunk(s)")
+    print()
+    # The gap between the last two is SSMIS: its morning granule crossed the
+    # same region ~10 h before the rendezvous, so the period filter drops
+    # those chunks, while the other three instruments (one pass each over the
+    # region) keep every spatial match.
+    per_instrument = (
+        both.assign(instrument=both['Dataset'].map(fold_instrument))
+            .groupby('instrument')
+            .agg(both_filters=('podcode', 'size'),
+                 first_start=('t_start', 'min'),
+                 last_end=('t_end', 'max'))
+    )
+    per_instrument.insert(0, 'spatial_only', (
+        spatial_only.assign(
+            instrument=spatial_only['Dataset'].map(fold_instrument))
+        .groupby('instrument').size()
+    ))
+    print("Per instrument — chunks matching the region alone vs both filters,")
+    print("and the surviving pass ranges (all four inside the window):")
+    print(per_instrument.to_string())
+    print(f"\nThe surviving chunks lie in {both['podcode'].nunique()} pod(s), "
+          f"among them the {widest}-way pod(s) "
+          f"{sorted(p for p in both['podcode'].unique() if p in quad_pods)}.")
+    print()
 
     print("Done.")
 

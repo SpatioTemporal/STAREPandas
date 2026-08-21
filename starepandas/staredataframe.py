@@ -57,13 +57,23 @@ MAX_PARTITION_LEVEL = 4
 # ─────────────────────────────────────────────────────────────────────────────
 # Quaternary pod-code codec (docs/quaternary_storage_plan.md §2)
 #
-# A pod code is a compact base-4 string for a level-N trixel:
+# A pod code is a compact, *uniformly* base-4 string for a level-N trixel:
 #
-#     "q" + octant-digit(0-7) + one quaternary-digit(0-3) per refinement level
+#     "q" + root-digit d0(0-1) + root-digit d1(0-3)
+#         + one quaternary-digit(0-3) per refinement level
 #
-# Its length is *dynamic* — it follows the trixel's actual STARE level (a
-# level-2 trixel → ``q132``; a level-4 trixel → ``q13211``). It encodes the
-# same address as the old ``Q00_1/Q01_3/Q02_2/Q03_1/Q04_1`` directory chain.
+# The level-0 root — the 8 octahedron faces — takes two quaternary digits:
+# ``octant = d0*4 + d1`` (monotone in SID order, so sorting pod codes sorts
+# spatially like SIDs). ``d0 ∈ {2,3}`` is invalid (16 combinations, 8 used).
+# Every digit is one 4-way step; length is *dynamic* — it follows the
+# trixel's actual STARE level (a level-2 trixel → ``q1321``; a level-4
+# trixel → ``q132110``), i.e. ``level + 3`` characters.
+#
+# (Pre-2026-08-21 codes used a single base-8 octant digit — ``q03200`` — and
+# are one character shorter per level. The two formats are indistinguishable
+# by inspection when the old octant digit is 0-1, so old and new codes must
+# never share a storage prefix or catalog: the cutover wiped + re-ingested
+# every store, same as the 2026-06-14 ``Q00_*`` cutover before it.)
 #
 # Bit layout of a STARE SID (same as the old generate_partition_path decode):
 #   bits 0-4   : number of levels − 1  (so num_levels = (sid & 0x1F) + 1)
@@ -80,13 +90,14 @@ CHUNK_SUFFIX = '.parquet'
 def sid_to_podcode(sid: int) -> str:
     """Encode a STARE SID as a compact, dynamic-length pod code.
 
-    The pod code is ``"q"`` + the octant digit + one quaternary digit per
+    The pod code is ``"q"`` + two root digits encoding the octant
+    (``d0 = octant // 4``, ``d1 = octant % 4``) + one quaternary digit per
     refinement level; its length follows the SID's actual level.
 
     Examples
     --------
-    >>> sid_to_podcode(podcode_to_sid("q13211"))
-    'q13211'
+    >>> sid_to_podcode(podcode_to_sid("q132110"))
+    'q132110'
     """
     sid = int(sid) & 0xFFFFFFFFFFFFFFFF
     num_levels = (sid & 0x1F) + 1          # includes the octant level (level 0)
@@ -98,34 +109,46 @@ def sid_to_podcode(sid: int) -> str:
             digits.append((sid >> bit_start) & 0x3)
         else:                              # no more bits beyond level 27
             digits.append(0)
-    return 'q' + str(octant) + ''.join(str(d) for d in digits)
+    return ('q' + str(octant // 4) + str(octant % 4)
+            + ''.join(str(d) for d in digits))
 
 
 def podcode_to_sid(podcode: str) -> int:
     """Decode a pod code back to a STARE SID at the code's own level.
 
     Inverse of :func:`sid_to_podcode`. The reconstructed SID's level (bits
-    0-4) is set from the number of quaternary digits in the code.
+    0-4) is set from the number of refinement digits after the 2-digit root.
 
     Examples
     --------
-    >>> podcode_to_sid("q13211") == podcode_to_sid("q13211")
+    >>> podcode_to_sid("q132110") == podcode_to_sid("q132110")
     True
     """
     if not isinstance(podcode, str) or not podcode.startswith('q'):
         raise ValueError(f"Invalid pod code {podcode!r}: must start with 'q'")
     body = podcode[1:]
-    if not body:
-        raise ValueError(f"Invalid pod code {podcode!r}: missing octant digit")
+    if len(body) < 2:
+        raise ValueError(
+            f"Invalid pod code {podcode!r}: need two root digits (the "
+            f"level-0 octant is 'q' + d0(0-1) + d1(0-3))")
     # Membership checks, not int(): int() accepts non-ASCII Unicode digits
     # (int('٣') == 3), which would pass here yet never match the ASCII codes
     # the writer emits — and this function doubles as the grammar gate for
     # the catalog's ``podcode LIKE`` filters.
-    if body[0] not in '01234567':
-        raise ValueError(f"Octant {body[0]!r} out of range (0-7) in {podcode!r}")
-    octant = int(body[0])
+    if body[0] not in '01':
+        hint = ""
+        if body[0] in '234567':
+            hint = (" — a leading digit 2-7 suggests a pre-2026-08-21 code "
+                    "with a single base-8 octant digit; re-encode with the "
+                    "2-digit root (octant = d0*4 + d1)")
+        raise ValueError(
+            f"Root digit d0 {body[0]!r} out of range (0-1) in {podcode!r}{hint}")
+    if body[1] not in '0123':
+        raise ValueError(
+            f"Root digit d1 {body[1]!r} out of range (0-3) in {podcode!r}")
+    octant = int(body[0]) * 4 + int(body[1])
     digits = []
-    for ch in body[1:]:
+    for ch in body[2:]:
         if ch not in '0123':
             raise ValueError(
                 f"Quaternary digit {ch!r} out of range (0-3) in {podcode!r}")
@@ -145,9 +168,9 @@ def podcode_to_sid(podcode: str) -> int:
 def podcode_prefix_length(level: int) -> int:
     """Length of the pod-code prefix that addresses a level-``level`` trixel.
 
-    A pod code is ``"q"`` + one octant digit + one quaternary digit per
+    A pod code is ``"q"`` + two root digits + one quaternary digit per
     refinement level (see the codec block above), so the prefix is
-    ``level + 2`` characters. This is *the* level → prefix-length mapping:
+    ``level + 3`` characters. This is *the* level → prefix-length mapping:
     grouping a catalog by ``podcode[:podcode_prefix_length(level)]`` rolls
     chunks up to their level-``level`` ancestor pod (a coarser pod code is a
     prefix of its descendants' codes). Kept next to the codec so the
@@ -156,8 +179,8 @@ def podcode_prefix_length(level: int) -> int:
     Examples
     --------
     >>> podcode_prefix_length(0)
-    2
-    >>> podcode_prefix_length(4) == len(sid_to_podcode(podcode_to_sid("q13211")))
+    3
+    >>> podcode_prefix_length(4) == len(sid_to_podcode(podcode_to_sid("q132110")))
     True
     """
     if isinstance(level, bool) or not isinstance(level, (int, np.integer)):
@@ -167,24 +190,23 @@ def podcode_prefix_length(level: int) -> int:
             f"level must be in 0..27 (the codec's refinement-level limit), "
             f"got {level}"
         )
-    return int(level) + 2
+    return int(level) + 3
 
 
 def podcode_to_local_dirs(podcode: str) -> list:
     """Cumulative pod-code directory chain for the local (hierarchical) layout.
 
-    The leaf directory equals the full pod code; its depth follows the level.
+    The first directory is the level-0 root (``q`` + the 2-digit root); the
+    leaf directory equals the full pod code; its depth follows the level.
 
     Examples
     --------
-    >>> podcode_to_local_dirs("q13211")
-    ['q13', 'q132', 'q1321', 'q13211']
-    >>> podcode_to_local_dirs("q132")
-    ['q13', 'q132']
+    >>> podcode_to_local_dirs("q132110")
+    ['q13', 'q132', 'q1321', 'q13211', 'q132110']
+    >>> podcode_to_local_dirs("q1321")
+    ['q13', 'q132', 'q1321']
     """
     body = podcode[1:]
-    if len(body) <= 1:                     # octant-only (level-0) trixel
-        return [podcode]
     return ['q' + body[:n] for n in range(2, len(body) + 1)]
 
 
@@ -2068,7 +2090,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
             s3_path/<podcode>-<granule_name>-<dataset>.parquet
 
-        e.g. ``s3://zarrpods/storage/q13211-1C.GPM.GMI.…V07B-GMI_S1.parquet``.
+        e.g. ``s3://zarrpods/storage/q132110-1C.GPM.GMI.…V07B-GMI_S1.parquet``.
         When ``granule_name`` is omitted the granule component defaults to
         ``"data"``.  (Local writes use the hierarchical pod-code dir tree — see
         :meth:`to_local`.)
@@ -2360,7 +2382,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         # Quaternary layout (docs/quaternary_storage_plan.md §2) — local disk is
         # hierarchical (cumulative pod-code dir chain) with a self-describing
         # filename in the leaf:
-        #   local_path/q13/q132/q1321/q13211/q13211-<granule_name>-<dataset>.parquet
+        #   local_path/q13/q132/q1321/q13211/q132110/q132110-<granule_name>-<dataset>.parquet
         # Multiple granules' contributions to the same partition coexist as
         # sibling Parquet files differing only in their <granule_name> span.
         if granule_name is not None and '/' in granule_name:
@@ -2376,7 +2398,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
 
             # Quaternary layout (docs/quaternary_storage_plan.md §2): local disk
             # is HIERARCHICAL — the cumulative pod-code dir chain
-            # (q13/q132/q1321/q13211/) with the same self-describing filename
+            # (q13/q132/q1321/q13211/q132110/) with the same self-describing filename
             # inside the leaf.  The leaf dir name and the filename's pod-code
             # prefix are intentionally redundant so a chunk is identifiable from
             # its filename alone.
@@ -2715,7 +2737,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         """
         Generate the pod code for a STARE SID (quaternary storage layout).
 
-        Returns the compact, dynamic-length pod code (``"q13211"``) for ``sid``
+        Returns the compact, dynamic-length pod code (``"q132110"``) for ``sid``
         — see :func:`starepandas.staredataframe.sid_to_podcode` and
         ``docs/quaternary_storage_plan.md`` §2.  This is a thin instance-method
         wrapper kept for backward compatibility; new code should call
@@ -2739,13 +2761,13 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         Returns
         -------
         str
-            The pod code (e.g. ``"q13211"``).
+            The pod code (e.g. ``"q132110"``).
 
         Examples
         --------
         >>> sdf = STAREDataFrame()
-        >>> sdf.generate_partition_path(podcode_to_sid("q13211"))
-        'q13211'
+        >>> sdf.generate_partition_path(podcode_to_sid("q132110"))
+        'q132110'
         """
         return sid_to_podcode(sid)
 
@@ -2754,7 +2776,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         Reconstruct a STARE SID from a pod code (quaternary storage layout).
 
         Reverse of :meth:`generate_partition_path`.  Accepts a pod code such as
-        ``"q13211"`` and returns ``(sid, None)``.  The trailing ``None`` keeps
+        ``"q132110"`` and returns ``(sid, None)``.  The trailing ``None`` keeps
         the old ``(sid, dataset_name)`` tuple shape; the dataset is no longer
         embedded in the path (it lives in the chunk filename), so it is always
         ``None`` here.
@@ -2762,7 +2784,7 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         Parameters
         ----------
         partition_path : str
-            A pod code (e.g. ``"q13211"``).  Any ``/``-joined prefix is
+            A pod code (e.g. ``"q132110"``).  Any ``/``-joined prefix is
             tolerated — only the final segment (the pod code) is parsed.
 
         Returns
@@ -2773,9 +2795,9 @@ class STAREDataFrame(geopandas.GeoDataFrame):
         Examples
         --------
         >>> sdf = STAREDataFrame()
-        >>> sid, _ = sdf.parse_partition_path("q13211")
+        >>> sid, _ = sdf.parse_partition_path("q132110")
         >>> sdf.generate_partition_path(sid)
-        'q13211'
+        'q132110'
         """
         if not partition_path:
             raise ValueError("partition_path cannot be empty")

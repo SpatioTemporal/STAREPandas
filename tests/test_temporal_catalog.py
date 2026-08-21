@@ -321,7 +321,7 @@ def test_sqlite_covering_index_answers_analytics_fetch(tmp_path):
         conn.execute(
             'INSERT INTO "PodsMetadata" '
             '("Dataset", t_start, t_end, podcode) VALUES (?, ?, ?, ?)',
-            ('GMI_S1', '2020-06-15T12:00:00', '2020-06-15T12:03:00', 'q31230'),
+            ('GMI_S1', '2020-06-15T12:00:00', '2020-06-15T12:03:00', 'q031230'),
         )
         conds, params = _period_conditions(
             (T0, T0 + pd.Timedelta(hours=1)), placeholder='?', as_iso=True)

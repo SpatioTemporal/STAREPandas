@@ -58,18 +58,18 @@ def _catalog(rows):
         columns=['podcode', 'Dataset', 't_start', 't_end'])
 
 
-# Pod q13211: a genuine 3-way rendezvous — G, S, A all active at hour 2.
-# Pod q20123: a fake triangle — each pair touches, the trio never coincides.
+# Pod q013211: a genuine 3-way rendezvous — G, S, A all active at hour 2.
+# Pod q020123: a fake triangle — each pair touches, the trio never coincides.
 GENUINE_AND_FAKE = _catalog([
-    ('q13211', 'GMI_S1',   0, 2),
-    ('q13211', 'SSMIS_S1', 1, 3),
-    ('q13211', 'ATMS_S1',  2, 4),
-    ('q20123', 'GMI_S1',   10, 11),
-    ('q20123', 'SSMIS_S1', 11, 12),
-    ('q20123', 'SSMIS_S1', 20, 21),
-    ('q20123', 'ATMS_S1',  21, 22),
-    ('q20123', 'ATMS_S1',  30, 31),
-    ('q20123', 'GMI_S1',   31, 32),
+    ('q013211', 'GMI_S1',   0, 2),
+    ('q013211', 'SSMIS_S1', 1, 3),
+    ('q013211', 'ATMS_S1',  2, 4),
+    ('q020123', 'GMI_S1',   10, 11),
+    ('q020123', 'SSMIS_S1', 11, 12),
+    ('q020123', 'SSMIS_S1', 20, 21),
+    ('q020123', 'ATMS_S1',  21, 22),
+    ('q020123', 'ATMS_S1',  30, 31),
+    ('q020123', 'GMI_S1',   31, 32),
 ])
 
 
@@ -88,21 +88,21 @@ def test_scan_groups_of_one_instrument_never_rendezvous_with_themselves():
     """Folding is labeling only, but a rendezvous needs >= 2 *distinct*
     instruments — two co-active scan groups of GMI are not an overlap."""
     catalog = _catalog([
-        ('q13211', 'GMI_S1', 0, 2),
-        ('q13211', 'GMI_S2', 1, 3),
+        ('q013211', 'GMI_S1', 0, 2),
+        ('q013211', 'GMI_S2', 1, 3),
     ])
     events = rendezvous_events(catalog, dt=ZERO)
     assert events.empty
 
     catalog = _catalog([
-        ('q13211', 'GMI_S1', 0, 2),
-        ('q13211', 'GMI_S2', 1, 3),
-        ('q13211', 'SSMIS_S3', 1, 2),
+        ('q013211', 'GMI_S1', 0, 2),
+        ('q013211', 'GMI_S2', 1, 3),
+        ('q013211', 'SSMIS_S3', 1, 2),
     ])
     events = rendezvous_events(catalog, dt=ZERO)
     assert set(events['instruments']) == {('GMI', 'SSMIS')}
     table = overlap_pod_table(events)
-    assert table.loc['q13211', 2] == 1                  # one pair, deduped
+    assert table.loc['q013211', 2] == 1                  # one pair, deduped
     assert 3 not in table.columns                       # never a fake trio
 
 
@@ -114,7 +114,7 @@ def test_events_schema_and_rendezvous_moments():
     assert list(events.columns) == EVENT_COLUMNS
     assert pd.api.types.is_datetime64_any_dtype(events['time'])
 
-    genuine = events[events['podcode'] == 'q13211']
+    genuine = events[events['podcode'] == 'q013211']
     # +SSMIS at hour 1 (mask {G,S}), +ATMS at hour 2 (mask {G,S,A}).
     assert list(genuine['added']) == ['SSMIS', 'ATMS']
     assert list(genuine['time']) == [_t(1), _t(2)]
@@ -124,7 +124,7 @@ def test_events_schema_and_rendezvous_moments():
 
 def test_fake_triangle_never_reaches_three_instruments():
     events = rendezvous_events(GENUINE_AND_FAKE, dt=ZERO)
-    fake = events[events['podcode'] == 'q20123']
+    fake = events[events['podcode'] == 'q020123']
     assert len(fake) == 3                               # three pair touches
     assert all(len(mask) == 2 for mask in fake['instruments'])
 
@@ -134,20 +134,20 @@ def test_pod_table_counts_genuine_trio_but_not_fake_triangle():
     table = overlap_pod_table(events)
 
     # Genuine pod: 3 distinct pairs + 1 distinct trio (subset expansion).
-    assert table.loc['q13211', 2] == 3
-    assert table.loc['q13211', 3] == 1
+    assert table.loc['q013211', 2] == 3
+    assert table.loc['q013211', 3] == 1
     # Fake triangle: all 3 pairs, but NO trio — the decisive case.
-    assert table.loc['q20123', 2] == 3
-    assert table.loc['q20123', 3] == 0
+    assert table.loc['q020123', 2] == 3
+    assert table.loc['q020123', 3] == 0
 
 
 def test_multiple_passes_and_actives_decrement_correctly():
     """A chain G–S–A where G is gone before A arrives must yield the two
     chain pairs only — no (G, A), no trio."""
     catalog = _catalog([
-        ('q13211', 'GMI_S1',   0, 2),
-        ('q13211', 'SSMIS_S1', 1, 5),
-        ('q13211', 'ATMS_S1',  4, 6),
+        ('q013211', 'GMI_S1',   0, 2),
+        ('q013211', 'SSMIS_S1', 1, 5),
+        ('q013211', 'ATMS_S1',  4, 6),
     ])
     events = rendezvous_events(catalog, dt=ZERO)
     assert list(events['instruments']) == [
@@ -156,9 +156,9 @@ def test_multiple_passes_and_actives_decrement_correctly():
     # Same-instrument passes keep the instrument active until the LAST one
     # ends: A2 bridges over A1's end, so +B at 2.5 still sees GMI active.
     catalog = _catalog([
-        ('q13211', 'GMI_S1',   0, 2),
-        ('q13211', 'GMI_S2',   1, 3),
-        ('q13211', 'SSMIS_S1', 2.5, 4),
+        ('q013211', 'GMI_S1',   0, 2),
+        ('q013211', 'GMI_S2',   1, 3),
+        ('q013211', 'SSMIS_S1', 2.5, 4),
     ])
     events = rendezvous_events(catalog, dt=ZERO)
     assert list(events['instruments']) == [('GMI', 'SSMIS')]
@@ -168,8 +168,8 @@ def test_dt_is_a_query_parameter():
     """A 1 h gap between passes: invisible at Δt=0, a rendezvous at Δt=1 h
     (closed boundary), computed from the same loaded frame."""
     catalog = _catalog([
-        ('q13211', 'GMI_S1',   0, 1),
-        ('q13211', 'SSMIS_S1', 2, 3),
+        ('q013211', 'GMI_S1',   0, 1),
+        ('q013211', 'SSMIS_S1', 2, 3),
     ])
     assert rendezvous_events(catalog, dt=ZERO).empty
     assert rendezvous_events(catalog, dt=pd.Timedelta(minutes=59)).empty
@@ -187,9 +187,9 @@ def test_dt_is_a_query_parameter():
 
 def test_period_is_a_query_parameter():
     catalog = _catalog([
-        ('q13211', 'GMI_S1',   0, 2),
-        ('q13211', 'SSMIS_S1', 1, 3),
-        ('q13211', 'ATMS_S1',  2, 4),
+        ('q013211', 'GMI_S1',   0, 2),
+        ('q013211', 'SSMIS_S1', 1, 3),
+        ('q013211', 'ATMS_S1',  2, 4),
     ])
     # Excluding the ATMS pass leaves only the G–S pair.
     events = rendezvous_events(catalog, dt=ZERO, period=(_t(0), _t(1.5)))
@@ -203,9 +203,9 @@ def test_period_is_a_query_parameter():
 
 def test_null_range_chunks_are_not_passes():
     catalog = _catalog([
-        ('q13211', 'GMI_S1',   0, 2),
-        ('q13211', 'SSMIS_S1', None, None),
-        ('q13211', 'ATMS_S1',  1, 3),
+        ('q013211', 'GMI_S1',   0, 2),
+        ('q013211', 'SSMIS_S1', None, None),
+        ('q013211', 'ATMS_S1',  1, 3),
     ])
     events = rendezvous_events(catalog, dt=ZERO)
     assert set(events['instruments']) == {('ATMS', 'GMI')}
@@ -251,7 +251,7 @@ def test_empty_catalog_yields_empty_but_typed_outputs():
     assert (matrix.to_numpy() == 0).all()
     assert overlap_matrix(events).empty                 # no observed universe
     for drill in (pair_drilldown(events, 'GMI', 'SSMIS'),
-                  pod_drilldown(events, 'q13211')):
+                  pod_drilldown(events, 'q013211')):
         assert drill.empty
         assert drill['frequency'].dtype == 'int64'
 
@@ -301,22 +301,22 @@ def test_matrix_region_rescope_is_a_pod_subset_no_resweep():
     the events already computed (bitmap AND — never a re-sweep/re-query)."""
     events = rendezvous_events(GENUINE_AND_FAKE, dt=ZERO)
 
-    scoped = overlap_matrix(events, pods=['q13211'])
+    scoped = overlap_matrix(events, pods=['q013211'])
     assert scoped.loc['GMI', 'SSMIS'] == 1
     # A coarser pod code covers its whole subtree (prefix semantics).
-    assert overlap_matrix(events, pods=['q1']).loc['GMI', 'SSMIS'] == 1
-    assert overlap_matrix(events, pods=['q2']).loc['GMI', 'SSMIS'] == 1
-    both = overlap_matrix(events, pods=['q1', 'q2'])
+    assert overlap_matrix(events, pods=['q01']).loc['GMI', 'SSMIS'] == 1
+    assert overlap_matrix(events, pods=['q02']).loc['GMI', 'SSMIS'] == 1
+    both = overlap_matrix(events, pods=['q01', 'q02'])
     assert both.loc['GMI', 'SSMIS'] == 2
     # Outside the loaded pods → all-zero cells, not an error.
-    assert (overlap_matrix(events, pods=['q3']).to_numpy() == 0).all()
+    assert (overlap_matrix(events, pods=['q03']).to_numpy() == 0).all()
 
     with pytest.raises(ValueError):
         overlap_matrix(events, pods=['not-a-podcode'])
     # A cover finer than the partition level could never match a cataloged
     # pod — it must raise, not silently report an all-zero region.
     with pytest.raises(ValueError, match='finer'):
-        overlap_matrix(events, pods=['q1321101'])
+        overlap_matrix(events, pods=['q0132110'])
 
 
 def test_instrument_arguments_must_be_folded_names():
@@ -336,20 +336,20 @@ def test_pair_drilldown_reports_per_pod_frequency_and_times():
     """One long GMI pass rendezvousing with two successive SSMIS passes →
     frequency 2 with the two rendezvous moments."""
     catalog = _catalog([
-        ('q13211', 'GMI_S1',   0, 10),
-        ('q13211', 'SSMIS_S1', 1, 2),
-        ('q13211', 'SSMIS_S1', 5, 6),
-        ('q20123', 'GMI_S1',   0, 1),
-        ('q20123', 'SSMIS_S1', 0.5, 2),
+        ('q013211', 'GMI_S1',   0, 10),
+        ('q013211', 'SSMIS_S1', 1, 2),
+        ('q013211', 'SSMIS_S1', 5, 6),
+        ('q020123', 'GMI_S1',   0, 1),
+        ('q020123', 'SSMIS_S1', 0.5, 2),
     ])
     events = rendezvous_events(catalog, dt=ZERO)
     drill = pair_drilldown(events, 'SSMIS', 'GMI')       # order-insensitive
 
     assert list(drill.columns) == ['podcode', 'frequency', 'times']
-    assert list(drill['podcode']) == ['q13211', 'q20123']
-    q13211 = drill.set_index('podcode').loc['q13211']
-    assert q13211['frequency'] == 2
-    assert q13211['times'] == [_t(1), _t(5)]
+    assert list(drill['podcode']) == ['q013211', 'q020123']
+    q013211 = drill.set_index('podcode').loc['q013211']
+    assert q013211['frequency'] == 2
+    assert q013211['times'] == [_t(1), _t(5)]
 
     with pytest.raises(ValueError):
         pair_drilldown(events, 'GMI', 'GMI')
@@ -360,14 +360,14 @@ def test_pair_drilldown_counts_pair_inside_larger_rendezvous():
     pair's drill-down (subsets of a recorded mask rendezvoused too)."""
     events = rendezvous_events(GENUINE_AND_FAKE, dt=ZERO)
     drill = pair_drilldown(events, 'ATMS', 'GMI').set_index('podcode')
-    # In q13211, (ATMS, GMI) only ever coincide within the trio at hour 2.
-    assert drill.loc['q13211', 'frequency'] == 1
-    assert drill.loc['q13211', 'times'] == [_t(2)]
+    # In q013211, (ATMS, GMI) only ever coincide within the trio at hour 2.
+    assert drill.loc['q013211', 'frequency'] == 1
+    assert drill.loc['q013211', 'times'] == [_t(2)]
 
 
 def test_pod_drilldown_reports_combinations_frequency_and_times():
     events = rendezvous_events(GENUINE_AND_FAKE, dt=ZERO)
-    drill = pod_drilldown(events, 'q13211')
+    drill = pod_drilldown(events, 'q013211')
 
     assert list(drill.columns) == [
         'instruments', 'n_instruments', 'frequency', 'times']
@@ -383,22 +383,22 @@ def test_pod_drilldown_reports_combinations_frequency_and_times():
     assert trio.frequency == 1
     assert trio.times == [_t(2)]
 
-    fake = pod_drilldown(events, 'q20123')
+    fake = pod_drilldown(events, 'q020123')
     assert (fake['n_instruments'] == 2).all()            # no trio, ever
 
     with pytest.raises(ValueError):
         pod_drilldown(events, 'not-a-podcode')
     with pytest.raises(ValueError, match='finer'):
-        pod_drilldown(events, 'q1321101')                # finer than partition
+        pod_drilldown(events, 'q0132110')                # finer than partition
 
 
 def test_pod_drilldown_coarser_code_rolls_up_the_subtree():
     """Same cover semantics as the matrix's pods=: a coarser pod code
     aggregates every loaded pod beneath it."""
     events = rendezvous_events(GENUINE_AND_FAKE, dt=ZERO)
-    subtree = pod_drilldown(events, 'q1')
-    pd.testing.assert_frame_equal(subtree, pod_drilldown(events, 'q13211'))
-    assert pod_drilldown(events, 'q3').empty
+    subtree = pod_drilldown(events, 'q01')
+    pd.testing.assert_frame_equal(subtree, pod_drilldown(events, 'q013211'))
+    assert pod_drilldown(events, 'q03').empty
 
 
 def test_include_passes_lists_the_participating_passes():
@@ -407,16 +407,16 @@ def test_include_passes_lists_the_participating_passes():
     events = rendezvous_events(GENUINE_AND_FAKE, dt=ZERO, include_passes=True)
     assert list(events.columns) == EVENT_COLUMNS + ['passes']
 
-    genuine = events[events['podcode'] == 'q13211']
+    genuine = events[events['podcode'] == 'q013211']
     # Rows 0–2 of the fixture are the genuine trio's passes (G, S, A).
     assert list(genuine['passes']) == [(0, 1), (0, 1, 2)]
-    fake = events[events['podcode'] == 'q20123']
+    fake = events[events['podcode'] == 'q020123']
     assert all(len(p) == 2 for p in fake['passes'])
 
     # Labels are the caller's catalog index, not positions.
     relabeled = GENUINE_AND_FAKE.set_axis(GENUINE_AND_FAKE.index + 100)
     events = rendezvous_events(relabeled, dt=ZERO, include_passes=True)
-    assert list(events[events['podcode'] == 'q13211']['passes']) == \
+    assert list(events[events['podcode'] == 'q013211']['passes']) == \
         [(100, 101), (100, 101, 102)]
 
     # Duplicate index labels cannot identify passes — refuse them rather

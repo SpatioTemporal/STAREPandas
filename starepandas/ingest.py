@@ -213,7 +213,7 @@ def ingest_granules_local(
     Layout — hierarchical quaternary pod-code dir tree with a self-describing
     leaf (S3 uses the flat variant; see :func:`ingest_granules_s3`)::
 
-        <local_root>/q13/q132/q1321/q13211/q13211-<granule_basename>-<dataset>.parquet
+        <local_root>/q13/q132/q1321/q13211/q132110/q132110-<granule_basename>-<dataset>.parquet
 
     Parameters
     ----------
