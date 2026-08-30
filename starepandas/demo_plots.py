@@ -28,7 +28,7 @@ import pandas as pd
 
 import starepandas
 from starepandas.overlap import fold_instrument
-from starepandas.staredataframe import podcode_to_sid
+from starepandas.staredataframe import podcode_to_sid, sid_to_podcode
 
 #: Stable per-instrument colors, so the two figures (and the two demos) agree.
 INSTRUMENT_COLORS = {
@@ -370,7 +370,27 @@ def plot_pod_coverage(catalog, highlight=(), instruments=None, figsize=(14, 7)):
     return fig
 
 
-def pod_pixels(demo, metadata, podcode, window):
+def chunk_pixels(demo, rows, window, fold=True):
+    """Download the given metadata rows' chunks and return their pixels.
+
+    The shared loader behind :func:`pod_pixels` (one pod) and
+    :func:`plot_region_result` (an arbitrary query result). Pixels outside
+    ``window`` are dropped; keys are instruments (``fold=True``) or the
+    per-swath dataset names.
+    """
+    if rows.empty:
+        return {}
+    frames = {}
+    for dataset, chunk in demo.download_and_analyze(rows).items():
+        selected = chunk[chunk['timestamp'].between(*window)]
+        if not selected.empty:
+            key = fold_instrument(dataset) if fold else dataset
+            frames.setdefault(key, []).append(
+                selected[['lat', 'lon', 'timestamp']])
+    return {key: pd.concat(parts) for key, parts in frames.items()}
+
+
+def pod_pixels(demo, metadata, podcode, window, fold=True):
     """Load the pixels of one pod's chunks, grouped by instrument.
 
     Works for either backend: the pod code prefixes the chunk *filename* in
@@ -390,24 +410,19 @@ def pod_pixels(demo, metadata, podcode, window):
         ``(start, end)``; pixels outside it are dropped. Keeps a *different*
         pass of the same instrument over the same pod from being drawn as if
         it were part of the rendezvous.
+    fold : bool, optional
+        When True (default) scan groups are merged per instrument
+        (``GMI_S1`` + ``GMI_S2`` → ``'GMI'``); when False the keys stay the
+        per-swath dataset names, for callers that want the per-swath split.
 
     Returns
     -------
     dict
-        ``{instrument: DataFrame}`` with ``lat``/``lon``/``timestamp``.
+        ``{instrument: DataFrame}`` (or ``{dataset: DataFrame}`` with
+        ``fold=False``) with ``lat``/``lon``/``timestamp``.
     """
     rows = metadata[metadata['group_path'].str.contains(f"/{podcode}-", regex=False)]
-    if rows.empty:
-        return {}
-
-    frames = {}
-    for dataset, chunk in demo.download_and_analyze(rows).items():
-        selected = chunk[chunk['timestamp'].between(*window)]
-        if not selected.empty:
-            frames.setdefault(fold_instrument(dataset), []).append(
-                selected[['lat', 'lon', 'timestamp']]
-            )
-    return {instrument: pd.concat(parts) for instrument, parts in frames.items()}
+    return chunk_pixels(demo, rows, window, fold=fold)
 
 
 def plot_rendezvous(podcode, passes, meeting, dt, figsize=(15, 6.5)):
@@ -480,20 +495,226 @@ def plot_rendezvous(podcode, passes, meeting, dt, figsize=(15, 6.5)):
                  fontsize=9, va='bottom')
         ax2.text(start, row, f"{instrument} ", ha='right', va='center',
                  fontsize=10, fontweight='bold')
-    ax2.axvspan(mdates.date2num(meeting - dt), mdates.date2num(meeting),
-                color='0.87', zorder=0, label=f"Δt = {minutes} min before last arrival")
     ax2.axvline(mdates.date2num(meeting), color='black', linestyle='--', linewidth=1.2)
     ax2.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
-    ax2.set_xlim(mdates.date2num(meeting - dt * 1.15),
-                 mdates.date2num(meeting + dt * 0.35))
+    # Frame the passes themselves rather than the sweep's look-back window —
+    # the [meeting − Δt, meeting] eligibility band is the kernel's
+    # bookkeeping, and drawing it invites misreading (it holds the earlier
+    # passes' *ends*, never whole passes). The pad leaves room for the
+    # right-aligned instrument labels left of the earliest bar.
+    first = min(p['timestamp'].min() for p in passes.values())
+    last = max(p['timestamp'].max() for p in passes.values())
+    pad = max((last - first) * 0.12, pd.Timedelta(seconds=45))
+    ax2.set_xlim(mdates.date2num(first - pad), mdates.date2num(last + pad))
     ax2.set_ylim(-0.8, len(passes) - 0.1)
     ax2.set_yticks([])
     ax2.set_xlabel(f"{meeting.date()} UTC")
-    ax2.legend(loc='lower right', fontsize=9)
-    ax2.set_title(f"When — all {len(passes)} inside one Δt window\n"
+    ax2.set_title(f"When — all {len(passes)} passes within Δt = {minutes} min\n"
                   f"last arrival {meeting.strftime('%H:%M:%S')} (dashed)")
 
     fig.suptitle(f"A {len(passes)}-way rendezvous in pod {podcode}: "
                  f"same pod, and within Δt of each other", fontsize=13)
+    fig.tight_layout()
+    return fig
+
+
+def _draw_region_box(ax, bbox, highlight_pod):
+    """The dashed bbox and (optionally) the highlighted pod's trixel."""
+    lon_min, lat_min, lon_max, lat_max = bbox
+    ax.plot([lon_min, lon_max, lon_max, lon_min, lon_min],
+            [lat_min, lat_min, lat_max, lat_max, lat_min],
+            color='black', linestyle='--', linewidth=1.6,
+            transform=ccrs.PlateCarree(), zorder=6)
+    if highlight_pod is not None:
+        ax.add_geometries(pod_trixels([highlight_pod]), crs=ccrs.PlateCarree(),
+                          facecolor='none', edgecolor='black', linewidth=2,
+                          zorder=7)
+
+
+def plot_region_cover(bbox, cover_sids, spatial_only, highlight_pod=None,
+                      figsize=(9, 6.5)):
+    """The spatial half of a region query: bbox → STARE cover → pods.
+
+    The bounding box (dashed), the STARE cover it becomes (outlined
+    trixels), and — filled — the cover pods that actually hold data.
+
+    Parameters
+    ----------
+    bbox : tuple
+        ``(lon_min, lat_min, lon_max, lat_max)`` of the region.
+    cover_sids : sequence of int
+        The STARE cover of the bbox.
+    spatial_only : pandas.DataFrame
+        The spatially-matching metadata rows (for the data-holding pods).
+    highlight_pod : str, optional
+        A pod to outline in black (the 4-way pod, in the demo).
+    figsize : tuple, optional
+        Figure size in inches.
+
+    Returns
+    -------
+    matplotlib.figure.Figure
+    """
+    from matplotlib.lines import Line2D
+    from matplotlib.patches import Patch
+
+    fig = plt.figure(figsize=figsize)
+    ax = fig.add_subplot(1, 1, 1, projection=ccrs.PlateCarree())
+    # Cover vs data-holding pods must differ in *form*, not just opacity —
+    # in a demo where every cover pod holds data the two layers coincide
+    # exactly, and one shade of purple on top of another is invisible.
+    cover_pods = sorted({sid_to_podcode(int(s)) for s in cover_sids})
+    cover_geo = pod_trixels(cover_pods)
+    ax.add_geometries(cover_geo, crs=ccrs.PlateCarree(), facecolor='none',
+                      edgecolor='#7570b3', linewidth=1.4)
+    data_pods = sorted(set(spatial_only['podcode']))
+    ax.add_geometries(pod_trixels(data_pods), crs=ccrs.PlateCarree(),
+                      facecolor='#7570b3', alpha=0.22, edgecolor='none')
+    _draw_region_box(ax, bbox, highlight_pod)
+    ax.add_feature(cfeature.LAND, facecolor='#f2f2f2')
+    ax.add_feature(cfeature.COASTLINE, linewidth=0.5)
+    ax.gridlines(draw_labels=True, linewidth=0.3)
+    gx_min, gy_min, gx_max, gy_max = cover_geo.total_bounds
+    ax.set_extent([gx_min - 2, gx_max + 2, gy_min - 2, gy_max + 2],
+                  crs=ccrs.PlateCarree())
+    ax.set_aspect('auto')
+    handles = [
+        Line2D([], [], color='black', linestyle='--', label='region (bbox)'),
+        Patch(facecolor='none', edgecolor='#7570b3', linewidth=1.4,
+              label=f'STARE cover — {len(cover_pods)} level-4 trixels (outline)'),
+        Patch(facecolor='#7570b3', alpha=0.22, edgecolor='none',
+              label=f'cover pods holding data — {len(data_pods)} (filled)'),
+    ]
+    if highlight_pod is not None:
+        handles.append(Patch(facecolor='none', edgecolor='black', linewidth=2,
+                             label=f'pod {highlight_pod}'))
+    ax.legend(handles=handles, loc='lower left', fontsize=9)
+    ax.set_title("Where — the region becomes a STARE cover")
+    fig.tight_layout()
+    return fig
+
+
+def plot_region_result(passes, spatial_only, window, bbox, highlight_pod=None,
+                       figsize=(15, 10.5)):
+    """The result of a region query: its data elements above its time spans.
+
+    Top: the pixels of the chunks that survive both filters, per instrument
+    (density-ranked markers, as in :func:`plot_rendezvous` — the data extends
+    past the bbox because chunks are pod-level). Bottom: every chunk the
+    *spatial* query selected on the time axis; the window is the shaded
+    band, and chunks that do not overlap it are hatched out — the same
+    region visited at the wrong time of day.
+
+    Parameters
+    ----------
+    passes : dict
+        ``{instrument: DataFrame}`` from :func:`chunk_pixels` on the
+        both-filters result.
+    spatial_only : pandas.DataFrame
+        The spatially-matching metadata rows (``Dataset``/``podcode``/
+        ``t_start``/``t_end``).
+    window : tuple of pandas.Timestamp
+        ``(start, end)`` — the temporal criterion.
+    bbox : tuple
+        ``(lon_min, lat_min, lon_max, lat_max)`` of the region.
+    highlight_pod : str, optional
+        A pod to outline in black.
+    figsize : tuple, optional
+        Figure size in inches.
+
+    Returns
+    -------
+    matplotlib.figure.Figure
+    """
+    from matplotlib.patches import Patch
+
+    start, end = window
+    t_start = pd.to_datetime(spatial_only['t_start'])
+    t_end = pd.to_datetime(spatial_only['t_end'])
+    kept_mask = (t_start <= end) & (t_end >= start)   # closed-overlap, as the loaders
+    n_kept, n_dropped = int(kept_mask.sum()), int((~kept_mask).sum())
+
+    fig = plt.figure(figsize=figsize)
+    # Map on top at full width, timeline below. A region spans tens of
+    # degrees; squeezed into a half-width panel its swaths fuse into solid
+    # blocks, so give the map the whole row and use finer markers than the
+    # single-pod figure — the scan-line texture is the picture.
+    grid = fig.add_gridspec(2, 1, height_ratios=[2.1, 1.0])
+
+    # ---- top: space — the returned data elements ---------------------------
+    ax = fig.add_subplot(grid[0], projection=ccrs.PlateCarree())
+    by_density = sorted(passes, key=lambda k: -len(passes[k]))
+    for rank, instrument in enumerate(by_density):
+        pixels = passes[instrument]
+        ax.scatter(pixels['lon'], pixels['lat'],
+                   s=(0.5, 1.2, 2.2, 3.5)[min(rank, 3)],
+                   alpha=(0.35, 0.45, 0.55, 0.65)[min(rank, 3)],
+                   color=_color(instrument), label=instrument, zorder=2 + rank,
+                   transform=ccrs.PlateCarree())
+    _draw_region_box(ax, bbox, highlight_pod)
+    ax.add_feature(cfeature.LAND, facecolor='#f2f2f2')
+    ax.add_feature(cfeature.COASTLINE, linewidth=0.5)
+    ax.gridlines(draw_labels=True, linewidth=0.3)
+    if passes:
+        lons = pd.concat([p['lon'] for p in passes.values()])
+        lats = pd.concat([p['lat'] for p in passes.values()])
+        ax.set_extent([lons.min() - 2, lons.max() + 2,
+                       lats.min() - 2, lats.max() + 2], crs=ccrs.PlateCarree())
+    ax.set_aspect('auto')
+    ax.legend(markerscale=4, loc='upper right', fontsize=9)
+    ax.set_title("Where — the data elements the query returns\n"
+                 "(whole chunks, so they extend past the bbox)")
+
+    # ---- bottom: time — every spatially-selected chunk ---------------------
+    ax2 = fig.add_subplot(grid[1])
+    instruments = sorted(set(spatial_only['Dataset'].map(fold_instrument)))
+    order = sorted(instruments,
+                   key=lambda i: t_start[spatial_only['Dataset']
+                                         .map(fold_instrument) == i].min())
+    for row, instrument in enumerate(order):
+        sub = spatial_only['Dataset'].map(fold_instrument) == instrument
+        for s, e, keep in zip(t_start[sub], t_end[sub], kept_mask[sub]):
+            s_num, e_num = mdates.date2num(s), mdates.date2num(e)
+            if keep:
+                ax2.barh(row, max(e_num - s_num, 5e-4), left=s_num,
+                         height=0.45, color=_color(instrument), alpha=0.6,
+                         linewidth=0)
+            else:
+                # Dropped chunks differ in *form* from the flat window band:
+                # hatched, with a hard outline.
+                ax2.barh(row, max(e_num - s_num, 5e-4), left=s_num,
+                         height=0.45, facecolor='#dfe2e8',
+                         edgecolor='#6b7280', hatch='///', linewidth=0.8)
+    ax2.axvspan(mdates.date2num(start), mdates.date2num(end), color='0.90',
+                zorder=0)
+    for edge in (start, end):
+        ax2.axvline(mdates.date2num(edge), color='black', linestyle='--',
+                    linewidth=1.1)
+    ax2.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
+    # The frame must hold the whole window, not just the chunks — a window
+    # edge clipped at the axis boundary reads as if the band never closed.
+    left = min(t_start.min(), start)
+    right = max(t_end.max(), end)
+    pad = (right - left) * 0.06
+    ax2.set_xlim(mdates.date2num(left - pad * 2.2),
+                 mdates.date2num(right + pad))
+    ax2.set_ylim(-0.8, len(order) - 0.2)
+    # Name the whole row on the axis: a label pinned to the earliest chunk
+    # sits beside the dropped cluster and leaves the kept one anonymous.
+    ax2.set_yticks(range(len(order)))
+    ax2.set_yticklabels(order, fontsize=10, fontweight='bold')
+    ax2.set_xlabel(f"{start.date()} UTC")
+    ax2.legend(handles=[
+        Patch(facecolor='0.90', label='the query window'),
+        Patch(facecolor='#dfe2e8', edgecolor='#6b7280', hatch='///',
+              linewidth=0.8,
+              label=f'dropped by the window — {n_dropped} chunks'),
+    ], loc='upper left', fontsize=9)
+    ax2.set_title("When — each spatially-selected chunk's time span")
+
+    fig.suptitle(
+        f"Space picks {len(spatial_only)} chunks in "
+        f"{spatial_only['podcode'].nunique()} pods; the window keeps "
+        f"{n_kept} and drops {n_dropped}", fontsize=13)
     fig.tight_layout()
     return fig

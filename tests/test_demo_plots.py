@@ -316,3 +316,81 @@ def test_coverage_highlight_accepts_labelled_color_groups():
     assert 'gold = 3-way examples: q123333' in text
     assert 'darkgreen' not in text
     plt.close(fig)
+
+
+class _StubDemo:
+    """Stands in for StarePodsDemo: hands back canned per-dataset chunks."""
+
+    def __init__(self, chunks):
+        self._chunks = chunks
+
+    def download_and_analyze(self, rows):
+        return self._chunks
+
+
+def _pod_pixels_fixture():
+    stamps = pd.to_datetime(['2025-01-01 00:01', '2025-01-01 00:02',
+                             '2025-01-01 03:00'])
+    chunk = pd.DataFrame({'lat': [0.0, 1.0, 2.0], 'lon': [0.0, 1.0, 2.0],
+                          'timestamp': stamps})
+    metadata = pd.DataFrame({'group_path': ['store/q000001-granule-GMI_S1.parquet',
+                                            'store/q000001-granule-GMI_S2.parquet']})
+    demo = _StubDemo({'GMI_S1': chunk, 'GMI_S2': chunk.iloc[:2]})
+    window = (pd.Timestamp('2025-01-01 00:00'), pd.Timestamp('2025-01-01 00:10'))
+    return demo, metadata, window
+
+
+def test_pod_pixels_folds_scan_groups_by_default():
+    from starepandas.demo_plots import pod_pixels
+    demo, metadata, window = _pod_pixels_fixture()
+    folded = pod_pixels(demo, metadata, 'q000001', window)
+    # one merged instrument entry; the 03:00 pixel is outside the window
+    assert list(folded) == ['GMI']
+    assert len(folded['GMI']) == 4
+
+
+def test_pod_pixels_fold_false_keeps_the_per_swath_split():
+    from starepandas.demo_plots import pod_pixels
+    demo, metadata, window = _pod_pixels_fixture()
+    by_swath = pod_pixels(demo, metadata, 'q000001', window, fold=False)
+    assert sorted(by_swath) == ['GMI_S1', 'GMI_S2']
+    assert len(by_swath['GMI_S1']) == 2 and len(by_swath['GMI_S2']) == 2
+
+
+def _region_spatial_only():
+    return pd.DataFrame({
+        'Dataset': ['GMI_S1', 'SSMIS_S1', 'SSMIS_S2'],
+        'podcode': ['q000001', 'q000001', 'q000002'],
+        't_start': pd.to_datetime(['2025-01-01 21:00', '2025-01-01 21:10',
+                                   '2025-01-01 11:00']),
+        't_end': pd.to_datetime(['2025-01-01 21:05', '2025-01-01 21:15',
+                                 '2025-01-01 11:05']),
+    })
+
+
+def test_region_cover_draws_bbox_cover_and_data_pods():
+    from starepandas.demo_plots import plot_region_cover
+    from starepandas.staredataframe import podcode_to_sid
+    fig = plot_region_cover(
+        bbox=(0.0, 0.0, 10.0, 10.0),
+        cover_sids=[podcode_to_sid(p) for p in ('q000001', 'q000002', 'q000003')],
+        spatial_only=_region_spatial_only(), highlight_pod='q000001')
+    assert 'STARE cover' in fig.axes[0].get_title()
+    labels = [t.get_text() for t in fig.axes[0].get_legend().get_texts()]
+    assert any('3 level-4 trixels' in t for t in labels)
+    assert any('holding data — 2' in t for t in labels)
+    plt.close(fig)
+
+
+def test_region_result_splits_kept_and_dropped():
+    from starepandas.demo_plots import plot_region_result
+    stamps = pd.to_datetime(['2025-01-01 21:01', '2025-01-01 21:02'])
+    passes = {'GMI': pd.DataFrame({'lat': [1.0, 2.0], 'lon': [1.0, 2.0],
+                                   'timestamp': stamps})}
+    window = (pd.Timestamp('2025-01-01 20:30'), pd.Timestamp('2025-01-01 22:00'))
+    fig = plot_region_result(passes, _region_spatial_only(), window,
+                             bbox=(0.0, 0.0, 10.0, 10.0),
+                             highlight_pod='q000001')
+    # the morning SSMIS chunk is outside the window: kept 2, dropped 1
+    assert 'keeps 2 and drops 1' in fig._suptitle.get_text()
+    plt.close(fig)
