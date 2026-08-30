@@ -4,15 +4,18 @@ Companion notebook: `starepandas/s3_starepods_examples_video_v2.ipynb`
 (executed, outputs current — record by scrolling through it). Revision of
 `docs/temporal_video_script.md` per the 260826 edit: the period-filter and
 VCF roll-up parts are dropped, the remaining parts renumbered 1–5, and the
-narration replaced with the revised text. Word count ≈ 760 → ~5:15 at a
-comfortable 145 wpm.
+narration replaced with the revised text, then extended as the notebook
+grew (inventory, pod occupancy, per-swath splits, the two Part-5 figures).
+Full transcript ≈ 1,370 spoken words → ~9½ min at a comfortable 145 wpm;
+the "optional beat" sections and the Part-1 occupancy paragraph can be cut
+to shorten it.
 
 ## Structure
 
 | Part | On screen | Beat |
 |---|---|---|
 | Intro | Title cell + part list | What STARE-PODS is; QL4 decomposition; the catalog as a rendezvous engine |
-| The data in the store | Cell 3 output (instrument inventory) | The cast: 6 L1C granules, 4 instruments on 4 satellites — no dedicated narration; scroll it during the intro's "four microwave radiometers" beat |
+| The data in the store | Cell 3 output (instrument inventory) | The cast: 6 L1C granules, 4 instruments on 4 satellites — short optional beat in the transcript, or scroll it during the intro's "four microwave radiometers" line |
 | 1. The temporal catalog | Cell 5 output (per-dataset table + pod-occupancy stats + sample rows) | Every chunk carries a measured `[t_start, t_end]` + pod code; 1220 of 2048 QL4 pods occupied, busiest (18 chunks) is q003200 — the 4-way pod |
 | 2. Rendezvous analytics | Cell 7 output (Δt table → matrix → drill-down) | Who met whom, simultaneously — from database records alone |
 | 3. Maps of rendezvous in swaths | Figure 1 (4 panels, outlined pods) | Panel counts, orbit shapes, where each outline color sits |
@@ -59,6 +62,15 @@ cross-instrument rendezvous engine.
 Everything you see in this demo runs live against AWS S3 and a Postgres
 catalog.
 
+### The data in the store  *(cell 3 output; optional beat)*
+
+What did the decomposition put in the store? Six real granules from the
+first of January 2025 — four microwave radiometers on four different
+satellites, all Level 1C intercalibrated brightness temperatures: GMI on
+GPM, SSMIS on DMSP F-18, AMSR2 on GCOM-W1, and ATMS on NOAA-21. Six
+granules become fourteen datasets — one per scan group — and about seven
+thousand chunks across twelve hundred pods.
+
 ### Part 1 — the temporal catalog  *(cell 5 output)*
 
 When a granule is decomposed, the database records the start and end times of
@@ -69,6 +81,11 @@ number. Similar to STARE indices, pod codes encode STARE's quad-tree
 hierarchy — each digit refines the previous, similar to postal codes. The
 scan times are actual times extracted from the granule's content, not the
 time in the granule's file name.
+
+Of the 2048 level-4 pods on the globe, 1220 hold at least one chunk. And
+the fullest pod in the whole store — 18 chunks — is pod q003200. Keep an
+eye on that one: it is exactly where all four instruments are about to
+meet.
 
 ### Part 2 — rendezvous analytics  *(cell 7 output; cursor on the Δt table)*
 
@@ -121,10 +138,16 @@ and temporal criteria. Thus, each row of figures shows both: on the left,
 data-element locations (QL27 trixels) in the pod, and on the right, each
 instrument's overpass interval on the time axis.
 
+An instrument in these figures and tables merges all of its scan groups —
+the by-swath column shows the split — and each case is drawn with the
+window it needs: fifteen minutes is already enough for the pair; only the
+4-way needs the full forty-five.
+
 First, the figures show a pod, pod q023003, with the closest 2-way
 rendezvous. Both GMI and SSMIS swaths overlap the pod considerably, each with
 eight to nine thousand data elements. So, the pod's area is almost painted
-twice. Temporally, SSMIS arrived over the same pod on GMI's heels.
+twice. Temporally, SSMIS arrived over the same pod on GMI's heels — just ten
+seconds after GMI's last data element.
 
 Now the main attraction, pod q003200, where a 4-way rendezvous occurred
 within a 45-minute window. The temporal plot on the right reads like a relay.
@@ -139,7 +162,7 @@ fast but broad way to find overlaps between instruments' coverages. Once the
 rendezvous are identified, the STARE hierarchy can be leveraged again to
 quickly find exact spatial overlaps at the data-element level.
 
-### Part 5 — rendezvous over a region of interest  *(cell 13 output)*
+### Part 5 — rendezvous over a region of interest  *(cell 13 output; figures 4 and 5)*
 
 At last, a closer-to-the-real-world scenario: rendezvous over a user-defined
 region in a specified time window, requiring a spatial query for the
@@ -148,12 +171,20 @@ user-defined region with the pods and a temporal query for the time window.
 In this example, the region of interest (ROI) is a bounding box covering the
 pod containing the 4-way rendezvous. This ROI is first converted into a STARE
 cover composed of STARE trixels of different levels, demonstrating STARE's
-adaptive resolution feature.
+adaptive resolution feature. On the map, the dashed box is the region, and
+the outlined triangles are its cover — thirteen level-4 trixels.
 
 Time criterion alone produces 1478 chunks; space alone produces 154. Applying
 both criteria produces 116 chunks. The difference of 38 chunks belongs to
 SSMIS, which flew over the same region on a morning orbit too, outside the
 time window.
+
+The final figure shows the result itself. On top, the data elements the
+query returns — whole chunks, at pod-level granularity, so they extend past
+the box. Below, every spatially-selected chunk on the time axis: four
+instruments inside the shaded window, and one hatched cluster — SSMIS's
+morning visit, ten hours outside it. That is the AND of space and time in
+one picture.
 
 ### Outro  *(recap cell)*
 
