@@ -120,10 +120,15 @@ granule_factory_library = {
 
 
 
-def granule_factory(file_path, sidecar_path=None, nom_res=None):
+def granule_factory(file_path, sidecar_path=None, nom_res=None, **reader_kwargs):
 
     """
     Returns a granule loader from the dictionary starepandas.io.granules.granule_factory_library.
+
+    ``reader_kwargs`` are forwarded verbatim to the matched reader's
+    constructor — e.g. ``scans=['S1', 'S2', 'S3', 'S4']`` for the
+    SSMIS-family readers (ATMS included). Readers that don't accept a
+    given keyword raise ``TypeError`` (loudly, not silently).
     The keys in granule_factory_library are regex patterns against which file_path is matched.
     The values are the classes with constructors of signature (file_path,sidecar). For example:
 
@@ -193,9 +198,9 @@ def granule_factory(file_path, sidecar_path=None, nom_res=None):
     for regex, granule in granule_factory_library.items():
         if re.search(regex, file_path, re.IGNORECASE):
             if nom_res:
-                return granule(file_path, sidecar_path, nom_res=nom_res)
+                return granule(file_path, sidecar_path, nom_res=nom_res, **reader_kwargs)
             else:
-                return granule(file_path, sidecar_path)
+                return granule(file_path, sidecar_path, **reader_kwargs)
     raise UnsupportedFileError(file_path)
 
 
@@ -211,6 +216,7 @@ def read_granule(file_path,
                  keep_na_sids=False,
                  datasets=None,
                  roi=None,
+                 reader_kwargs=None,
                  **kwargs):
     """ Reads a granule into a STAREDataFrame
 
@@ -236,6 +242,12 @@ def read_granule(file_path,
         toggle whether to read the timestamp
     keep_na_sids:
         toggle whether to keep rows containing NA values for sids
+    reader_kwargs: dict
+        optional; extra keyword arguments forwarded to the granule reader's
+        constructor via :func:`granule_factory` — e.g.
+        ``{'scans': ['S1', 'S2', 'S3', 'S4']}`` to make an SSMIS-family
+        reader (ATMS included) read all four scan groups instead of its
+        default
 
     Returns
     --------
@@ -248,7 +260,7 @@ def read_granule(file_path,
     # >>> modis = starepandas.read_granule(fname, latlon=True, sidecar=True, nom_res='5km')
     """
 
-    granule = granule_factory(file_path, sidecar_path, nom_res)
+    granule = granule_factory(file_path, sidecar_path, nom_res, **(reader_kwargs or {}))
 
     if add_sids:
         latlon = True

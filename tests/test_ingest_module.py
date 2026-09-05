@@ -155,3 +155,29 @@ def test_ingest_granules_local_empty_input_returns_empty(tmp_path):
         local_root=str(tmp_path / 'pods'),
     )
     assert result == []
+
+
+def test_ingest_granules_s3_forwards_reader_kwargs(monkeypatch, tmp_path):
+    """``reader_kwargs`` must survive the ingest → to_s3 hop verbatim — the
+    seam the cloud ticket ``options`` path uses to request ATMS S1–S4."""
+    import starepandas
+    import starepandas.ingest  # noqa: F401 — ensure module import
+
+    fake_granule = tmp_path / 'fake.HDF5'
+    fake_granule.write_bytes(b'')
+
+    calls = []
+    def fake_to_s3(**kwargs):
+        calls.append(kwargs)
+        return 's3://x/q003200-fake-ATMS_S1.parquet'
+
+    monkeypatch.setattr(starepandas.io.granules, 'to_s3', fake_to_s3)
+    result = starepandas.ingest.ingest_granules_s3(
+        data_path=str(fake_granule),
+        instrument='ATMS',
+        s3_prefix='s3://x/y',
+        reader_kwargs={'scans': ['S1', 'S2', 'S3', 'S4']},
+    )
+    assert result == ['s3://x/q003200-fake-ATMS_S1.parquet']
+    assert len(calls) == 1
+    assert calls[0]['reader_kwargs'] == {'scans': ['S1', 'S2', 'S3', 'S4']}

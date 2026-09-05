@@ -19,6 +19,7 @@ import os
 import numpy
 import pytest
 
+from starepandas.io.granules import granule_factory, read_granule
 from starepandas.io.granules.atms import ATMS
 
 GRANULE = os.path.join(
@@ -86,3 +87,37 @@ def test_to_df_columns_are_aligned(granule):
     for scan, df in frames.items():
         assert 'timestamp' in df.columns
         assert len(df) == numpy.prod(granule.lat[scan].shape)
+
+
+def test_all_four_scan_groups_read():
+    """The D2 bulk-ingest shape: S1–S4 (bands K/Ka/W/G) all read cleanly."""
+    atms = ATMS(GRANULE, scans=['S1', 'S2', 'S3', 'S4'])
+    try:
+        atms.read_timestamps()
+        atms.read_latlon()
+        atms.read_data()
+        assert set(atms.timestamps) == {'S1', 'S2', 'S3', 'S4'}
+        for scan in atms.scans:
+            assert atms.timestamps[scan].shape == atms.lat[scan].shape
+            assert atms.data[scan], f"no channels read for {scan}"
+        # The G band (S4) carries six 165–183 GHz channels.
+        assert len(atms.data['S4']) == 6
+    finally:
+        atms.close()
+
+
+def test_granule_factory_forwards_reader_kwargs():
+    """``granule_factory(..., scans=…)`` must reach the reader's constructor."""
+    granule = granule_factory(GRANULE, scans=['S1', 'S3'])
+    try:
+        assert granule.scans == ['S1', 'S3']
+    finally:
+        granule.close()
+
+
+def test_read_granule_reader_kwargs_reaches_scans():
+    """``reader_kwargs`` threads from read_granule through the factory — the
+    seam the cloud ticket ``options`` path relies on for the S1–S4 ingest."""
+    frames = read_granule(GRANULE, read_timestamp=True,
+                          reader_kwargs={'scans': ['S3', 'S4']})
+    assert set(frames) == {'S3', 'S4'}
