@@ -58,8 +58,12 @@ fi
 
 echo "==> 4/4 Pushing to $ECR_REGISTRY/$IMAGE"
 # No aws CLI needed — mint the ECR token with boto3 using .config creds
-# (docs/path_c_runbook.md §6f).
-conda run -n "$CONDA_ENV" python - <<'EOF' | docker login --username AWS --password-stdin "$ECR_REGISTRY"
+# (docs/path_c_runbook.md §6f). The script must be a real file, not a
+# heredoc on stdin: `conda run` swallows stdin, so a heredoc yields an
+# empty password and docker login fails with "password is empty".
+TOKEN_SCRIPT="$(mktemp)"
+trap 'rm -f "$TOKEN_SCRIPT"; docker rm -f "$CID" >/dev/null' EXIT
+cat > "$TOKEN_SCRIPT" <<'EOF'
 import base64, boto3
 cfg = dict(l.strip().split('=', 1) for l in open('starepandas/.config')
            if '=' in l and not l.startswith('#'))
@@ -68,5 +72,6 @@ t = boto3.client('ecr', region_name='us-west-2', aws_access_key_id=cfg['key'],
     ).get_authorization_token()['authorizationData'][0]['authorizationToken']
 print(base64.b64decode(t).decode().split(':', 1)[1], end='')
 EOF
+conda run -n "$CONDA_ENV" python "$TOKEN_SCRIPT" | docker login --username AWS --password-stdin "$ECR_REGISTRY"
 docker tag "$IMAGE" "$ECR_REGISTRY/$IMAGE"
 docker push "$ECR_REGISTRY/$IMAGE"
