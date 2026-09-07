@@ -10,7 +10,7 @@ the REST API (``GET /jobs/{id}``, ``GET /jobs/{id}/failures``,
 
 import time
 
-from starepandas.cloud._http import JobNotFound, request
+from starepandas.cloud._http import IngestError, JobNotFound, request
 
 #: Job states that mean the worker pipeline has finished (success or failure).
 #: These are the exit conditions for :meth:`JobHandle.wait`.
@@ -48,6 +48,34 @@ class JobHandle:
     def _job_url(self):
         return "%s/jobs/%s" % (self.endpoint, self.job_id)
 
+    def _get(self, url, what):
+        """``GET`` ``url`` and return the payload of a 2xx response.
+
+        404 → :class:`JobNotFound`; any other non-2xx →
+        :class:`IngestError` carrying the status and the server body.
+        Before 2026-09-07 every status was returned as if it were a record,
+        so a 429 quota body (``{"message": "Limit Exceeded"}``) came back
+        from ``status()`` as the job record and ``wait()`` polled on it
+        forever (Q1-2025 bulk run, API daily quota).
+        """
+        status_code, payload = request("GET", url, self.api_key)
+        body = payload if isinstance(payload, dict) else {}
+        if status_code == 404:
+            raise JobNotFound(
+                body.get("error", "Job %s not found" % self.job_id),
+                status_code=404,
+                payload=payload,
+            )
+        if not 200 <= status_code < 300:
+            detail = body.get("error") or body.get("message") or payload
+            raise IngestError(
+                "GET %s for job %s returned HTTP %s: %s"
+                % (what, self.job_id, status_code, detail),
+                status_code=status_code,
+                payload=payload,
+            )
+        return payload
+
     def status(self):
         """Fetch the current job record via ``GET /jobs/{id}``.
 
@@ -60,14 +88,11 @@ class JobHandle:
         ------
         JobNotFound
             If the job id is unknown (404).
+        IngestError
+            On any other non-2xx response (429 quota exceeded, 403 bad
+            key, 5xx). ``status_code`` / ``payload`` carry the details.
         """
-        status_code, payload = request("GET", self._job_url, self.api_key)
-        if status_code == 404:
-            raise JobNotFound(
-                payload.get("error", "Job %s not found" % self.job_id),
-                status_code=404,
-                payload=payload,
-            )
+        payload = self._get(self._job_url, "status")
         self.record = payload
         return payload
 
@@ -90,6 +115,9 @@ class JobHandle:
         ------
         TimeoutError
             If ``timeout`` elapses before a terminal state is reached.
+        JobNotFound, IngestError
+            Propagated from :meth:`status` — a poll that hits the API's
+            daily quota (429) raises rather than spinning on the error body.
         """
         deadline = None if timeout is None else time.monotonic() + timeout
         while True:
@@ -116,14 +144,20 @@ class JobHandle:
         -------
         dict
             ``{job_id, count, failures: [...], next?}``.
+
+        Raises
+        ------
+        JobNotFound
+            If the job id is unknown (404).
+        IngestError
+            On any other non-2xx response.
         """
         url = "%s/failures" % self._job_url
         if next_token:
             from urllib.parse import quote
 
             url = "%s?next=%s" % (url, quote(str(next_token)))
-        _, payload = request("GET", url, self.api_key)
-        return payload
+        return self._get(url, "failures")
 
     def cancel(self):
         """Attempt to cancel the job via ``DELETE /jobs/{id}``.

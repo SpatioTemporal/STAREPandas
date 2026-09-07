@@ -482,6 +482,50 @@ def _load_config_from_default_locations() -> bool:
             continue
     return False
 
+# Liveness + timeout settings applied to every psycopg2 connection opened by
+# ``_ensure_rds_db_and_table`` (so: every catalog connection — ingest,
+# loaders, the cloud worker). Added 2026-09-07 after the Q1-2025 bulk run:
+# psycopg2's defaults are *no* keepalives and *no* timeouts, so when the RDS
+# instance crashed (09-05 16:27Z) 6 of 8 workers hung forever on dead
+# sockets and had to be force-redeployed. With these, a vanished server is
+# detected within ~keepalives_idle + keepalives_count × keepalives_interval
+# seconds and surfaces as an OperationalError, which fails the granule
+# (recorded, re-ingestable) instead of hanging the task.
+#
+# ``statement_timeout`` is deliberately generous: bulk-ingest batch INSERTs
+# progressed at hundreds of ms per unique-index probe while the catalog
+# outgrew the old instance's RAM and still completed, and the one-off
+# CREATE INDEX / DELETE-by-prefix statements on a 12 M-row table take
+# minutes. It guards against a statement that never returns, not a slow one.
+# Every value can be overridden per key in the ``rds`` block of ``.config``
+# (or ``aws_configure(rds={...})``), e.g. ``"statement_timeout_ms": 600000``.
+RDS_CONNECT_DEFAULTS = {
+    'keepalives': 1,
+    'keepalives_idle': 30,
+    'keepalives_interval': 10,
+    'keepalives_count': 3,
+    'connect_timeout': 15,
+    'statement_timeout_ms': 30 * 60 * 1000,
+}
+
+
+def _rds_connect_options(rds_options):
+    """Build the psycopg2 liveness/timeout kwargs from ``RDS_CONNECT_DEFAULTS``
+    overlaid with any same-named keys in ``rds_options`` (the parsed ``rds``
+    block). ``statement_timeout_ms`` becomes the libpq ``options`` string;
+    a value of ``0``/``None`` disables the statement timeout.
+    """
+    merged = dict(RDS_CONNECT_DEFAULTS)
+    for k in RDS_CONNECT_DEFAULTS:
+        if rds_options.get(k) is not None:
+            merged[k] = rds_options[k]
+    stmt_ms = merged.pop('statement_timeout_ms')
+    kwargs = {k: int(v) for k, v in merged.items()}
+    if stmt_ms:
+        kwargs['options'] = f'-c statement_timeout={int(stmt_ms)}'
+    return kwargs
+
+
 def _ensure_rds_db_and_table(target_dbname='StarePodsMetadata'):
     """
     Ensure the RDS Postgres database and table exist, and return a connection to the target DB.
@@ -511,8 +555,11 @@ def _ensure_rds_db_and_table(target_dbname='StarePodsMetadata'):
     if not all([host, user, password]):
         raise ValueError("RDS configuration incomplete: require host, username, password (and optionally port, database).")
 
+    connect_kwargs = dict(host=host, port=port, user=user, password=password,
+                          **_rds_connect_options(_AWS_RDS_OPTIONS))
+
     # Connect to admin DB to ensure target DB exists
-    admin_conn = psycopg2.connect(host=host, port=port, user=user, password=password, dbname=admin_db)
+    admin_conn = psycopg2.connect(dbname=admin_db, **connect_kwargs)
     admin_conn.set_session(autocommit=True)
     try:
         with admin_conn.cursor() as cur:
@@ -524,7 +571,7 @@ def _ensure_rds_db_and_table(target_dbname='StarePodsMetadata'):
         admin_conn.close()
 
     # Connect to target DB and ensure table
-    conn = psycopg2.connect(host=host, port=port, user=user, password=password, dbname=target_dbname)
+    conn = psycopg2.connect(dbname=target_dbname, **connect_kwargs)
     with conn.cursor() as cur:
         cur.execute(
             """

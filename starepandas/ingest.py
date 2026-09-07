@@ -25,6 +25,27 @@ import starepandas
 logger = logging.getLogger(__name__)
 
 
+class IngestGranuleError(RuntimeError):
+    """One granule's ingest failed and ``raise_on_error=True`` was requested.
+
+    Carries the offending path as ``granule`` and chains the original
+    exception. The cloud worker (``starepandas.cloud.worker``) ingests one
+    granule per call with ``raise_on_error=True`` so that a granule whose
+    reader or catalog write dies is recorded as *failed* in the job
+    instead of being counted as processed. (2026-09-06 bulk-run bug: 26
+    granules were marked processed after their ingest died during an RDS
+    restart, because the default log-and-continue path never raised.)
+    """
+
+    def __init__(self, granule: str, original: BaseException):
+        super().__init__(
+            f"ingest of {os.path.basename(granule)} failed: "
+            f"{type(original).__name__}: {original}"
+        )
+        self.granule = granule
+        self.original = original
+
+
 def _glob_granules(data_path: str) -> List[str]:
     """Resolve ``data_path`` to a concrete list of granule file paths.
 
@@ -116,6 +137,7 @@ def ingest_granules_s3(
     scan: Optional[str] = None,
     level: int = 10,
     clean_before_run: bool = False,
+    raise_on_error: bool = False,
     **kwargs: Any,
 ) -> List[str]:
     """Partition granules into Parquet files on S3 and record metadata in RDS.
@@ -145,6 +167,13 @@ def ingest_granules_s3(
         If True, call :func:`clean_s3_prefix` on ``s3_prefix`` first.
         Requires ``s3_prefix`` to be set explicitly (refuses to wipe the
         default prefix).
+    raise_on_error : bool, optional
+        Default ``False`` logs a failed granule and continues with the next
+        one (the interactive / notebook behaviour). ``True`` stops at the
+        first failure and raises :class:`IngestGranuleError` (chained to
+        the original exception); an empty ``data_path`` match also raises
+        (``FileNotFoundError``). The cloud worker uses ``True`` so a dead
+        granule is counted as failed rather than processed.
     **kwargs
         Forwarded to :func:`starepandas.io.granules.to_s3`.
 
@@ -152,6 +181,14 @@ def ingest_granules_s3(
     -------
     list of str
         S3 paths returned by each per-granule ``to_s3`` call.
+
+    Raises
+    ------
+    IngestGranuleError
+        Only with ``raise_on_error=True``: the first granule whose ingest
+        raised.
+    FileNotFoundError
+        Only with ``raise_on_error=True``: ``data_path`` matched no granule.
     """
     if clean_before_run:
         if s3_prefix is None:
@@ -165,6 +202,8 @@ def ingest_granules_s3(
     logger.info(f"Ingesting {instrument} granules from {data_path}")
     granule_files = _glob_granules(data_path)
     if not granule_files:
+        if raise_on_error:
+            raise FileNotFoundError(f"No granule files found in {data_path}")
         logger.warning(f"No granule files found in {data_path}")
         return []
     logger.info(f"Found {len(granule_files)} {instrument} file(s)")
@@ -188,6 +227,8 @@ def ingest_granules_s3(
                 s3_paths.append(s3_result)
             logger.info(f"✓ Stored {os.path.basename(granule_file)} → {s3_result}")
         except Exception as e:
+            if raise_on_error:
+                raise IngestGranuleError(granule_file, e) from e
             logger.error(f"✗ Failed to process {granule_file}: {e}")
             continue
 

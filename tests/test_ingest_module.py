@@ -181,3 +181,71 @@ def test_ingest_granules_s3_forwards_reader_kwargs(monkeypatch, tmp_path):
     assert result == ['s3://x/q003200-fake-ATMS_S1.parquet']
     assert len(calls) == 1
     assert calls[0]['reader_kwargs'] == {'scans': ['S1', 'S2', 'S3', 'S4']}
+
+
+# ── raise_on_error (2026-09-07: silent per-granule failure fix) ──────────────
+
+
+def _fake_granule(tmp_path, name='fake.HDF5'):
+    f = tmp_path / name
+    f.write_bytes(b'')
+    return f
+
+
+def test_ingest_granules_s3_default_swallows_reader_failure(monkeypatch, tmp_path, caplog):
+    """Default behaviour is unchanged: a granule whose reader raises is
+    logged and skipped, the call returns the paths of the rest."""
+    import starepandas
+    good = _fake_granule(tmp_path, 'a-good.HDF5')
+    bad = _fake_granule(tmp_path, 'b-bad.HDF5')
+
+    def fake_to_s3(**kwargs):
+        if kwargs['file_path'].endswith('bad.HDF5'):
+            raise OSError("Unable to open file (truncated)")
+        return 's3://x/q003200-a-good-GMI_S1.parquet'
+
+    monkeypatch.setattr(starepandas.io.granules, 'to_s3', fake_to_s3)
+    with caplog.at_level('ERROR', logger='starepandas.ingest'):
+        result = starepandas.ingest.ingest_granules_s3(
+            data_path=str(tmp_path), instrument='GMI', s3_prefix='s3://x/y',
+        )
+    assert result == ['s3://x/q003200-a-good-GMI_S1.parquet']
+    assert any('b-bad.HDF5' in r.message for r in caplog.records)
+
+
+def test_ingest_granules_s3_raise_on_error_propagates_reader_failure(monkeypatch, tmp_path):
+    """``raise_on_error=True`` turns the first failed granule into an
+    ``IngestGranuleError`` naming the granule and chaining the cause —
+    the worker's seam for recording a *failed* (not processed) granule."""
+    import starepandas
+    from starepandas.ingest import IngestGranuleError
+    bad = _fake_granule(tmp_path, 'b-bad.HDF5')
+
+    def fake_to_s3(**kwargs):
+        raise OSError("Unable to open file (truncated)")
+
+    monkeypatch.setattr(starepandas.io.granules, 'to_s3', fake_to_s3)
+    with pytest.raises(IngestGranuleError) as info:
+        starepandas.ingest.ingest_granules_s3(
+            data_path=str(bad), instrument='GMI', s3_prefix='s3://x/y',
+            raise_on_error=True,
+        )
+    err = info.value
+    assert err.granule == str(bad)
+    assert isinstance(err.original, OSError)
+    assert isinstance(err.__cause__, OSError)
+    assert 'b-bad.HDF5' in str(err) and 'truncated' in str(err)
+    assert starepandas.IngestGranuleError is IngestGranuleError
+
+
+def test_ingest_granules_s3_raise_on_error_rejects_missing_input(tmp_path):
+    """A path that matches nothing is a failure under raise_on_error (the
+    default returns [] with a warning)."""
+    import starepandas
+    missing = str(tmp_path / 'nope.HDF5')
+    assert starepandas.ingest.ingest_granules_s3(
+        data_path=missing, instrument='GMI', s3_prefix='s3://x/y') == []
+    with pytest.raises(FileNotFoundError):
+        starepandas.ingest.ingest_granules_s3(
+            data_path=missing, instrument='GMI', s3_prefix='s3://x/y',
+            raise_on_error=True)

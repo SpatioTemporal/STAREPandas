@@ -81,7 +81,8 @@ starepandas/
 │   ├── stare_join.py       # STARE-based spatial joins
 │   ├── intersections.py    # STARE intersection operations
 │   └── ...                 # Other spatial tools
-├── tests/                  # pytest test suite (+test_metadata_store,
+├── tests/                  # pytest test suite (+test_rds_connect_options —
+│                           #  2026-09-07 keepalive/timeout kwargs; +test_metadata_store,
 │                           #  test_cloud_ticket_sizing, test_s3_layout,
 │                           #  test_granule_timestamps, test_ingest_module,
 │                           #  test_podcode_layout, test_temporal_catalog —
@@ -334,7 +335,7 @@ All skills run exclusively inside the `starepandas_3.12_v3` conda environment.
 - Bug fixed → add a regression test asserting the fix
 - New pytest file under `tests/` → add it to the unit-test check's `test_files` list
 
-### Verified checks (basic, 8/8 PASS as of 2026-07-12)
+### Verified checks (basic, 9/9 PASS as of 2026-09-07)
 1. `import starepandas` (core package loads + headline symbols present)
 2. `import pystare` (dependency, with `from_latlon` / `to_latlon`)
 3. `STAREDataFrame` instantiable + `set_sids` + `make_trixels`
@@ -346,6 +347,12 @@ All skills run exclusively inside the `starepandas_3.12_v3` conda environment.
    `pod_drilldown` / `fold_instrument`) + functional micro-check: genuine
    trio counted at n=3, fake triangle rejected
 8. C-2 `cloud.worker` exposes `Worker` / `WorkerConfig` / `main` / `_is_rds_auth_error`; `WorkerConfig.from_env()` rejects missing `SQS_QUEUE_URL`
+9. Bulk-run follow-ups (2026-09-07): `ingest_granules_s3(raise_on_error=True)`
+   raises `IngestGranuleError` naming the granule (default still
+   log-and-continue); `Worker._ingest` is bound with `raise_on_error=True`;
+   `MetadataWriteError` exported; `_rds_connect_options` yields keepalives +
+   `connect_timeout` + `statement_timeout`; `JobHandle` 429 → `IngestError`
+   (record untouched), 404 → `JobNotFound`
 
 ### Verified checks (STARE-PODS, 14/14 PASS as of 2026-07-12 — fully online, live-RDS checks included)
 1. `import starepandas`
@@ -380,8 +387,8 @@ All skills run exclusively inside the `starepandas_3.12_v3` conda environment.
 14. C-1..C-6 unit tests pass (cloud.ticket_sizing + metadata + granule_timestamps
     + s3_layout + ingest_module + config_env_secret + control_plane_lambdas
     + completion_watcher + cloud_client + podcode_layout + temporal_catalog
-    + temporal_query + vcf_rollup + overlap_analytics + atms_reader —
-    currently 216 unit tests)
+    + temporal_query + vcf_rollup + overlap_analytics + atms_reader +
+    demo_plots + path_prefix_filter + cloud_worker + rds_connect_options)
 
 ### Verified checks (cloud SDK, env-gated — C-6)
 `~/.claude/scripts/starepods_cloud_verify.py` (run with `STAREPANDAS_CLOUD_VERIFY=1`;
@@ -439,7 +446,103 @@ pip install -e .
 
 ---
 
-*Last Updated: 2026-08-21 (**uniform quaternary pod codes — 2-digit root**.
+*Last Updated: 2026-09-07 (**Q1 bulk-run follow-ups 1–3 — code change**.
+The three silent-failure paths the bulk run exposed are closed. (1)
+`ingest_granules_s3(..., raise_on_error=True)` raises
+`starepandas.IngestGranuleError` (granule named, cause chained; empty
+`data_path` → `FileNotFoundError`); default stays log-and-continue for the
+notebooks. `Worker` binds the production ingest as
+`functools.partial(ingest_granules_s3, raise_on_error=True)` and rejects an
+empty result list, so a dead granule is now a *failed* row, not "processed".
+The second swallow behind the 15 partial granules / 18,447 orphan chunks is
+closed too: `RDSMetadataStore.write_partitions` raises
+`starepandas.MetadataWriteError(requested, inserted, last_error)` when the
+row-by-row fallback falls short (it used to return 0 and `to_s3` printed
+"Inserted 0 metadata rows"). (2) `RDS_CONNECT_DEFAULTS` /
+`_rds_connect_options` in `staredataframe.py`: every psycopg2 connect in
+`_ensure_rds_db_and_table` carries `keepalives=1/idle 30/interval 10/count 3`,
+`connect_timeout=15`, `statement_timeout=30 min` (generous on purpose —
+guards a statement that never returns, not a slow bulk INSERT or the one-off
+CREATE INDEX on 12 M rows); any key overridable in the `.config` `rds` block,
+`statement_timeout_ms: 0` disables. **Worker image not rebuilt yet** — wheel
++ `build.sh --push` before the next cloud job. (3) `JobHandle.status()` /
+`failures()` / `wait()` raise `IngestError(status_code, payload)` on any
+non-2xx except 404 (`JobNotFound`); a failed poll leaves `handle.record`
+alone (the 429 quota body used to *become* the record). Follow-ups 4 (API
+quota) and 5 (runbook bulk-run section) deferred by the user →
+`.scratch/q1-bulk-ingest/issues/01`, `02` (`ready-for-agent`). Tests +14
+(3 ingest, 3 worker, 2 store, 3 client, new `test_rds_connect_options.py` 3);
+suite 398 green; basic **9/9** (new check 9); STARE-PODS 14/14 online (check
+14 now also runs `test_cloud_worker` + `test_rds_connect_options`). Handoff
+§7 and `docs/path_c_implementation.md` updated. Next: step 7 (notebook v2
+Part 1 + Part 6).)*
+
+*Prior: 2026-09-06 (**Q1-2025 bulk ingest — steps 5–6 DONE; no code
+change**. 51 jobs (7,047 granules) + the pilot ran on 8 Fargate
+workers 2026-09-05 13:40Z → 09-06 13:35Z: **7,344/7,344 processed, 0 failed
+per the API**; the store root `s3://zarrpods/storage` now holds **12,430,463
+chunks / 512.67 GB** (final reconcile: objects == catalog rows, 7,344 granules) for GMI 1,385 · SSMIS 1,255 · AMSR2 1,309 · ATMS 3,395
+granules (ATMS S1–S4). Scaling 4→8 workers confirmed linear (SSMIS 66
+s/granule/worker vs 77 at 4). Full-quarter analytics: thin load 12.39 M rows
+in 37 s, Δt=45 min sweep 15.7 s, all 2,048 level-4 pods have 2-/3-way
+rendezvous, 530 a 4-way. **Incidents (all RDS)**: the 1 GB db.t4g.micro
+crashed at 16:27Z (6 of 8 workers hung on dead connections — fixed by
+`update_service(forceNewDeployment=True)`), then became the bottleneck as the
+catalog outgrew RAM (unique-index probe 629 ms, 3–5k rows/min) until the user
+**resized it to db.t4g.large + gp3** (05:50Z; keep it there). **Bug found**:
+`ingest_granules_s3` swallows per-granule exceptions (`continue`), so the
+cloud worker marked 26 granules "processed" whose ingest died at the restarts
+(11 wrote nothing, 15 partial → 18,447 orphan chunks); found by a per-granule
+S3-vs-catalog reconcile, fixed by re-ingesting exactly those 26 (idempotent,
+3 jobs, 0 failed) — code fix pending. Also: API daily quota (1,000/key) is
+exhausted by per-minute polling of 51 jobs — read RDS counters instead, and
+never full-scan the catalog on the live instance during a bulk run. Records:
+plan HTML v6, `docs/handoffs/handoff-2026-09-06-q1-bulk-ingest-complete.md`,
+`.scratch/q1-bulk-ingest/`. Next: step 7 (notebook v2 Part 1 + Part 6).)*
+
+*Prior: 2026-09-05 (**Q1-2025 bulk ingest — step 4 pilot PASSED, no
+code change**. Cloud job `4a90ee8e…` ingested manifest `ATMS-2025-w06` (297
+granules, NOAA-20/NOAA-21/SNPP × 99, D2 scans S1–S4) into
+`s3://zarrpods/storage`: 297/297, 0 failed, 109.8 min at 4 workers;
+**604,920 objects == 604,920 catalog rows**, all four `ATMS_S1..S4` datasets,
+podcode == filename == `sid_to_podcode(grouped_id)` on every row, per-platform
+parquet spot-checks true, demo/loadtest roots untouched (7,156 / 14,248).
+ATMS S1–S4 = 2,037 chunks/granule; throughput is chunk-bound at ~5,500
+chunks/min per 4 workers (each worker sequential-PUT bound, ~40 ms/chunk);
+RDS idle (batched commits, ~550 B/row → quarter ≈ 6.5 GB). **Scheduler
+finding**: ECS desired = `max(requested, current)`, so concurrent jobs share
+the same 4 tasks — >4 workers is a manual `ecs.update_service` as zarpodder.
+Idle-exit churn at a job's tail (8 tickets / 4 workers) is by design and
+harmless. Full-run estimate ~35 h at 4 / ~18 h at 8 / ~9 h at 16 workers.
+Next: step 5 once the user picks the worker count. Records: plan HTML v5,
+handoff, `.scratch/q1-bulk-ingest/pilot/`.)*
+
+*Prior: 2026-09-04 (**Q1-2025 bulk ingest — step 3 staged, no code
+change**. Plan of record: `bulk_ingest_q1_2025_plan.html` (repo root, v4,
+uncommitted) + `docs/handoffs/handoff-2026-09-04-q1-bulk-ingest.md`. Raw Q1
+granules now live at `s3://zarrpods/raw/2025-q1/<GMI|SSMIS|AMSR2|ATMS>/` —
+7,360 healthy files, 281.3 GB, synced from the Bayesics EC2's FlexFS by a
+boto3 uploader (no aws CLI there) at 128 MB/s in 36 min, verified object-for-
+object against the health-screened inventory. **Health screen = HDF5
+integrity (superblock end-of-file address vs actual size) + ≥ 1 MB**, not a
+per-instrument size floor: SSMIS's ~115 "small" 7–24 MB granules are complete
+partial passes (two already sit in the loadtest root with 748/969 rows), while
+ATMS-NPP's 433 × 64 KB files are complete-but-empty granules, all in January —
+SNPP coverage starts 2025-01-29. 0 truncated files in the archive. **52
+instrument-week manifests** (`<instr>-2025-w<NN>.json`, 7-day blocks from
+Jan 1; ATMS folds SNPP/NOAA-20/NOAA-21 → ~200–300 granules/week) = **7,344
+granules** (GMI 1,385 · SSMIS 1,255 · AMSR2 1,309 · ATMS 3,395), published to
+`s3://zarrpods/raw/2025-q1/_manifests/` with `_index.json` and the **D1
+exclusion list** — 16 basenames derived from the live catalog's `group_path`
+(demo 6 + loadtest 10), asserted at build time, all dropped from week 01.
+ATMS manifests carry the D2 `options` (`reader_kwargs.scans` S1–S4). Scale
+correction vs the plan: three ATMS platforms make it ~45% more granules than
+estimated, ~12 M rows expected — RDS storage headroom is a step-4/5 watch
+item. Local copies of manifests/scripts/inventories under
+`.scratch/q1-bulk-ingest/`. Next: step 4, pilot one ATMS week (w05+ to include
+SNPP).)*
+
+*Prior: 2026-08-21 (**uniform quaternary pod codes — 2-digit root**.
 The pod-code grammar's one base-8 digit (the level-0 octant) became two
 quaternary digits: `q` + `d0∈{0,1}` + `d1∈{0-3}` with `octant = d0·4 + d1`, so
 *every* digit is now one 4-way step. `podcode_prefix_length(level)` = `level+3`

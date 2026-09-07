@@ -40,6 +40,30 @@ from tenacity import (
 logger = logging.getLogger(__name__)
 
 
+class MetadataWriteError(RuntimeError):
+    """The catalog write for a partition batch could not be completed.
+
+    Raised by :meth:`RDSMetadataStore.write_partitions` when, after the
+    batch INSERT (with retries) has fallen back to row-by-row, fewer rows
+    were inserted than requested. Before 2026-09-07 the shortfall was only
+    logged: on a dead connection every row failed silently, ``to_s3``
+    printed "Inserted 0 metadata rows" and returned normally, and the
+    chunks already on S3 became catalog orphans (15 of the 26 silently
+    broken granules in the Q1-2025 bulk run). ``last_error`` carries the
+    final per-row exception.
+    """
+
+    def __init__(self, requested: int, inserted: int, last_error):
+        super().__init__(
+            f"catalog write incomplete: {inserted} of {requested} partition "
+            f"row(s) inserted; last error: "
+            f"{type(last_error).__name__}: {last_error}"
+        )
+        self.requested = requested
+        self.inserted = inserted
+        self.last_error = last_error
+
+
 def _is_transient_db_error(exc: BaseException) -> bool:
     """True if ``exc`` is a transient psycopg2 error worth retrying.
 
@@ -175,6 +199,8 @@ class RDSMetadataStore:
         self._conn = conn
         self._db_name = db_name
         self._owns_conn = conn is None
+        #: Last exception seen by the row-by-row fallback (None if clean).
+        self.last_write_error: Optional[BaseException] = None
 
     def _get_conn(self):
         if self._conn is None:
@@ -207,7 +233,16 @@ class RDSMetadataStore:
                 "— falling back to row-by-row insert",
                 type(self).rds_write_failures, exc,
             )
-            return self._write_one_by_one(tuples)
+            inserted = self._write_one_by_one(tuples)
+            if inserted < len(tuples):
+                # Row-by-row is best-effort per row; a shortfall means the
+                # caller's chunks are (partly) uncataloged. Surface it —
+                # the batch error is the most useful context when every
+                # row failed the same way (e.g. connection gone).
+                raise MetadataWriteError(
+                    len(tuples), inserted, self.last_write_error or exc
+                ) from exc
+            return inserted
 
     @retry(
         stop=stop_after_attempt(3),
@@ -239,13 +274,15 @@ class RDSMetadataStore:
         """Fallback for batch failure — preserves current behaviour."""
         conn = self._get_conn()
         inserted = 0
+        self.last_write_error = None
         for tup in tuples:
             try:
                 with conn.cursor() as cur:
                     cur.execute(_INSERT_ONE_SQL, tup)
                 conn.commit()
                 inserted += 1
-            except Exception:
+            except Exception as exc:
+                self.last_write_error = exc
                 try:
                     conn.rollback()
                 except Exception:

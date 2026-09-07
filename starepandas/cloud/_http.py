@@ -30,7 +30,14 @@ class CloudAPIError(Exception):
 
 
 class IngestError(CloudAPIError):
-    """``POST /ingest`` was rejected (e.g. 400 validation / cost cap, 500)."""
+    """The cloud API refused or failed a request.
+
+    Raised for a rejected ``POST /ingest`` (400 validation / cost cap, 500)
+    and, since 2026-09-07, for any non-2xx response to ``GET /jobs/{id}``
+    or ``GET /jobs/{id}/failures`` other than 404 (which is
+    :class:`JobNotFound`) — notably ``429`` when the API key's daily quota
+    is exhausted. ``status_code`` and ``payload`` carry the server detail.
+    """
 
 
 class JobNotFound(CloudAPIError):

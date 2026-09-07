@@ -41,6 +41,7 @@ so SQS redelivers to a fresh container.
 from __future__ import annotations
 
 import datetime
+import functools
 import json
 import logging
 import os
@@ -154,7 +155,13 @@ class Worker:
         self.sqs = sqs or boto3.client("sqs", region_name=config.region)
         self.ddb = ddb or boto3.client("dynamodb", region_name=config.region)
         # Injection points for tests; production uses the module defaults.
-        self._ingest = ingest_fn or starepandas.ingest_granules_s3
+        # ``raise_on_error=True`` is what turns a granule whose reader or
+        # catalog write dies into a *failed* row — the library default
+        # logs-and-continues, which made the worker count 26 dead granules
+        # as processed in the 2026-09-05 bulk run.
+        self._ingest = ingest_fn or functools.partial(
+            starepandas.ingest_granules_s3, raise_on_error=True
+        )
         self._fetch = fetch_fn or self._default_fetch
         os.makedirs(self.cfg.work_dir, exist_ok=True)
 
@@ -243,12 +250,18 @@ class Worker:
         with tempfile.TemporaryDirectory(dir=self.cfg.work_dir) as tmp:
             try:
                 local = self._fetch(uri, tmp)
-                self._ingest(
+                result = self._ingest(
                     data_path=local,
                     instrument=ticket["instrument"],
                     s3_prefix=ticket.get("s3_prefix"),
                     **(ticket.get("options") or {}),
                 )
+                # Belt and braces for a custom ingest_fn: one URI is one
+                # granule and must yield at least one dataset path.
+                if isinstance(result, (list, tuple)) and not result:
+                    raise RuntimeError(
+                        "ingest returned no dataset paths for %s" % uri
+                    )
             except Exception as exc:
                 if _is_rds_auth_error(exc):
                     raise _RDSAuthRotation(exc) from exc

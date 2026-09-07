@@ -6,6 +6,8 @@ shape; the live ``RDSMetadataStore`` behaviour is exercised by
 """
 
 import datetime
+
+import pytest
 import json
 
 from starepandas.metadata import (
@@ -253,3 +255,66 @@ def test_on_conflict_refreshes_temporal_range_and_podcode():
     from starepandas.metadata import _ON_CONFLICT_CLAUSE
     for col in ('t_start', 't_end', 'podcode'):
         assert f'{col} = EXCLUDED.{col}' in _ON_CONFLICT_CLAUSE
+
+
+# ----- 2026-09-07: a row-by-row shortfall is an error, not a log line -------
+
+
+def test_row_by_row_shortfall_raises_metadata_write_error(monkeypatch):
+    """Batch fails on a dead connection, every row of the fallback fails
+    too → MetadataWriteError (was: return 0 and let the caller print
+    'Inserted 0 metadata rows' — the orphan-chunk bug of the Q1 bulk run)."""
+    import psycopg2
+    from starepandas.metadata import MetadataWriteError
+
+    store = RDSMetadataStore()
+    store._conn = object()
+
+    def raising_batch(self, tuples):
+        raise psycopg2.OperationalError("server closed the connection unexpectedly")
+
+    def partial_fallback(self, tuples):
+        self.last_write_error = psycopg2.InterfaceError("connection already closed")
+        return 0
+
+    _install_fast_batch_insert(monkeypatch, raising_batch)
+    monkeypatch.setattr(RDSMetadataStore, "_write_one_by_one", partial_fallback)
+
+    with pytest.raises(MetadataWriteError) as info:
+        store.write_partitions([_row(), _row()])
+    err = info.value
+    assert (err.requested, err.inserted) == (2, 0)
+    assert isinstance(err.last_error, psycopg2.InterfaceError)
+    assert "0 of 2" in str(err) and "connection already closed" in str(err)
+    assert isinstance(err.__cause__, psycopg2.OperationalError)
+
+
+def test_write_one_by_one_tracks_last_error():
+    """The fallback records the last per-row exception (and clears it on a
+    clean pass) so the shortfall error can name the cause."""
+    class _Cur:
+        def __init__(self, fail): self.fail = fail
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def execute(self, sql, tup):
+            if self.fail:
+                raise RuntimeError("row rejected")
+
+    class _Conn:
+        def __init__(self, fail_every_other):
+            self.calls = 0
+            self.fail_every_other = fail_every_other
+        def cursor(self):
+            self.calls += 1
+            return _Cur(self.fail_every_other and self.calls % 2 == 0)
+        def commit(self): pass
+        def rollback(self): pass
+
+    store = RDSMetadataStore(conn=_Conn(fail_every_other=True))
+    tuples = [_row().as_insert_tuple() for _ in range(4)]
+    assert store._write_one_by_one(tuples) == 2
+    assert isinstance(store.last_write_error, RuntimeError)
+
+    store = RDSMetadataStore(conn=_Conn(fail_every_other=False))
+    assert store._write_one_by_one(tuples) == 4
+    assert store.last_write_error is None

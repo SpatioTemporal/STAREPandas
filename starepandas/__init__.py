@@ -19,10 +19,12 @@ from .staredataframe import STAREDataFrame
 # (Path C, C-2) can import them without pulling in the demo classes.
 import starepandas.ingest
 from starepandas.ingest import (
+    IngestGranuleError,
     ingest_granules_local,
     ingest_granules_s3,
     clean_s3_prefix,
 )
+from starepandas.metadata import MetadataWriteError
 
 # Temporal-stare-pods issue 05: multi-instrument overlap analytics (slides
 # 8/9) — pure functions over a loaded temporal-catalog frame.

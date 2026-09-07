@@ -257,3 +257,52 @@ def test_default_fetch_returns_local_path_unchanged(tmp_path):
     # Schemes are URLs only; bare paths are returned as-is.
     assert w._default_fetch("/local/path.HDF5", str(tmp_path)) == "/local/path.HDF5"
     assert w._default_fetch("file:///abs/path.HDF5", str(tmp_path)) == "/abs/path.HDF5"
+
+
+# ── 2026-09-07: per-granule failures must reach the job counters ─────────
+
+
+def test_default_ingest_is_bound_with_raise_on_error(tmp_path):
+    """The production ingest callable is ``ingest_granules_s3`` with
+    ``raise_on_error=True`` baked in — without it the library's
+    log-and-continue default marks a dead granule as processed."""
+    import functools
+    import starepandas
+
+    cfg = WorkerConfig(queue_url="https://sqs/q", work_dir=str(tmp_path))
+    w = Worker(cfg, sqs=MagicMock(), ddb=MagicMock())
+    assert isinstance(w._ingest, functools.partial)
+    assert w._ingest.func is starepandas.ingest_granules_s3
+    assert w._ingest.keywords == {"raise_on_error": True}
+
+
+def test_ingest_granule_error_records_failed_with_cause(tmp_path):
+    """An ``IngestGranuleError`` (what raise_on_error=True raises) lands in
+    the failures table with the granule and the original error text."""
+    from starepandas.ingest import IngestGranuleError
+
+    ddb, _ = _ddb_with_condition_exc()
+    ingest = MagicMock(side_effect=IngestGranuleError(
+        "/tmp/x/g1.HDF5", OSError("Unable to open file (truncated)")))
+    w = _make_worker(tmp_path, ddb=ddb, ingest_fn=ingest)
+
+    w.process_ticket(_ticket(["s3://b/g1.HDF5"]))
+
+    item = ddb.put_item.call_args.kwargs["Item"]
+    assert item["state"]["S"] == "failed"
+    assert "g1.HDF5" in item["error"]["S"] and "truncated" in item["error"]["S"]
+    assert ddb.update_item.call_args.kwargs["ExpressionAttributeNames"] == {"#c": "failed"}
+
+
+def test_ingest_returning_no_paths_is_a_failure(tmp_path):
+    """One URI is one granule: an ingest that returns an empty list wrote
+    nothing and must not be counted as processed."""
+    ddb, _ = _ddb_with_condition_exc()
+    w = _make_worker(tmp_path, ddb=ddb, ingest_fn=MagicMock(return_value=[]))
+
+    w.process_ticket(_ticket(["s3://b/g1.HDF5"]))
+
+    item = ddb.put_item.call_args.kwargs["Item"]
+    assert item["state"]["S"] == "failed"
+    assert "no dataset paths" in item["error"]["S"]
+    assert ddb.update_item.call_args.kwargs["ExpressionAttributeNames"] == {"#c": "failed"}

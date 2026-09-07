@@ -310,3 +310,41 @@ def test_get_cloud_config_missing_raises(monkeypatch):
     monkeypatch.setattr(sdf, "_load_config_from_default_locations", lambda: False)
     with pytest.raises(RuntimeError):
         get_cloud_config()
+
+
+# --------------------------------------------------------------------------- #
+# 2026-09-07: non-2xx on the read side raises instead of masquerading as a record
+# --------------------------------------------------------------------------- #
+
+def test_status_429_raises_ingest_error_with_body(monkeypatch):
+    """The API's daily quota answers 429 ``{"message": "Limit Exceeded"}``.
+    Before the fix status() cached that body as the job record."""
+    handle, _ = _handle(monkeypatch, (429, {"message": "Limit Exceeded"}))
+    handle.record = {"state": "running"}
+    with pytest.raises(IngestError) as info:
+        handle.status()
+    assert info.value.status_code == 429
+    assert info.value.payload == {"message": "Limit Exceeded"}
+    assert "Limit Exceeded" in str(info.value)
+    assert handle.record == {"state": "running"}, "a failed poll must not clobber the cached record"
+
+
+def test_wait_surfaces_quota_error(monkeypatch):
+    monkeypatch.setattr(jh_mod.time, "sleep", lambda s: None)
+    handle, _ = _handle(monkeypatch, [
+        (200, {"state": "running"}),
+        (429, {"message": "Limit Exceeded"}),
+    ])
+    with pytest.raises(IngestError):
+        handle.wait(poll_interval=0.01)
+
+
+def test_failures_non_2xx_raises_and_404_is_jobnotfound(monkeypatch):
+    handle, _ = _handle(monkeypatch, (500, {"error": "boom"}))
+    with pytest.raises(IngestError) as info:
+        handle.failures()
+    assert info.value.status_code == 500 and "boom" in str(info.value)
+
+    handle, _ = _handle(monkeypatch, (404, {"error": "no such job"}))
+    with pytest.raises(JobNotFound):
+        handle.failures()
