@@ -2079,6 +2079,285 @@ def load_local_temporal_catalog(db_path, dataset=None, dataset_prefix=None,
     return _finish_temporal_catalog(rows)
 
 
+# ── Server-side catalog aggregation (Q1-2025 step 7, 2026-09-07) ────────────
+#
+# A quarter of data is ~12 M catalog rows; the full-metadata client load
+# (``load_s3_metadata``) cannot pull that, and even the 4-column thin load is
+# a 37 s / ~400 MB transfer. The "what is in the store" questions the demo
+# notebooks ask — chunks / pods / granules per dataset and per storage root,
+# platforms, sensing span, chunks per pod — are GROUP BYs the database
+# answers in one pass, returning a few dozen (summary) or a few tens of
+# thousands (occupancy) rows. Two loaders, each with a local/SQLite twin so
+# the pure seam is unit-testable without AWS.
+#
+# ``storage_root`` and ``platform`` are derived from the stored chunk path
+# (``MetadataJson.group_path``): the root is everything before the last
+# ``/``; the platform is the second dot-field of the *granule basename*
+# recovered via the chunk-filename grammar
+# (``<podcode>-<granule>-<dataset>.parquet`` — strip up to the first ``-``
+# and from the last ``-``), e.g. ``F18`` in
+# ``1C.F18.SSMIS.XCAL2021-V.20250101-S112813-E131004.078441.V07B``. Postgres
+# computes both with regexp_replace/split_part; SQLite has neither, so the
+# same operations are registered as Python functions on the connection —
+# ``_storage_root_of`` / ``_platform_of`` below *are* the contract for both.
+
+#: One row per (storage_root, Dataset, platform).
+CATALOG_SUMMARY_COLUMNS = ['storage_root', 'Dataset', 'platform', 'granules',
+                           'chunks', 'pods', 't_start', 't_end']
+#: One row per (Dataset, podcode).
+POD_OCCUPANCY_COLUMNS = ['Dataset', 'podcode', 'chunks']
+
+
+def _storage_root_of(group_path):
+    """Storage root of a stored chunk path: everything before the last ``/``
+    (Postgres: ``regexp_replace(p, '/[^/]*$', '')``). A path without ``/``
+    is its own root, as Postgres's no-match leaves it unchanged."""
+    if group_path is None:
+        return None
+    return re.sub(r'/[^/]*$', '', group_path)
+
+
+def _platform_of(group_path):
+    """Platform (second dot-field of the granule basename) of a stored chunk
+    path, or ``None`` when the granule name has no second dot-field.
+
+    Mirrors the Postgres expression exactly — ``split_part`` returns ``''``
+    for a missing field, which both backends normalise to ``None`` in
+    :func:`_finish_catalog_summary`."""
+    if group_path is None:
+        return None
+    filename = group_path.rsplit('/', 1)[-1]
+    granule = re.sub(r'-[^-]*$', '', re.sub(r'^[^-]*-', '', filename))
+    fields = granule.split('.')
+    return fields[1] if len(fields) >= 2 else ''
+
+
+_STORAGE_ROOT_SQL = {
+    'postgres': "regexp_replace(%s, '/[^/]*$', '')" % _GROUP_PATH_SQL['postgres'],
+    'sqlite': 'sp_storage_root(%s)' % _GROUP_PATH_SQL['sqlite'],
+}
+_PLATFORM_SQL = {
+    'postgres': ("split_part(regexp_replace(regexp_replace("
+                 "split_part(%s, '/', -1), '^[^-]*-', ''), '-[^-]*$', ''), "
+                 "'.', 2)" % _GROUP_PATH_SQL['postgres']),
+    'sqlite': 'sp_platform(%s)' % _GROUP_PATH_SQL['sqlite'],
+}
+
+
+def _register_sqlite_path_functions(conn):
+    """Give a sqlite3 connection the two path-derivation functions the
+    aggregation SQL uses (Postgres has native equivalents)."""
+    conn.create_function('sp_storage_root', 1, _storage_root_of)
+    conn.create_function('sp_platform', 1, _platform_of)
+
+
+def _catalog_filter_conditions(backend, placeholder, dataset=None,
+                               dataset_prefix=None, period=None,
+                               podcode_prefix=None, path_prefix=None):
+    """The WHERE fragments shared by every catalog loader, in one place.
+
+    Always excludes rows without a pod code (pre-temporal catalogs upgraded
+    in place but never re-ingested), like the thin loaders do.
+    """
+    conditions = ['podcode IS NOT NULL']
+    params = []
+    if dataset is not None:
+        conditions.append(f'"Dataset" = {placeholder}')
+        params.append(dataset)
+    if dataset_prefix is not None:
+        conditions.append(f'"Dataset" LIKE {placeholder}')
+        params.append(f"{dataset_prefix}_%")
+    if podcode_prefix is not None:
+        prefix_conds, prefix_params = _podcode_prefix_condition(
+            podcode_prefix, placeholder=placeholder)
+        conditions.extend(prefix_conds)
+        params.extend(prefix_params)
+    if path_prefix is not None:
+        path_conds, path_params = _path_prefix_condition(
+            path_prefix, backend, placeholder=placeholder)
+        conditions.extend(path_conds)
+        params.extend(path_params)
+    if period is not None:
+        period_conds, period_params = _period_conditions(
+            period, placeholder=placeholder, as_iso=(backend == 'sqlite'))
+        conditions.extend(period_conds)
+        params.extend(period_params)
+    return conditions, params
+
+
+def _catalog_summary_sql(backend, placeholder, **filters):
+    """``(sql, params)`` for the per-(root, dataset, platform) summary."""
+    conditions, params = _catalog_filter_conditions(backend, placeholder,
+                                                    **filters)
+    sql = (
+        f'SELECT {_STORAGE_ROOT_SQL[backend]} AS storage_root, "Dataset", '
+        f'{_PLATFORM_SQL[backend]} AS platform, '
+        'COUNT(DISTINCT "RawData Collected Time") AS granules, '
+        'COUNT(*) AS chunks, COUNT(DISTINCT podcode) AS pods, '
+        'MIN(t_start), MAX(t_end) FROM "PodsMetadata" '
+        'WHERE ' + ' AND '.join(conditions) +
+        ' GROUP BY 1, 2, 3 ORDER BY 1, 2, 3'
+    )
+    return sql, params
+
+
+def _pod_occupancy_sql(backend, placeholder, **filters):
+    """``(sql, params)`` for chunks per (dataset, pod)."""
+    conditions, params = _catalog_filter_conditions(backend, placeholder,
+                                                    **filters)
+    sql = (
+        'SELECT "Dataset", podcode, COUNT(*) AS chunks FROM "PodsMetadata" '
+        'WHERE ' + ' AND '.join(conditions) +
+        ' GROUP BY 1, 2 ORDER BY 1, 2'
+    )
+    return sql, params
+
+
+def _finish_catalog_summary(rows):
+    df = pd.DataFrame(rows, columns=CATALOG_SUMMARY_COLUMNS)
+    df['platform'] = pd.Series([p if p else None for p in df['platform']],
+                               index=df.index, dtype=object)
+    for col in ('granules', 'chunks', 'pods'):
+        df[col] = df[col].astype('int64')
+    df['t_start'] = pd.to_datetime(df['t_start'], format='ISO8601')
+    df['t_end'] = pd.to_datetime(df['t_end'], format='ISO8601')
+    return df
+
+
+def _finish_pod_occupancy(rows):
+    df = pd.DataFrame(rows, columns=POD_OCCUPANCY_COLUMNS)
+    df['chunks'] = df['chunks'].astype('int64')
+    return df
+
+
+def load_s3_catalog_summary(dataset=None, dataset_prefix=None, period=None,
+                            podcode_prefix=None, path_prefix=None):
+    """
+    Server-side inventory of the RDS catalog: one row per
+    (storage root, dataset, platform).
+
+    Answers "what is in the store" without transferring the catalog —
+    granules (distinct ``"RawData Collected Time"``), chunks, distinct pods
+    and the sensing span ``[min t_start, max t_end]`` per group, computed by
+    Postgres in one pass. ``storage_root`` is the chunk path's directory and
+    ``platform`` the granule name's second dot-field (``GPM``, ``F18``,
+    ``NOAA21`` …); see the module note above for the derivation.
+
+    This is a full scan of the catalog (the path fields live in
+    ``MetadataJson``, which no index serves): ~80 s for a 12 M-row catalog
+    on a db.t4g.large. Do not run it while a bulk ingest is writing — it
+    evicts the cache the writers need. ``period`` prunes via the temporal
+    index first.
+
+    Because storage roots are kept disjoint by granule (plan D1), the
+    ``granules`` and ``chunks`` columns can be summed across roots; ``pods``
+    cannot (the same pod holds chunks from several roots) — use
+    :func:`load_s3_pod_occupancy` for a pod count across roots.
+
+    Parameters
+    ----------
+    dataset, dataset_prefix, period, podcode_prefix, path_prefix : optional
+        As in :func:`load_s3_temporal_catalog`.
+
+    Returns
+    -------
+    pandas.DataFrame
+        :data:`CATALOG_SUMMARY_COLUMNS`; ``platform`` is ``None`` for
+        granule names without a second dot-field; timestamps parsed.
+    """
+    from starepandas.staredataframe import _ensure_rds_db_and_table
+
+    sql, params = _catalog_summary_sql(
+        'postgres', '%s', dataset=dataset, dataset_prefix=dataset_prefix,
+        period=period, podcode_prefix=podcode_prefix, path_prefix=path_prefix)
+    conn = _ensure_rds_db_and_table('StarePodsMetadata')
+    try:
+        with conn.cursor() as cur:
+            cur.execute(sql, params)
+            rows = cur.fetchall()
+    finally:
+        conn.close()
+    return _finish_catalog_summary(rows)
+
+
+def load_local_catalog_summary(db_path, dataset=None, dataset_prefix=None,
+                               period=None, podcode_prefix=None,
+                               path_prefix=None):
+    """
+    Local/SQLite equivalent of :func:`load_s3_catalog_summary` — same
+    columns and semantics over a local catalog (``storage_root`` is then
+    the on-disk chunk directory).
+    """
+    from starepandas.staredataframe import _ensure_sqlite_db_and_table
+
+    sql, params = _catalog_summary_sql(
+        'sqlite', '?', dataset=dataset, dataset_prefix=dataset_prefix,
+        period=period, podcode_prefix=podcode_prefix, path_prefix=path_prefix)
+    conn = _ensure_sqlite_db_and_table(db_path)
+    try:
+        _register_sqlite_path_functions(conn)
+        rows = conn.execute(sql, params).fetchall()
+    finally:
+        conn.close()
+    return _finish_catalog_summary(rows)
+
+
+def load_s3_pod_occupancy(dataset=None, dataset_prefix=None, period=None,
+                          podcode_prefix=None, path_prefix=None):
+    """
+    Chunks per (dataset, pod) from the RDS catalog — the pod-occupancy view
+    of the store, computed server-side.
+
+    At most ``datasets × 8·4^level`` rows come back (a few tens of thousands
+    for a level-4 store), from which the callers derive pods per instrument
+    (union across scan groups and storage roots), chunks per pod, busiest
+    pod, and empty-pod counts. Without ``path_prefix`` the query is served
+    from the covering index (no heap access: ~20 s on a 12 M-row catalog);
+    with it, the ``MetadataJson`` filter forces a heap scan.
+
+    Parameters
+    ----------
+    dataset, dataset_prefix, period, podcode_prefix, path_prefix : optional
+        As in :func:`load_s3_temporal_catalog`.
+
+    Returns
+    -------
+    pandas.DataFrame
+        :data:`POD_OCCUPANCY_COLUMNS`.
+    """
+    from starepandas.staredataframe import _ensure_rds_db_and_table
+
+    sql, params = _pod_occupancy_sql(
+        'postgres', '%s', dataset=dataset, dataset_prefix=dataset_prefix,
+        period=period, podcode_prefix=podcode_prefix, path_prefix=path_prefix)
+    conn = _ensure_rds_db_and_table('StarePodsMetadata')
+    try:
+        with conn.cursor() as cur:
+            cur.execute(sql, params)
+            rows = cur.fetchall()
+    finally:
+        conn.close()
+    return _finish_pod_occupancy(rows)
+
+
+def load_local_pod_occupancy(db_path, dataset=None, dataset_prefix=None,
+                             period=None, podcode_prefix=None,
+                             path_prefix=None):
+    """Local/SQLite equivalent of :func:`load_s3_pod_occupancy`."""
+    from starepandas.staredataframe import _ensure_sqlite_db_and_table
+
+    sql, params = _pod_occupancy_sql(
+        'sqlite', '?', dataset=dataset, dataset_prefix=dataset_prefix,
+        period=period, podcode_prefix=podcode_prefix, path_prefix=path_prefix)
+    conn = _ensure_sqlite_db_and_table(db_path)
+    try:
+        _register_sqlite_path_functions(conn)
+        rows = conn.execute(sql, params).fetchall()
+    finally:
+        conn.close()
+    return _finish_pod_occupancy(rows)
+
+
 #: Columns of a VCF roll-up frame (issue 04 — the on-the-fly temporal
 #: hierarchy). One row per pod at the requested level: the union temporal
 #: range of all chunks beneath it plus the child count.

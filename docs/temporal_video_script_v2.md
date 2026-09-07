@@ -5,29 +5,34 @@ Companion notebook: `starepandas/s3_starepods_examples_video_v2.ipynb`
 `docs/temporal_video_script.md` per the 260826 edit: the period-filter and
 VCF roll-up parts are dropped, the remaining parts renumbered 1–5, and the
 narration replaced with the revised text, then extended as the notebook
-grew (inventory, pod occupancy, per-swath splits, the two Part-5 figures).
-Full transcript ≈ 1,370 spoken words → ~9½ min at a comfortable 145 wpm;
-the "optional beat" sections and the Part-1 occupancy paragraph can be cut
-to shorten it.
+grew (inventory, pod occupancy, per-swath splits, the two Part-5 figures),
+and on 2026-09-07 widened to the **whole Q1-2025 store**: the inventory and
+Part 1 now cover the quarter (7,360 granules, 12.45 M chunks, three disjoint
+storage roots), Parts 2–5 keep the six-granule walkthrough, and a new
+**Part 6** times the engine on the quarter. Full transcript ≈ 1,720 spoken
+words → ~12 min at a comfortable 145 wpm; the "optional beat" sections and
+the Part-1 occupancy paragraph can be cut to shorten it.
 
 ## Structure
 
 | Part | On screen | Beat |
 |---|---|---|
 | Intro | Title cell + part list | What STARE-PODS is; QL4 decomposition; the catalog as a rendezvous engine |
-| The data in the store | Cell 3 output (instrument inventory) | The cast: 6 L1C granules, 4 instruments on 4 satellites — short optional beat in the transcript, or scroll it during the intro's "four microwave radiometers" line |
-| 1. The temporal catalog | Cell 5 output (per-dataset table + pod-occupancy stats + sample rows) | Every chunk carries a measured `[t_start, t_end]` + pod code; 1220 of 2048 QL4 pods occupied, busiest (18 chunks) is q003200 — the 4-way pod |
+| The data in the store | Cell 3 output (quarter inventory by instrument + the three storage roots) | The cast: the whole first quarter of 2025 — 7,360 granules, 4 instruments on 6 satellites, 12.45 M chunks — aggregated by the database, not downloaded; then the scope line: Parts 2–5 zoom to six granules of one day |
+| 1. The temporal catalog | Cell 5 output (quarter per-dataset table + quarter pod occupancy, then the six-granule occupancy + sample rows) | Every chunk carries a measured `[t_start, t_end]` + pod code; over the quarter every one of the 2048 QL4 pods is occupied (fullest: q033313, polar, 26,367 chunks); in the six-granule set 1220 of 2048, busiest (18 chunks) is q003200 — the 4-way pod |
 | 2. Rendezvous analytics | Cell 7 output (Δt table → matrix → drill-down) | Who met whom, simultaneously — from database records alone |
 | 3. Maps of rendezvous in swaths | Figure 1 (4 panels, outlined pods) | Panel counts, orbit shapes, where each outline color sits |
 | 4. Rendezvous up close | Figures 2–3 (2-way q023003, 4-way q003200) | Each case spatially (data elements) and temporally (pass times) |
 | 5. Rendezvous over a region of interest | Cell 13 output (query GT → figure 4: bbox → STARE cover map → 1478 / 154 / 116 → figure 5: returned data elements above the chunk timeline) | Space AND time in one query — the hatched cluster is the SSMIS morning pass the window drops |
+| 6. Performance at scale | Cell 15 output (scope × stage timing table → flat-in-n table → quarter matrix) | The same pipeline on a day, a week, a month, the quarter: 12.4 M chunks load in 37 s and sweep in 15 s; 2-, 3- and 4-way all from that one sweep; no chunk opened |
 | Outro | Recap cell | One-breath summary |
 
 ## Recording notes
 
 - Scroll to each cell *before* its narration begins; let figures sit ~5 s in silence where marked (…pause…).
 - The Δt table in Part 2 is the dramatic beat — consider highlighting the n-way columns with the cursor as you read them.
-- Pod codes read aloud: "q-zero-zero-three-two-zero-zero" (q003200), "q-zero-two-three-zero-zero-three" (q023003).
+- Pod codes read aloud: "q-zero-zero-three-two-zero-zero" (q003200), "q-zero-two-three-zero-zero-three" (q023003), "q-zero-three-three-three-one-three" (q033313).
+- Cell 3 takes ~100 s (the database's one pass over 12.45 M rows) and cell 15 ~90 s — run the notebook before recording; nothing re-executes on scroll.
 - All numbers in the transcript match the executed notebook — if you re-execute against re-ingested data, re-check them.
 
 ## Transcript
@@ -62,14 +67,23 @@ cross-instrument rendezvous engine.
 Everything you see in this demo runs live against AWS S3 and a Postgres
 catalog.
 
-### The data in the store  *(cell 3 output; optional beat)*
+### The data in the store  *(cell 3 output)*
 
-What did the decomposition put in the store? Six real granules from the
-first of January 2025 — four microwave radiometers on four different
-satellites, all Level 1C intercalibrated brightness temperatures: GMI on
-GPM, SSMIS on DMSP F-18, AMSR2 on GCOM-W1, and ATMS on NOAA-21. Six
-granules become fourteen datasets — one per scan group — and about seven
-thousand chunks across twelve hundred pods.
+What is in the store? The whole first quarter of 2025 — every Level 1C
+granule of the four radiometers from January first to March thirty-first:
+GMI on GPM, SSMIS on DMSP F-18, AMSR2 on GCOM-W1, and ATMS on all three of
+its platforms, Suomi NPP, NOAA-20 and NOAA-21. Seven thousand three hundred
+sixty granules, sixteen datasets — one per scan group — twelve and a half
+million chunks, in all 2048 pods. Notice how the table was made: the
+database aggregated the catalog in one pass, about a hundred seconds; not
+one of the twelve million chunk records was downloaded.
+
+The quarter lives in three storage roots — the bulk store the cloud workers
+filled, a curated six-granule set, and a load-test set — under one rule: a
+granule lives in exactly one root, so the per-root counts simply add up.
+For the rest of the walkthrough, Parts 2 to 5, we zoom in on the six
+granules of one day, January first, so that every figure stays legible; Part
+6 returns to the quarter.
 
 ### Part 1 — the temporal catalog  *(cell 5 output)*
 
@@ -82,10 +96,17 @@ hierarchy — each digit refines the previous, similar to postal codes. The
 scan times are actual times extracted from the granule's content, not the
 time in the granule's file name.
 
-Of the 2048 level-4 pods on the globe, 1220 hold at least one chunk. And
-the fullest pod in the whole store — 18 chunks — is pod q003200. Keep an
-eye on that one: it is exactly where all four instruments are about to
-meet.
+Over the quarter that is twelve and a half million such records, and again
+the database does the counting. Per dataset, every one of the sixteen
+datasets reaches all 2048 level-4 pods — except GMI, whose 65-degree orbit
+never sees the 68 pods nearest the poles. Every pod on the globe holds
+chunks; the fullest, pod q033313 with twenty-six thousand chunks, is a
+polar pod, where every sun-synchronous orbit converges.
+
+Now the six granules of our walkthrough day. Of the 2048 level-4 pods, 1220
+hold at least one chunk, and the fullest pod in that set — 18 chunks — is
+pod q003200. Keep an eye on that one: it is exactly where all four
+instruments are about to meet.
 
 ### Part 2 — rendezvous analytics  *(cell 7 output; cursor on the Δt table)*
 
@@ -186,6 +207,35 @@ instruments inside the shaded window, and one hatched cluster — SSMIS's
 morning visit, ten hours outside it. That is the AND of space and time in
 one picture.
 
+### Part 6 — performance at scale  *(cell 15 output; cursor down the timing table)*
+
+Parts 2 to 5 ran on six granules. Does the rendezvous engine hold up on the
+whole quarter — seven thousand three hundred forty-four granules, twelve
+point four million chunks? Here is Part 2's pipeline again, on the bulk
+store, at four scopes: a day, a week, a month, and the quarter. Three
+stages are timed. The thin load brings four columns per chunk out of the
+database — pod code, dataset, t-start, t-end — and nothing else. The sweep
+is one pass over each pod's chunks in time order. The aggregation builds
+the pair matrix and the per-pod table.
+
+One day — a hundred fifty thousand chunks — takes two seconds. The whole
+quarter — twelve point four million chunks — loads in thirty-seven seconds,
+sweeps in fifteen, and aggregates in four. And not one chunk was opened:
+the analytics never touch S3, so the cost is the catalog's, not the data
+volume's.
+
+The second table makes the other point. The two-way, three-way and
+four-way counts — over five million, over one million, and thirty-six
+thousand events — all come out of that same single fifteen-second sweep.
+There is no pairwise join whose cost grows with the number of instruments;
+the sweep is flat in n. Over the quarter, every one of the 2048 pods saw a
+two-way and a three-way rendezvous, and 534 pods saw all four instruments
+together within forty-five minutes.
+
+And the matrix, now for the quarter: AMSR2 and ATMS meet in all 2048 pods;
+GMI meets everyone in the 1980 pods it can reach; SSMIS, on its own orbital
+plane, meets AMSR2 in 921 and ATMS in 1421.
+
 ### Outro  *(recap cell)*
 
 In this video, we demonstrated a construction of STARE Parallel Optimized
@@ -199,3 +249,7 @@ Since the parquet chunks' file names contain pod codes and their contents
 contain spatiotemporal information of the data, rendezvous analytics can also
 be performed using the parquet chunks — albeit less efficiently than with the
 database, it is still better than the existing way.
+
+And the engine scales: a full quarter — twelve million chunks — loads in
+under a minute and sweeps in seconds, two-, three- and four-way alike,
+without opening a single chunk.

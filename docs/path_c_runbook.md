@@ -225,7 +225,8 @@ Image: `637388276731.dkr.ecr.us-west-2.amazonaws.com/starepods/worker:<tag>`
 (default tag `dev`; controlled by `cdk.json starepods:workerImageTag`).
 - **Roll back:** push/point `workerImageTag` to a known-good tag (or digest) and
   redeploy (§7). The task definition picks up the new image on the next task.
-- New tasks only — running tasks keep their image until they exit.
+- New tasks only — running tasks keep their image until they exit, and so
+  do tasks of the *current deployment* (see step 5 below).
 
 **Rebuild + repush** (after any change to the podding writer / worker code —
 performed 2026-05-30, 2026-06-21, 2026-07-11, 2026-08-21):
@@ -269,10 +270,30 @@ print(base64.b64decode(t).decode().split(':',1)[1], end='')" \
 docker tag starepods/worker:dev 637388276731.dkr.ecr.us-west-2.amazonaws.com/starepods/worker:dev
 docker push 637388276731.dkr.ecr.us-west-2.amazonaws.com/starepods/worker:dev
 ```
-No ECS action needed: the service idles at `desiredCount=0` and freshly-launched
-tasks re-resolve the `:dev` tag. Verify with
-`aws ecs describe-tasks … --query 'tasks[].containers[].imageDigest'` (or boto3)
-on the next job's tasks.
+```bash
+# 5. Roll the service onto the new digest. ECS resolves the :dev tag to a
+#    digest ONCE, when a service *deployment* is created, and every task of
+#    that deployment — including tasks launched later by scaling 0→N — pins
+#    that digest. A push alone changes nothing (2026-09-07: the first smoke
+#    job after a push ran the previous digest). Force a new deployment; at
+#    desiredCount=0 it completes in seconds and starts no task.
+conda run -n starepandas_3.12_v3 python -c "
+import boto3
+cfg = dict(l.strip().split('=',1) for l in open('starepandas/.config')
+           if '=' in l and not l.startswith('#'))
+boto3.client('ecs', region_name='us-west-2', aws_access_key_id=cfg['key'],
+             aws_secret_access_key=cfg['secret']).update_service(
+    cluster='starepods', service='starepods-workers', forceNewDeployment=True)"
+```
+Then verify on the next job's tasks that
+`describe_tasks(...)['tasks'][*]['containers'][0]['imageDigest']` equals the
+digest the push printed (`list_tasks(desiredStatus='STOPPED')` still shows a
+finished task's digest for about an hour). A cheap end-to-end check that
+needs no real data: upload a few bytes of garbage as
+`s3://zarrpods/testing-s3/smoke-<date>/1C.GPM.GMI.<…>.HDF5`, submit it as a
+one-granule GMI job to a throw-away `s3_prefix`, and expect
+`failed: 1` with an `IngestGranuleError` in `failures()` — nothing is written
+because the reader fails first; delete the object afterwards.
 
 ### 6g. Deploy / diff (CDK)
 ```bash

@@ -64,7 +64,10 @@ starepandas/
 │                           #   from .config (or STAREPANDAS_CLOUD_* env)
 ├── io/
 │   ├── granules/
-│   │   ├── __init__.py     # Granule factory, to_s3, to_local, reconstitute
+│   │   ├── __init__.py     # Granule factory, to_s3, to_local, reconstitute,
+│   │   │                   # catalog loaders (thin temporal, VCF, and — step 7,
+│   │   │                   # 2026-09-07 — server-side load_s3_catalog_summary /
+│   │   │                   # load_s3_pod_occupancy + local twins)
 │   │   ├── _timestamps.py  # NEW (§C10 #2) — derive raw_collected_time
 │   │   │                   # from filename (GMI/SSMIS/ATMS/AMSR2/MODIS)
 │   │   ├── gmi.py          # GMI instrument reader
@@ -82,7 +85,8 @@ starepandas/
 │   ├── intersections.py    # STARE intersection operations
 │   └── ...                 # Other spatial tools
 ├── tests/                  # pytest test suite (+test_rds_connect_options —
-│                           #  2026-09-07 keepalive/timeout kwargs; +test_metadata_store,
+│                           #  2026-09-07 keepalive/timeout kwargs; +test_catalog_summary —
+│                           #  step-7 aggregation loaders; +test_metadata_store,
 │                           #  test_cloud_ticket_sizing, test_s3_layout,
 │                           #  test_granule_timestamps, test_ingest_module,
 │                           #  test_podcode_layout, test_temporal_catalog —
@@ -354,7 +358,7 @@ All skills run exclusively inside the `starepandas_3.12_v3` conda environment.
    `connect_timeout` + `statement_timeout`; `JobHandle` 429 → `IngestError`
    (record untouched), 404 → `JobNotFound`
 
-### Verified checks (STARE-PODS, 14/14 PASS as of 2026-07-12 — fully online, live-RDS checks included)
+### Verified checks (STARE-PODS, 15/15 PASS as of 2026-09-07 — fully online, live-RDS checks included)
 1. `import starepandas`
 2. `MAX_PARTITION_LEVEL == 4` (locks in the post-ba3028d level-4 partitioning)
 3. `to_local` writes Parquet leaves (no zarr artifacts)
@@ -388,7 +392,12 @@ All skills run exclusively inside the `starepandas_3.12_v3` conda environment.
     + s3_layout + ingest_module + config_env_secret + control_plane_lambdas
     + completion_watcher + cloud_client + podcode_layout + temporal_catalog
     + temporal_query + vcf_rollup + overlap_analytics + atms_reader +
-    demo_plots + path_prefix_filter + cloud_worker + rds_connect_options)
+    demo_plots + path_prefix_filter + cloud_worker + rds_connect_options +
+    catalog_summary)
+15. Server-side catalog summary + pod occupancy, SQLite twin (step 7 —
+    `load_local_catalog_summary` / `load_local_pod_occupancy` agree with the
+    thin load on chunks / pods / span and recover the platform from the
+    granule name)
 
 ### Verified checks (cloud SDK, env-gated — C-6)
 `~/.claude/scripts/starepods_cloud_verify.py` (run with `STAREPANDAS_CLOUD_VERIFY=1`;
@@ -446,7 +455,46 @@ pip install -e .
 
 ---
 
-*Last Updated: 2026-09-07 (**Q1 bulk-run follow-ups 1–3 — code change**.
+*Last Updated: 2026-09-07b (**worker redeployed + Q1 step 7 DONE — the
+bulk-ingest plan is complete**. (1) Fixes 1–3 pushed (`c4e8344`) and the
+worker image rebuilt via `build.sh --push` (wheel `0.6.8+103.gc4e8344`, ECR
+`:dev` `ecc20a91… → 899c4986…`). **Deploy trap**: ECS resolves the `:dev`
+tag to a digest once per service *deployment* and every task of that
+deployment — including tasks launched later by scaling 0→N — pins it, so the
+first smoke job after the push still ran `ecc20a91` and a garbage granule
+came back *processed*. `update_service(forceNewDeployment=True)` (seconds at
+desired=0) fixed it: the rerun ran `899c4986` and the garbage granule came
+back **failed: 1** with the `IngestGranuleError` text in `failures()`, 0
+objects written. Runbook §6f corrected (its "no ECS action needed" was wrong)
+with a step 5 + the garbage-granule smoke recipe. (2) **Step 7**: two
+server-side loaders in `io/granules` — `load_s3_catalog_summary()` (one row
+per storage root × dataset × platform: granules via
+`COUNT(DISTINCT "RawData Collected Time")`, chunks, distinct pods, min/max t;
+root + platform derived in SQL from `group_path`, one full pass ≈ 97 s —
+never during a bulk run) and `load_s3_pod_occupancy()` (chunks per dataset ×
+pod, index-only, 5 s), each with a SQLite twin whose Python-registered
+`sp_storage_root`/`sp_platform` keep the SQL shape identical
+(`tests/test_catalog_summary.py` 10, verify check 15). v2 notebook
+(`s3_starepods_examples_video_v2.ipynb`, 17 cells, re-executed, 0 errors,
+5 figures): **Part 1 goes full-picture** — quarter inventory by instrument
+(7,360 granules → 16 datasets → 12,451,867 chunks in all 2048 pods; ATMS on
+NPP/NOAA-20/NOAA-21), the three disjoint roots (store 7,344 / walkthrough 6
+/ loadtest 10 — the columns add up), per-dataset temporal table, quarter pod
+occupancy (1980 pods by all four instruments, 68 beyond GMI's reach, busiest
+q033313 26,367 chunks — polar), then the six-granule zoom (1220 pods,
+q003200) + sample rows; **new Part 6 — performance at scale** on the store
+root at Δt=45: day 149,779 chunks 1.8/0.1/0.1 s → **quarter 12,430,463
+chunks 36.6 s load / 15.0 s sweep / 3.9 s aggregate, 6,483,771 events,
+2048/2048/534 pods with 2-/3-/4-way**, flat-in-n table (5.3 M / 1.1 M / 36 k
+events at width 2/3/4 from the one sweep), quarter matrix (AMSR2–ATMS 2048,
+×GMI 1980, ATMS–SSMIS 1421, AMSR2–SSMIS 921). Parts 2–5 unchanged (same
+matrix 359/…, 1478/154/116, same pixel counts). Script v2 ≈ 1,720 words with
+the Part 1 rewrite + Part 6. Verification: suite green, basic 9/9,
+STARE-PODS **15/15** online. Records: plan HTML v9 (all 7 steps done),
+handoff §7/§8, `docs/path_c_implementation.md`. Remaining: follow-ups 4–5 in
+`.scratch/q1-bulk-ingest/issues/`, record the v2 video.)*
+
+*Prior: 2026-09-07 (**Q1 bulk-run follow-ups 1–3 — code change**.
 The three silent-failure paths the bulk run exposed are closed. (1)
 `ingest_granules_s3(..., raise_on_error=True)` raises
 `starepandas.IngestGranuleError` (granule named, cause chained; empty
