@@ -32,7 +32,7 @@ the Part-1 occupancy paragraph can be cut to shorten it.
 - Scroll to each cell *before* its narration begins; let figures sit ~5 s in silence where marked (…pause…).
 - The Δt table in Part 2 is the dramatic beat — consider highlighting the n-way columns with the cursor as you read them.
 - Pod codes read aloud: "q-zero-zero-three-two-zero-zero" (q003200), "q-zero-two-three-zero-zero-three" (q023003), "q-zero-three-three-three-one-three" (q033313).
-- Cell 3 takes ~100 s (the database's one pass over 12.45 M rows) and cell 15 ~90 s — run the notebook before recording; nothing re-executes on scroll.
+- Run the notebook before recording; nothing re-executes on scroll. A full run is **~5.5 min** (329 s measured 2026-09-07): cell 3 ~110 s (the database's one pass over 12.45 M rows), cell 13 ~90 s (Part 5 downloads its 116 chunks), cell 15 ~85 s (Part 6's four scopes); every other cell is ≤ 20 s. Each cell prints its own `⏱ cell [n] took …` line and the last cell tabulates them.
 - All numbers in the transcript match the executed notebook — if you re-execute against re-ingested data, re-check them.
 
 ## Transcript
