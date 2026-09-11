@@ -32,7 +32,7 @@ the Part-1 occupancy paragraph can be cut to shorten it.
 - Scroll to each cell *before* its narration begins; let figures sit ~5 s in silence where marked (…pause…).
 - The Δt table in Part 2 is the dramatic beat — consider highlighting the n-way columns with the cursor as you read them.
 - Pod codes read aloud: "q-zero-zero-three-two-zero-zero" (q003200), "q-zero-two-three-zero-zero-three" (q023003), "q-zero-three-three-three-one-three" (q033313).
-- Run the notebook before recording; nothing re-executes on scroll. A full run is **~5.5 min** (329 s measured 2026-09-07): cell 3 ~110 s (the database's one pass over 12.45 M rows), cell 13 ~90 s (Part 5 downloads its 116 chunks), cell 15 ~85 s (Part 6's four scopes); every other cell is ≤ 20 s. Each cell prints its own `⏱ cell [n] took …` line and the last cell tabulates them.
+- Run the notebook before recording; nothing re-executes on scroll. A full run is **5–7 min** (303 s / 329 s / 440 s over three runs, 2026-09-07…11 — S3 and RDS latency vary): cell 3 ~110 s (the database's one pass over 12.45 M rows), cell 13 ~90 s (Part 5 downloads its 116 chunks — 55 s of it), cell 15 ~85 s (Part 6's four scopes); every other cell is ≤ 20 s. Each cell prints its own `⏱ cell [n] took …` line, the store-inventory / Part 5 / Part 6 cells end with a step-by-step breakdown (query · download · local · plot · display), and the last cell tabulates the cells.
 - All numbers in the transcript match the executed notebook — if you re-execute against re-ingested data, re-check them.
 
 ## Transcript
