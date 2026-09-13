@@ -394,3 +394,36 @@ def test_region_result_splits_kept_and_dropped():
     # the morning SSMIS chunk is outside the window: kept 2, dropped 1
     assert 'keeps 2 and drops 1' in fig._suptitle.get_text()
     plt.close(fig)
+
+
+# ── 2026-09-11: single-scan-group figures (video notebook v3) ────────────────
+
+
+def test_color_folds_scan_group_to_instrument():
+    from starepandas.demo_plots import INSTRUMENT_COLORS, _color, _DEFAULT_COLOR
+    assert _color('GMI_S1') == _color('GMI') == INSTRUMENT_COLORS['GMI']
+    assert _color('SSMIS_S4') == INSTRUMENT_COLORS['SSMIS']
+    assert _color('NOPE') == _DEFAULT_COLOR
+
+
+def test_plot_region_result_fold_false_labels_rows_by_scan_group():
+    import matplotlib
+    matplotlib.use('Agg')
+    import pandas as pd
+    from starepandas.demo_plots import plot_region_result
+    t0 = pd.Timestamp('2025-01-01 21:30')
+    spatial = pd.DataFrame({
+        'Dataset': ['GMI_S1', 'GMI_S2', 'SSMIS_S1'],
+        'podcode': ['q003200'] * 3,
+        't_start': [t0, t0, t0 + pd.Timedelta(hours=10)],
+        't_end': [t0 + pd.Timedelta(minutes=2)] * 2 + [t0 + pd.Timedelta(hours=10, minutes=2)],
+    })
+    px = pd.DataFrame({'lat': [-55.0], 'lon': [60.0], 'timestamp': [t0]})
+    window = (t0 - pd.Timedelta(minutes=45), t0 + pd.Timedelta(minutes=45))
+    fig = plot_region_result({'GMI_S1': px}, spatial, window, bbox=(55, -60, 65, -50), fold=False)
+    ax_time = fig.axes[-1]
+    assert [t.get_text() for t in ax_time.get_yticklabels()] == ['GMI_S1', 'GMI_S2', 'SSMIS_S1']
+    fig2 = plot_region_result({'GMI': px}, spatial, window, bbox=(55, -60, 65, -50))
+    assert [t.get_text() for t in fig2.axes[-1].get_yticklabels()] == ['GMI', 'SSMIS']
+    import matplotlib.pyplot as plt
+    plt.close(fig); plt.close(fig2)

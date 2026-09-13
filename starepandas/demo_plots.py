@@ -42,7 +42,10 @@ _DEFAULT_COLOR = '#808080'
 
 
 def _color(instrument):
-    return INSTRUMENT_COLORS.get(instrument, _DEFAULT_COLOR)
+    """Colour for an instrument *or* one of its scan groups: ``'GMI_S1'``
+    draws in GMI's colour, so a figure keyed by scan group (``fold=False``
+    loaders) stays consistent with the instrument-keyed ones."""
+    return INSTRUMENT_COLORS.get(fold_instrument(instrument), _DEFAULT_COLOR)
 
 
 def pod_trixels(podcodes):
@@ -595,7 +598,7 @@ def plot_region_cover(bbox, cover_sids, spatial_only, highlight_pod=None,
 
 
 def plot_region_result(passes, spatial_only, window, bbox, highlight_pod=None,
-                       figsize=(15, 10.5)):
+                       figsize=(15, 10.5), fold=True):
     """The result of a region query: its data elements above its time spans.
 
     Top: the pixels of the chunks that survive both filters, per instrument
@@ -621,6 +624,11 @@ def plot_region_result(passes, spatial_only, window, bbox, highlight_pod=None,
         A pod to outline in black.
     figsize : tuple, optional
         Figure size in inches.
+    fold : bool, optional
+        ``True`` (default) merges each instrument's scan groups into one
+        timeline row labelled by instrument; ``False`` keeps one row per
+        scan group (``Dataset``), labelled ``GMI_S1`` etc. — pair it with a
+        ``passes`` dict from ``chunk_pixels(..., fold=False)``.
 
     Returns
     -------
@@ -628,6 +636,7 @@ def plot_region_result(passes, spatial_only, window, bbox, highlight_pod=None,
     """
     from matplotlib.patches import Patch
 
+    label_of = fold_instrument if fold else (lambda dataset: dataset)
     start, end = window
     t_start = pd.to_datetime(spatial_only['t_start'])
     t_end = pd.to_datetime(spatial_only['t_end'])
@@ -667,12 +676,10 @@ def plot_region_result(passes, spatial_only, window, bbox, highlight_pod=None,
 
     # ---- bottom: time — every spatially-selected chunk ---------------------
     ax2 = fig.add_subplot(grid[1])
-    instruments = sorted(set(spatial_only['Dataset'].map(fold_instrument)))
-    order = sorted(instruments,
-                   key=lambda i: t_start[spatial_only['Dataset']
-                                         .map(fold_instrument) == i].min())
+    labels = spatial_only['Dataset'].map(label_of)
+    order = sorted(set(labels), key=lambda i: (t_start[labels == i].min(), i))
     for row, instrument in enumerate(order):
-        sub = spatial_only['Dataset'].map(fold_instrument) == instrument
+        sub = labels == instrument
         for s, e, keep in zip(t_start[sub], t_end[sub], kept_mask[sub]):
             s_num, e_num = mdates.date2num(s), mdates.date2num(e)
             if keep:
