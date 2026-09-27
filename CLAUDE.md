@@ -497,10 +497,14 @@ the executed notebook: 31 findings, 29 applied (figure-6 headline via
 `plot_region_result(subject=)`, spanners, SSMIS wording, Title Case titles,
 panel numbering, second-resolution ticks, test-roots clause in Part 6, unused
 `S3_PREFIX`/`ROOTS` removed), 2 handled otherwise (ATMS colour, holdings
-title). Library: `demo_plots.py` (+`swath_pixels`,
+title). **Sixth round (2026-09-27, after the push of `558fb55`):**
+Washington D.C. on both Part 4 pod maps as a hollow purple circle
+(`plot_rendezvous(point=(lon, lat), point_label=)`, `POINT_COLOR`), named
+in the legend beside Virginia only — no text on the map, per the user.
+Library: `demo_plots.py` (+`swath_pixels`,
 `swath_label`, `SATELLITES`, `_color` tolerant of a satellite suffix,
-`title=`/`region=`/`group_by=`/`extent=` params, `_swath_legend`) +7 tests →
-`tests/test_demo_plots.py` 41; suite green; basic 9/9; STARE-PODS 15/15. Records: handoff
+`title=`/`region=`/`point=`/`group_by=`/`extent=` params, `_swath_legend`) +8 tests →
+`tests/test_demo_plots.py` 42; suite green; basic 9/9; STARE-PODS 15/15. Records: handoff
 `docs/handoffs/handoff-2026-09-25-video-notebook-v5.md` (supersedes the
 v3/v4 one for the notebook thread), memory. Same trial rule: accept =
 delete v2–v4 + move references (script fork to v5, plan HTML, this note),

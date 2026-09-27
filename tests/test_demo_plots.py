@@ -577,3 +577,26 @@ def test_plot_rendezvous_draws_a_region_outline_and_widens_to_it():
     assert lon_min <= -83.7 and lat_min <= 36.5          # the state fits …
     assert lat_max >= 44.9 and lon_max >= -72.1          # … and so does the pod trixel
     plt.close(fig)
+
+
+def test_plot_rendezvous_marks_a_point_in_the_legend_only():
+    from shapely.geometry import Polygon
+    from starepandas.demo_plots import INSTRUMENT_COLORS, plot_rendezvous, POINT_COLOR
+    t0 = pd.Timestamp('2025-02-08 07:35')
+    passes = {'GMI_S1 (GPM)': pd.DataFrame({'lat': [40.0, 40.1], 'lon': [-75.0, -75.1],
+                                            'timestamp': [t0, t0 + pd.Timedelta(minutes=1)]})}
+    virginia = Polygon([(-83.7, 36.5), (-75.2, 36.5), (-75.2, 39.5), (-83.7, 39.5)])
+    fig = plot_rendezvous('q111332', passes, t0, pd.Timedelta(minutes=5),
+                          region=virginia, region_label='Virginia',
+                          point=(-77.04, 38.9), point_label='Washington D.C.')
+    ax = fig.axes[0]
+    legend = ax.get_legend()
+    assert [t.get_text() for t in legend.get_texts()] == ['GMI_S1 (GPM)', 'Virginia', 'Washington D.C.']
+    # the marker is a hollow ring in the point colour, distinct from every instrument colour
+    dc = legend.legend_handles[-1]
+    assert dc.get_markerfacecolor() == 'none'
+    assert dc.get_markeredgecolor() == POINT_COLOR
+    assert POINT_COLOR not in INSTRUMENT_COLORS.values()
+    # no text label was written onto the map itself
+    assert not [t for t in ax.texts if 'Washington' in t.get_text()]
+    plt.close(fig)

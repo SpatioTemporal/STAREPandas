@@ -519,6 +519,7 @@ def pod_pixels(demo, metadata, podcode, window, fold=True):
 
 
 LEGEND_MARKER_SIZE = 7
+POINT_COLOR = '#911eb4'   # a place marked on a map — purple, no instrument uses it
 
 
 def _swath_legend(passes):
@@ -535,7 +536,7 @@ def _swath_legend(passes):
 
 
 def plot_rendezvous(podcode, passes, meeting, dt, figsize=(15, 6.5), title=None,
-                    region=None, region_label='region'):
+                    region=None, region_label='region', point=None, point_label='point'):
     """One pod, zoomed: the swaths that meet there (left) and when (right).
 
     Parameters
@@ -559,6 +560,12 @@ def plot_rendezvous(podcode, passes, meeting, dt, figsize=(15, 6.5), title=None,
         A region of interest (a state, say) drawn as a dashed outline with
         faint state borders; the map widens to hold both it and the pod.
     region_label : str, optional
+        Its legend text.
+    point : tuple of float, optional
+        A place to mark — ``(lon, lat)`` — drawn as a hollow circle in
+        :data:`POINT_COLOR` and named only in the legend (no text on
+        the map).
+    point_label : str, optional
         Its legend text.
 
     Returns
@@ -613,6 +620,14 @@ def plot_rendezvous(podcode, passes, meeting, dt, figsize=(15, 6.5), title=None,
         ax.set_extent([lon_min - 0.5, lon_max + 0.5, lat_min - 0.5, lat_max + 0.5],
                       crs=ccrs.PlateCarree())
         handles.append(Line2D([], [], color='black', linestyle='--', label=region_label))
+    if point is not None:
+        from matplotlib.lines import Line2D
+        lon, lat = point
+        ax.scatter([lon], [lat], s=110, facecolors='none', edgecolors=POINT_COLOR,
+                   linewidths=2, zorder=11, transform=ccrs.PlateCarree())
+        handles.append(Line2D([], [], marker='o', linestyle='', markerfacecolor='none',
+                              markeredgecolor=POINT_COLOR, markeredgewidth=1.6,
+                              markersize=LEGEND_MARKER_SIZE + 2, label=point_label))
     ax.gridlines(draw_labels=True, linewidth=0.3)
     # with a region the map widens westward and the pod's apex reaches the
     # upper right, so the legend moves to the emptier upper left
