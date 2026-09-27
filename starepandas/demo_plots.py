@@ -28,7 +28,13 @@ import pandas as pd
 
 import starepandas
 from starepandas.overlap import fold_instrument
-from starepandas.staredataframe import podcode_to_sid, sid_to_podcode
+from starepandas.staredataframe import (
+    MAX_PARTITION_LEVEL, parse_chunk_filename, podcode_to_sid, sid_to_podcode,
+)
+
+#: How the demos name the pod level in figure text — "QL4" (STARE
+#: quadfurcation level 4), the same word the notebooks use, never "level-4".
+POD_LEVEL_LABEL = f"QL{MAX_PARTITION_LEVEL}"
 
 #: Stable per-instrument colors, so the two figures (and the two demos) agree.
 INSTRUMENT_COLORS = {
@@ -44,8 +50,28 @@ _DEFAULT_COLOR = '#808080'
 def _color(instrument):
     """Colour for an instrument *or* one of its scan groups: ``'GMI_S1'``
     draws in GMI's colour, so a figure keyed by scan group (``fold=False``
-    loaders) stays consistent with the instrument-keyed ones."""
-    return INSTRUMENT_COLORS.get(fold_instrument(instrument), _DEFAULT_COLOR)
+    loaders) stays consistent with the instrument-keyed ones. A label that
+    carries a satellite after the scan group — ``'ATMS_S1 (NOAA-21)'``, as
+    :func:`swath_pixels` builds — keys on its first word, so the three ATMS
+    platforms share ATMS's colour."""
+    head = instrument.split()[0] if instrument.strip() else instrument
+    return INSTRUMENT_COLORS.get(fold_instrument(head), _DEFAULT_COLOR)
+
+
+#: Satellite names for the platform field of a granule name (its second
+#: dot-field: ``1C.NOAA21.ATMS…`` → ``NOAA21``), used to label swaths.
+SATELLITES = {
+    'GPM': 'GPM', 'F18': 'DMSP F18', 'GCOMW1': 'GCOM-W1',
+    'NPP': 'Suomi NPP', 'NOAA20': 'NOAA-20', 'NOAA21': 'NOAA-21',
+}
+
+
+def swath_label(dataset, granule):
+    """``'ATMS_S1 (NOAA-21)'`` — the scan group plus the satellite that flew
+    the granule, so two swaths of the same instrument on different platforms
+    stay apart in a legend."""
+    platform = granule.split('.')[1] if granule.count('.') >= 2 else granule
+    return f"{dataset} ({SATELLITES.get(platform, platform)})"
 
 
 def pod_trixels(podcodes):
@@ -310,7 +336,8 @@ def rendezvous_of_size(events, n_instruments, metadata=None, window=None):
                                window=window)[0]
 
 
-def plot_pod_coverage(catalog, highlight=(), instruments=None, figsize=(14, 7)):
+def plot_pod_coverage(catalog, highlight=(), instruments=None, figsize=(14, 7),
+                      group_by=None, extent=None):
     """World map, one panel per instrument, of the pods its chunks occupy.
 
     Parameters
@@ -318,6 +345,14 @@ def plot_pod_coverage(catalog, highlight=(), instruments=None, figsize=(14, 7)):
     catalog : pandas.DataFrame
         Temporal catalog (``podcode`` + ``Dataset`` columns). Scan groups are
         folded, so ``GMI_S1``/``GMI_S2`` share the ``GMI`` panel.
+    group_by : str, optional
+        A column of ``catalog`` to panel by instead of the instrument —
+        e.g. a per-swath label, so six orbit swaths get six panels (three
+        ATMS satellites apart) rather than four. Panels follow the column's
+        order of first appearance; each is coloured by its instrument.
+    extent : tuple, optional
+        ``(lon_min, lon_max, lat_min, lat_max)`` to zoom every panel to,
+        with state and country borders drawn; default is the whole globe.
     highlight : optional
         Pods to outline in every panel. Either an iterable of pod codes
         (outlined in black — typically the pods holding the widest
@@ -334,8 +369,10 @@ def plot_pod_coverage(catalog, highlight=(), instruments=None, figsize=(14, 7)):
     matplotlib.figure.Figure
     """
     folded = catalog.assign(instrument=catalog['Dataset'].map(fold_instrument))
+    panel_col = group_by or 'instrument'
     if instruments is None:
-        instruments = sorted(folded['instrument'].unique())
+        instruments = (list(pd.unique(folded[panel_col])) if group_by
+                       else sorted(folded['instrument'].unique()))
 
     highlight = list(highlight)
     if highlight and isinstance(highlight[0], str):
@@ -350,15 +387,23 @@ def plot_pod_coverage(catalog, highlight=(), instruments=None, figsize=(14, 7)):
                              subplot_kw={'projection': ccrs.PlateCarree()},
                              squeeze=False)
     for ax, instrument in zip(axes.ravel(), instruments):
-        pods = sorted(folded.loc[folded['instrument'] == instrument, 'podcode'].unique())
+        panel = folded[folded[panel_col] == instrument]
+        pods = sorted(panel['podcode'].unique())
+        color = _color(instrument if not group_by else str(panel['instrument'].iloc[0]))
         ax.add_geometries(pod_trixels(pods), crs=ccrs.PlateCarree(),
-                          facecolor=_color(instrument), edgecolor='none', alpha=0.45)
+                          facecolor=color, edgecolor='none', alpha=0.45)
         for geoms, color in group_geoms:
             ax.add_geometries(geoms, crs=ccrs.PlateCarree(),
                               facecolor='none', edgecolor=color, linewidth=1.6)
         ax.add_feature(cfeature.COASTLINE, linewidth=0.4)
-        ax.set_global()
-        ax.set_title(f"{instrument} — {len(pods)} level-4 pods", fontsize=10)
+        if extent is None:
+            ax.set_global()
+        else:
+            ax.add_feature(cfeature.STATES.with_scale('50m'), linewidth=0.3,
+                           edgecolor='#9a9a9a')
+            ax.add_feature(cfeature.BORDERS.with_scale('50m'), linewidth=0.4)
+            ax.set_extent(list(extent), crs=ccrs.PlateCarree())
+        ax.set_title(f"{instrument} — {len(pods)} {POD_LEVEL_LABEL} pods", fontsize=10)
 
     for ax in axes.ravel()[len(instruments):]:
         ax.set_visible(False)
@@ -366,7 +411,8 @@ def plot_pod_coverage(catalog, highlight=(), instruments=None, figsize=(14, 7)):
     legend = " · ".join(
         f"{color} = {label + ': ' if label else ''}{', '.join(pods)}"
         for pods, color, label in groups)
-    subtitle = ("Pods each instrument's chunks occupy"
+    subtitle = (("Pods each orbit swath's chunks occupy" if group_by
+                 else "Pods each instrument's chunks occupy")
                 + (f"\n{legend}" if legend else ""))
     fig.suptitle(subtitle, fontsize=11)
     fig.tight_layout()
@@ -391,6 +437,50 @@ def chunk_pixels(demo, rows, window, fold=True):
             frames.setdefault(key, []).append(
                 selected[['lat', 'lon', 'timestamp']])
     return {key: pd.concat(parts) for key, parts in frames.items()}
+
+
+def swath_pixels(demo, rows, window, label=swath_label):
+    """Download chunks and return their pixels keyed **per orbit swath**.
+
+    :func:`chunk_pixels` keys by scan group, which merges every granule of
+    that scan group into one frame — three ATMS platforms crossing a pod an
+    hour apart become one ``ATMS_S1`` entry. This loader keeps one entry per
+    ``(scan group, granule)``, labelled by ``label(dataset, granule)`` —
+    by default :func:`swath_label`, ``'ATMS_S1 (NOAA-21)'``.
+
+    Parameters
+    ----------
+    demo : StarePodsDemo or LocalStarePodsDemo
+        Used only for its ``download_and_analyze``.
+    rows : pandas.DataFrame
+        Metadata rows (``group_path`` + ``Dataset``) of the chunks to open.
+    window : tuple of pandas.Timestamp
+        ``(start, end)``; pixels outside it are dropped.
+    label : callable, optional
+        ``label(dataset, granule_basename) -> str`` naming each swath.
+
+    Returns
+    -------
+    dict
+        ``{label: DataFrame}`` with ``lat``/``lon``/``timestamp``, in order
+        of first pixel time. When one satellite contributes two granules
+        (successive orbits over the same pod) the second label carries the
+        orbit number — ``'ATMS_S1 (NOAA-21) #011648'`` — so no swath is
+        silently merged into another.
+    """
+    if rows.empty:
+        return {}
+    granules = [parse_chunk_filename(path)[1] for path in rows['group_path']]
+    frames = {}
+    for granule in dict.fromkeys(granules):            # first-seen order, no dups
+        sub = rows[[g == granule for g in granules]]
+        for dataset, pixels in chunk_pixels(demo, sub, window, fold=False).items():
+            key = label(dataset, granule)
+            if key in frames:                          # same satellite, next orbit
+                fields = granule.split('.')
+                key = f"{key} #{fields[5] if len(fields) > 5 else granule}"
+            frames[key] = pixels
+    return dict(sorted(frames.items(), key=lambda kv: kv[1]['timestamp'].min()))
 
 
 def pod_pixels(demo, metadata, podcode, window, fold=True):
@@ -428,7 +518,24 @@ def pod_pixels(demo, metadata, podcode, window, fold=True):
     return chunk_pixels(demo, rows, window, fold=fold)
 
 
-def plot_rendezvous(podcode, passes, meeting, dt, figsize=(15, 6.5)):
+LEGEND_MARKER_SIZE = 7
+
+
+def _swath_legend(passes):
+    """Legend handles for a ``{label: pixels}`` dict, in order of arrival and
+    all the same size: the scatter markers themselves are sized by density
+    (a dense swath draws small so a sparse one stays visible), and a legend
+    that inherited those sizes read as if the instruments had different
+    footprints."""
+    from matplotlib.lines import Line2D
+    by_arrival = sorted(passes, key=lambda k: passes[k]['timestamp'].min())
+    return [Line2D([], [], marker='o', linestyle='', color=_color(label),
+                   markersize=LEGEND_MARKER_SIZE, label=label)
+            for label in by_arrival]
+
+
+def plot_rendezvous(podcode, passes, meeting, dt, figsize=(15, 6.5), title=None,
+                    region=None, region_label='region'):
     """One pod, zoomed: the swaths that meet there (left) and when (right).
 
     Parameters
@@ -443,6 +550,16 @@ def plot_rendezvous(podcode, passes, meeting, dt, figsize=(15, 6.5)):
         The coincidence window the sweep used.
     figsize : tuple, optional
         Figure size in inches.
+    title : str, optional
+        Replaces the default "A n-way rendezvous in pod …" headline — for a
+        figure that draws *every* pass over a pod in a span, not only the
+        ones that rendezvous; the time panel then names the span rather
+        than Δt.
+    region : shapely geometry, optional
+        A region of interest (a state, say) drawn as a dashed outline with
+        faint state borders; the map widens to hold both it and the pod.
+    region_label : str, optional
+        Its legend text.
 
     Returns
     -------
@@ -477,13 +594,31 @@ def plot_rendezvous(podcode, passes, meeting, dt, figsize=(15, 6.5)):
     # box rather than preserving 1:1 degrees, or such a pod renders as an
     # unreadable sliver.
     ax.set_aspect('auto')
-    ax.add_geometries(pod_trixels([podcode]), crs=ccrs.PlateCarree(),
+    trixel = pod_trixels([podcode])
+    ax.add_geometries(trixel, crs=ccrs.PlateCarree(),
                       facecolor='none', edgecolor='black', linewidth=2, zorder=10)
     ax.add_feature(cfeature.LAND, facecolor='#f2f2f2')
     ax.add_feature(cfeature.COASTLINE, linewidth=0.5)
+    handles = _swath_legend(passes)
+    if region is not None:
+        from matplotlib.lines import Line2D
+        ax.add_geometries([region], crs=ccrs.PlateCarree(), facecolor='none',
+                          edgecolor='black', linestyle='--', linewidth=1.6, zorder=9)
+        ax.add_feature(cfeature.STATES.with_scale('50m'), linewidth=0.3,
+                       edgecolor='#9a9a9a')
+        # hold both the pod and the region, with a little air around them
+        bounds = pd.DataFrame([trixel.total_bounds, region.bounds])
+        lon_min, lat_min = bounds[[0, 1]].min()
+        lon_max, lat_max = bounds[[2, 3]].max()
+        ax.set_extent([lon_min - 0.5, lon_max + 0.5, lat_min - 0.5, lat_max + 0.5],
+                      crs=ccrs.PlateCarree())
+        handles.append(Line2D([], [], color='black', linestyle='--', label=region_label))
     ax.gridlines(draw_labels=True, linewidth=0.3)
-    ax.legend(markerscale=4, loc='upper right', fontsize=9)
-    ax.set_title(f"Where — pod {podcode} is one level-4 trixel")
+    # with a region the map widens westward and the pod's apex reaches the
+    # upper right, so the legend moves to the emptier upper left
+    ax.legend(handles=handles, loc='upper left' if region is not None else 'upper right',
+              fontsize=9)
+    ax.set_title(f"Where — pod {podcode} is one {POD_LEVEL_LABEL} trixel")
 
     # ---- right: time -------------------------------------------------------
     ax2 = fig.add_subplot(1, 2, 2)
@@ -499,35 +634,51 @@ def plot_rendezvous(podcode, passes, meeting, dt, figsize=(15, 6.5)):
         ax2.text(start, row, f"{instrument} ", ha='right', va='center',
                  fontsize=10, fontweight='bold')
     ax2.axvline(mdates.date2num(meeting), color='black', linestyle='--', linewidth=1.2)
-    ax2.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
+    first = min(p['timestamp'].min() for p in passes.values())
+    last = max(p['timestamp'].max() for p in passes.values())
+    if last - first < pd.Timedelta(minutes=20):
+        # a few minutes of passes: minute ticks labelled to the second, so the
+        # dashed arrival does not appear to sit beside the wrong minute mark
+        ax2.xaxis.set_major_locator(mdates.MinuteLocator(interval=1))
+        ax2.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M:%S'))
+    else:
+        ax2.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
     # Frame the passes themselves rather than the sweep's look-back window —
     # the [meeting − Δt, meeting] eligibility band is the kernel's
     # bookkeeping, and drawing it invites misreading (it holds the earlier
     # passes' *ends*, never whole passes). The pad leaves room for the
     # right-aligned instrument labels left of the earliest bar.
-    first = min(p['timestamp'].min() for p in passes.values())
-    last = max(p['timestamp'].max() for p in passes.values())
     pad = max((last - first) * 0.12, pd.Timedelta(seconds=45))
     ax2.set_xlim(mdates.date2num(first - pad), mdates.date2num(last + pad))
     ax2.set_ylim(-0.8, len(passes) - 0.1)
     ax2.set_yticks([])
     ax2.set_xlabel(f"{meeting.date()} UTC")
-    ax2.set_title(f"When — all {len(passes)} passes within Δt = {minutes} min\n"
-                  f"last arrival {meeting.strftime('%H:%M:%S')} (dashed)")
-
-    fig.suptitle(f"A {len(passes)}-way rendezvous in pod {podcode}: "
-                 f"same pod, and within Δt of each other", fontsize=13)
+    if title is None:
+        ax2.set_title(f"When — all {len(passes)} passes within Δt = {minutes} min\n"
+                      f"last arrival {meeting.strftime('%H:%M:%S')} (dashed)")
+        fig.suptitle(f"A {len(passes)}-way rendezvous in pod {podcode}: "
+                     f"same pod, and within Δt of each other", fontsize=13)
+    else:
+        ax2.set_title(f"When — the {len(passes)} passes over the pod\n"
+                      f"rendezvous at {meeting.strftime('%H:%M:%S')} (dashed)")
+        fig.suptitle(title, fontsize=13)
     fig.tight_layout()
     return fig
 
 
-def _draw_region_box(ax, bbox, highlight_pod):
-    """The dashed bbox and (optionally) the highlighted pod's trixel."""
-    lon_min, lat_min, lon_max, lat_max = bbox
-    ax.plot([lon_min, lon_max, lon_max, lon_min, lon_min],
-            [lat_min, lat_min, lat_max, lat_max, lat_min],
-            color='black', linestyle='--', linewidth=1.6,
-            transform=ccrs.PlateCarree(), zorder=6)
+def _draw_region_box(ax, bbox, highlight_pod, region=None):
+    """The dashed region — its outline when ``region`` is a geometry, else
+    the bbox — and (optionally) the highlighted pod's trixel."""
+    if region is not None:
+        ax.add_geometries([region], crs=ccrs.PlateCarree(), facecolor='none',
+                          edgecolor='black', linestyle='--', linewidth=1.6,
+                          zorder=6)
+    else:
+        lon_min, lat_min, lon_max, lat_max = bbox
+        ax.plot([lon_min, lon_max, lon_max, lon_min, lon_min],
+                [lat_min, lat_min, lat_max, lat_max, lat_min],
+                color='black', linestyle='--', linewidth=1.6,
+                transform=ccrs.PlateCarree(), zorder=6)
     if highlight_pod is not None:
         ax.add_geometries(pod_trixels([highlight_pod]), crs=ccrs.PlateCarree(),
                           facecolor='none', edgecolor='black', linewidth=2,
@@ -535,16 +686,18 @@ def _draw_region_box(ax, bbox, highlight_pod):
 
 
 def plot_region_cover(bbox, cover_sids, spatial_only, highlight_pod=None,
-                      figsize=(9, 6.5)):
-    """The spatial half of a region query: bbox → STARE cover → pods.
+                      figsize=(9, 6.5), region=None, region_label='region (bbox)'):
+    """The spatial half of a region query: region → STARE cover → pods.
 
-    The bounding box (dashed), the STARE cover it becomes (outlined
-    trixels), and — filled — the cover pods that actually hold data.
+    The region (dashed — a bounding box, or the outline of ``region``), the
+    STARE cover it becomes (outlined trixels), and — filled — the cover pods
+    that actually hold data.
 
     Parameters
     ----------
-    bbox : tuple
-        ``(lon_min, lat_min, lon_max, lat_max)`` of the region.
+    bbox : tuple or None
+        ``(lon_min, lat_min, lon_max, lat_max)`` of the region; may be
+        ``None`` when ``region`` is given.
     cover_sids : sequence of int
         The STARE cover of the bbox.
     spatial_only : pandas.DataFrame
@@ -553,6 +706,11 @@ def plot_region_cover(bbox, cover_sids, spatial_only, highlight_pod=None,
         A pod to outline in black (the 4-way pod, in the demo).
     figsize : tuple, optional
         Figure size in inches.
+    region : shapely geometry, optional
+        An arbitrary region (a state, say) drawn as a dashed outline in place
+        of the bbox.
+    region_label : str, optional
+        Legend text for the dashed region.
 
     Returns
     -------
@@ -573,18 +731,21 @@ def plot_region_cover(bbox, cover_sids, spatial_only, highlight_pod=None,
     data_pods = sorted(set(spatial_only['podcode']))
     ax.add_geometries(pod_trixels(data_pods), crs=ccrs.PlateCarree(),
                       facecolor='#7570b3', alpha=0.22, edgecolor='none')
-    _draw_region_box(ax, bbox, highlight_pod)
+    _draw_region_box(ax, bbox, highlight_pod, region=region)
     ax.add_feature(cfeature.LAND, facecolor='#f2f2f2')
     ax.add_feature(cfeature.COASTLINE, linewidth=0.5)
+    if region is not None:
+        ax.add_feature(cfeature.STATES.with_scale('50m'), linewidth=0.3,
+                       edgecolor='#9a9a9a')
     ax.gridlines(draw_labels=True, linewidth=0.3)
     gx_min, gy_min, gx_max, gy_max = cover_geo.total_bounds
     ax.set_extent([gx_min - 2, gx_max + 2, gy_min - 2, gy_max + 2],
                   crs=ccrs.PlateCarree())
     ax.set_aspect('auto')
     handles = [
-        Line2D([], [], color='black', linestyle='--', label='region (bbox)'),
+        Line2D([], [], color='black', linestyle='--', label=region_label),
         Patch(facecolor='none', edgecolor='#7570b3', linewidth=1.4,
-              label=f'STARE cover — {len(cover_pods)} level-4 trixels (outline)'),
+              label=f'STARE cover — {len(cover_pods)} {POD_LEVEL_LABEL} trixels (outline)'),
         Patch(facecolor='#7570b3', alpha=0.22, edgecolor='none',
               label=f'cover pods holding data — {len(data_pods)} (filled)'),
     ]
@@ -598,7 +759,7 @@ def plot_region_cover(bbox, cover_sids, spatial_only, highlight_pod=None,
 
 
 def plot_region_result(passes, spatial_only, window, bbox, highlight_pod=None,
-                       figsize=(15, 10.5), fold=True):
+                       figsize=(15, 10.5), fold=True, region=None, subject='chunks'):
     """The result of a region query: its data elements above its time spans.
 
     Top: the pixels of the chunks that survive both filters, per instrument
@@ -629,6 +790,14 @@ def plot_region_result(passes, spatial_only, window, bbox, highlight_pod=None,
         timeline row labelled by instrument; ``False`` keeps one row per
         scan group (``Dataset``), labelled ``GMI_S1`` etc. — pair it with a
         ``passes`` dict from ``chunk_pixels(..., fold=False)``.
+    region : shapely geometry, optional
+        Drawn as a dashed outline in place of the bbox (see
+        :func:`plot_region_cover`).
+    subject : str, optional
+        What ``spatial_only`` counts, for the headline — e.g.
+        ``'first-scan-group chunks of the query day'`` when the caller has
+        pre-filtered to one scan group and one day, so the figure's counts
+        are not mistaken for the query's full answer.
 
     Returns
     -------
@@ -660,9 +829,12 @@ def plot_region_result(passes, spatial_only, window, bbox, highlight_pod=None,
                    alpha=(0.35, 0.45, 0.55, 0.65)[min(rank, 3)],
                    color=_color(instrument), label=instrument, zorder=2 + rank,
                    transform=ccrs.PlateCarree())
-    _draw_region_box(ax, bbox, highlight_pod)
+    _draw_region_box(ax, bbox, highlight_pod, region=region)
     ax.add_feature(cfeature.LAND, facecolor='#f2f2f2')
     ax.add_feature(cfeature.COASTLINE, linewidth=0.5)
+    if region is not None:
+        ax.add_feature(cfeature.STATES.with_scale('50m'), linewidth=0.3,
+                       edgecolor='#9a9a9a')
     ax.gridlines(draw_labels=True, linewidth=0.3)
     if passes:
         lons = pd.concat([p['lon'] for p in passes.values()])
@@ -670,9 +842,10 @@ def plot_region_result(passes, spatial_only, window, bbox, highlight_pod=None,
         ax.set_extent([lons.min() - 2, lons.max() + 2,
                        lats.min() - 2, lats.max() + 2], crs=ccrs.PlateCarree())
     ax.set_aspect('auto')
-    ax.legend(markerscale=4, loc='upper right', fontsize=9)
+    if passes:
+        ax.legend(handles=_swath_legend(passes), loc='upper right', fontsize=9)
     ax.set_title("Where — the data elements the query returns\n"
-                 "(whole chunks, so they extend past the bbox)")
+                 "(whole chunks, so they extend past the region)")
 
     # ---- bottom: time — every spatially-selected chunk ---------------------
     ax2 = fig.add_subplot(grid[1])
@@ -712,16 +885,16 @@ def plot_region_result(passes, spatial_only, window, bbox, highlight_pod=None,
     ax2.set_yticklabels(order, fontsize=10, fontweight='bold')
     ax2.set_xlabel(f"{start.date()} UTC")
     ax2.legend(handles=[
-        Patch(facecolor='0.90', label='the query window'),
+        Patch(facecolor='0.90', label='the query period'),
         Patch(facecolor='#dfe2e8', edgecolor='#6b7280', hatch='///',
               linewidth=0.8,
-              label=f'dropped by the window — {n_dropped} chunks'),
+              label=f'dropped by the period — {n_dropped} chunks'),
     ], loc='upper left', fontsize=9)
     ax2.set_title("When — each spatially-selected chunk's time span")
 
     fig.suptitle(
-        f"Space picks {len(spatial_only)} chunks in "
-        f"{spatial_only['podcode'].nunique()} pods; the window keeps "
+        f"Space picks {len(spatial_only)} {subject} in "
+        f"{spatial_only['podcode'].nunique()} pods; the period keeps "
         f"{n_kept} and drops {n_dropped}", fontsize=13)
     fig.tight_layout()
     return fig

@@ -377,7 +377,7 @@ def test_region_cover_draws_bbox_cover_and_data_pods():
         spatial_only=_region_spatial_only(), highlight_pod='q000001')
     assert 'STARE cover' in fig.axes[0].get_title()
     labels = [t.get_text() for t in fig.axes[0].get_legend().get_texts()]
-    assert any('3 level-4 trixels' in t for t in labels)
+    assert any('3 QL4 trixels' in t for t in labels)
     assert any('holding data — 2' in t for t in labels)
     plt.close(fig)
 
@@ -427,3 +427,153 @@ def test_plot_region_result_fold_false_labels_rows_by_scan_group():
     assert [t.get_text() for t in fig2.axes[-1].get_yticklabels()] == ['GMI', 'SSMIS']
     import matplotlib.pyplot as plt
     plt.close(fig); plt.close(fig2)
+
+
+# ── 2026-09-25: per-swath loader + region outlines (video notebook v5) ───────
+
+
+def test_color_ignores_a_platform_suffix():
+    from starepandas.demo_plots import INSTRUMENT_COLORS, _color, swath_label
+    assert _color('ATMS_S1 (NOAA-21)') == INSTRUMENT_COLORS['ATMS']
+    assert swath_label('ATMS_S1', '1C.NOAA21.ATMS.XCAL2023-V.20250208-S063124-E081253.011648.V07A') \
+        == 'ATMS_S1 (NOAA-21)'
+    assert swath_label('GMI_S1', 'oddname') == 'GMI_S1 (oddname)'
+
+
+def test_swath_pixels_keeps_one_entry_per_granule():
+    from starepandas.demo_plots import swath_pixels, chunk_pixels
+
+    class _PerRowDemo:
+        """Returns the chunk named by each row, keyed by its dataset."""
+        def __init__(self, chunks):
+            self._chunks = chunks
+
+        def download_and_analyze(self, rows):
+            out = {}
+            for path, dataset in zip(rows['group_path'], rows['Dataset']):
+                out.setdefault(dataset, []).append(self._chunks[path])
+            return {k: pd.concat(v) for k, v in out.items()}
+
+    t0 = pd.Timestamp('2025-02-08 07:30')
+    late = pd.DataFrame({'lat': [38.0], 'lon': [-77.0], 'timestamp': [t0 + pd.Timedelta(minutes=30)]})
+    early = pd.DataFrame({'lat': [38.5], 'lon': [-77.5], 'timestamp': [t0]})
+    g_late = '1C.NPP.ATMS.XCAL2019-V.20250208-S065731-E083900.068836.V07A'
+    g_early = '1C.NOAA21.ATMS.XCAL2023-V.20250208-S063124-E081253.011648.V07A'
+    rows = pd.DataFrame({
+        'group_path': [f'store/q111333-{g_late}-ATMS_S1.parquet',
+                       f'store/q111333-{g_early}-ATMS_S1.parquet'],
+        'Dataset': ['ATMS_S1', 'ATMS_S1'],
+    })
+    demo = _PerRowDemo({rows['group_path'][0]: late, rows['group_path'][1]: early})
+    window = (t0 - pd.Timedelta(hours=1), t0 + pd.Timedelta(hours=1))
+    # the scan-group loader merges the two platforms into one entry …
+    assert list(chunk_pixels(demo, rows, window, fold=False)) == ['ATMS_S1']
+    # … the swath loader keeps them apart, ordered by first pixel time
+    by_swath = swath_pixels(demo, rows, window)
+    assert list(by_swath) == ['ATMS_S1 (NOAA-21)', 'ATMS_S1 (Suomi NPP)']
+    assert len(by_swath['ATMS_S1 (NOAA-21)']) == 1
+    # a second granule of the same satellite (its next orbit) is not merged
+    g_next = '1C.NOAA21.ATMS.XCAL2023-V.20250208-S081254-E095423.011649.V07A'
+    rows2 = pd.concat([rows, pd.DataFrame({'group_path': [f'store/q111333-{g_next}-ATMS_S1.parquet'],
+                                           'Dataset': ['ATMS_S1']})], ignore_index=True)
+    demo2 = _PerRowDemo({**demo._chunks, rows2['group_path'][2]: late.assign(
+        timestamp=late['timestamp'] + pd.Timedelta(minutes=10))})
+    assert list(swath_pixels(demo2, rows2, window)) == [
+        'ATMS_S1 (NOAA-21)', 'ATMS_S1 (Suomi NPP)', 'ATMS_S1 (NOAA-21) #011649']
+
+
+def test_plot_rendezvous_title_override():
+    from starepandas.demo_plots import plot_rendezvous
+    t0 = pd.Timestamp('2025-02-08 07:35')
+    passes = {'GMI_S1 (GPM)': pd.DataFrame({'lat': [38.0, 38.1], 'lon': [-77.0, -77.1],
+                                            'timestamp': [t0, t0 + pd.Timedelta(minutes=1)]})}
+    fig = plot_rendezvous('q111333', passes, t0, pd.Timedelta(minutes=5))
+    assert fig._suptitle.get_text().startswith('A 1-way rendezvous')
+    plt.close(fig)
+    fig = plot_rendezvous('q111333', passes, t0, pd.Timedelta(minutes=5),
+                          title='Six swaths over the pod')
+    assert fig._suptitle.get_text() == 'Six swaths over the pod'
+    assert 'passes over the pod' in fig.axes[-1].get_title()
+    plt.close(fig)
+
+
+def test_region_figures_accept_a_polygon_outline():
+    from shapely.geometry import Polygon
+    from starepandas.demo_plots import plot_region_cover, plot_region_result
+    from starepandas.staredataframe import podcode_to_sid
+    region = Polygon([(-83.7, 36.5), (-75.2, 36.5), (-75.2, 39.5), (-83.7, 39.5)])
+    cover = [podcode_to_sid(p) for p in ('q111301', 'q111303', 'q111332', 'q111333')]
+    spatial = pd.DataFrame({
+        'Dataset': ['GMI_S1', 'ATMS_S1'], 'podcode': ['q111333', 'q111333'],
+        't_start': pd.to_datetime(['2025-02-08 07:35', '2025-02-08 19:00']),
+        't_end': pd.to_datetime(['2025-02-08 07:36', '2025-02-08 19:02']),
+    })
+    fig = plot_region_cover(None, cover, spatial, region=region, region_label='Virginia')
+    labels = [t.get_text() for t in fig.axes[0].get_legend().get_texts()]
+    assert 'Virginia' in labels and any('4 QL4 trixels' in t for t in labels)
+    plt.close(fig)
+    t0 = pd.Timestamp('2025-02-08 07:35')
+    px = pd.DataFrame({'lat': [38.0], 'lon': [-77.0], 'timestamp': [t0]})
+    window = (t0 - pd.Timedelta(hours=3), t0 + pd.Timedelta(hours=3))
+    fig = plot_region_result({'GMI_S1': px}, spatial, window, bbox=None,
+                             region=region, fold=False)
+    assert 'keeps 1 and drops 1' in fig._suptitle.get_text()
+    assert 'past the region' in fig.axes[0].get_title()
+    plt.close(fig)
+
+
+# ── 2026-09-26: per-swath panels, zoom extent, uniform legend markers ───────
+
+
+def test_coverage_panels_by_swath_column_and_zoom():
+    catalog = pd.DataFrame({
+        'podcode': ['q111333', 'q111332', 'q111333', 'q111301'],
+        'Dataset': ['ATMS_S1', 'ATMS_S1', 'GMI_S1', 'ATMS_S2'],
+        'swath': ['ATMS — NOAA-21', 'ATMS — NOAA-21', 'GMI — GPM', 'ATMS — Suomi NPP'],
+    })
+    fig = plot_pod_coverage(catalog, group_by='swath')
+    titles = [ax.get_title() for ax in fig.axes if ax.get_visible()]
+    assert titles == ['ATMS — NOAA-21 — 2 QL4 pods', 'GMI — GPM — 1 QL4 pods',
+                      'ATMS — Suomi NPP — 1 QL4 pods']
+    plt.close(fig)
+    fig = plot_pod_coverage(catalog, group_by='swath', extent=(-100, -60, 22, 52))
+    lon_min, lon_max, lat_min, lat_max = fig.axes[0].get_extent()
+    assert lon_min < -95 and lon_max > -65 and lat_min < 25 and lat_max > 50
+    plt.close(fig)
+
+
+def test_swath_legends_use_one_marker_size():
+    from starepandas.demo_plots import (LEGEND_MARKER_SIZE, plot_rendezvous,
+                                        plot_region_result)
+    t0 = pd.Timestamp('2025-02-08 07:35')
+    dense = pd.DataFrame({'lat': [38.0] * 50, 'lon': [-77.0] * 50, 'timestamp': [t0] * 50})
+    sparse = pd.DataFrame({'lat': [38.5], 'lon': [-77.5], 'timestamp': [t0 + pd.Timedelta(minutes=1)]})
+    passes = {'AMSR2_S1 (GCOM-W1)': dense, 'ATMS_S1 (NOAA-21)': sparse}
+    fig = plot_rendezvous('q111333', passes, t0, pd.Timedelta(minutes=5))
+    legend = fig.axes[0].get_legend()
+    assert [t.get_text() for t in legend.get_texts()] == list(passes)     # arrival order
+    assert {h.get_markersize() for h in legend.legend_handles} == {LEGEND_MARKER_SIZE}
+    plt.close(fig)
+    spatial = pd.DataFrame({'Dataset': ['AMSR2_S1'], 'podcode': ['q111333'],
+                            't_start': [t0], 't_end': [t0 + pd.Timedelta(minutes=2)]})
+    fig = plot_region_result(passes, spatial, (t0 - pd.Timedelta(hours=3), t0 + pd.Timedelta(hours=3)),
+                             bbox=(-80, 36, -75, 40), fold=False)
+    assert {h.get_markersize() for h in fig.axes[0].get_legend().legend_handles} == {LEGEND_MARKER_SIZE}
+    plt.close(fig)
+
+
+def test_plot_rendezvous_draws_a_region_outline_and_widens_to_it():
+    from shapely.geometry import Polygon
+    from starepandas.demo_plots import plot_rendezvous
+    t0 = pd.Timestamp('2025-02-08 07:35')
+    passes = {'GMI_S1 (GPM)': pd.DataFrame({'lat': [40.0, 40.1], 'lon': [-75.0, -75.1],
+                                            'timestamp': [t0, t0 + pd.Timedelta(minutes=1)]})}
+    virginia = Polygon([(-83.7, 36.5), (-75.2, 36.5), (-75.2, 39.5), (-83.7, 39.5)])
+    fig = plot_rendezvous('q111333', passes, t0, pd.Timedelta(minutes=5),
+                          region=virginia, region_label='Virginia')
+    ax = fig.axes[0]
+    assert [t.get_text() for t in ax.get_legend().get_texts()] == ['GMI_S1 (GPM)', 'Virginia']
+    lon_min, lon_max, lat_min, lat_max = ax.get_extent()
+    assert lon_min <= -83.7 and lat_min <= 36.5          # the state fits …
+    assert lat_max >= 44.9 and lon_max >= -72.1          # … and so does the pod trixel
+    plt.close(fig)

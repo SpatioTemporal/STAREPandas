@@ -455,7 +455,58 @@ pip install -e .
 
 ---
 
-*Last Updated: 2026-09-07b (**worker redeployed + Q1 step 7 DONE — the
+*Last Updated: 2026-09-25 (**video notebook v5 — Parts 3–5 redesigned
+around Washington, DC / Virginia on the whole quarter; uncommitted, under
+the user's review**. From the user's v4 comments: (1) the Part 2 drill-down
+is now left-aligned (`cols_align`) with a short subtitle — its long subtitle
+was widening the table; (2) one Δt set everywhere, `WINDOWS = 5/10/30 min`
+defined in setup and used by Parts 2, 3 and 6 (v4's 15/45-min Parts 3–5
+were leftovers of the six-granule set); (3) Parts 3–5 no longer use the six
+2025-01-01 granules. **Part 3** turns the Virginia state polygon (Natural
+Earth 50m states, cached by cartopy) into a 4-pod QL4 cover
+(`q111301/q111303/q111332/q111333`; DC is in `q111333`), reads those pods'
+catalog (4 `podcode_prefix` reads, 20,216 rows, ~10 s), finds meetings at
+5/10/30 — **no 4-way over Virginia in the whole quarter at any window**,
+SSMIS never joins — and picks the first 3-way at the tightest window in the
+**pod holding the largest share of Virginia** (`q111332`, 50%; fourth-round
+request 2026-09-27 — the DC pod holds only 3% of the state): 2025-02-08
+07:36:00, AMSR2 → GMI → ATMS NOAA-21 inside Δt = 5 min.
+Six example orbit swaths = each satellite's pass over the pod nearest that
+rendezvous (NOAA-20 −53 min … SSMIS +72; a plain ±90-min cut gives 7 because
+Suomi NPP passes twice); figures 1–2 draw them whole, **one panel per orbit
+swath** (`plot_pod_coverage(group_by='swath')`), globally and zoomed to the
+eastern US (`extent=`) — second-round user request 2026-09-26, along with
+Part 4's order (six passes first, then the 3-way) and **uniform legend
+markers** (`_swath_legend`, the density-scaled scatter sizes had leaked into
+the legends). **Part 4**: the six swaths in the pod (`plot_rendezvous(title=)`),
+then the 3-way up close, both with Virginia's outline
+(`plot_rendezvous(region=)`, third-round request 2026-09-27: map widened to
+hold state + pod, legend upper-left), pixels per swath via new
+`demo_plots.swath_pixels` (labels `ATMS_S1 (NOAA-21)`; a repeat satellite
+gets `#<orbit>`). **Part 5**: Virginia cover AND the six
+hours around the rendezvous: 38,626 temporal-only / 20,216 spatial-only
+(252 on the day) / **128 chunks of 11 orbit swaths** match both, in all 4
+cover pods; `plot_region_cover/result(region=virginia)` draw the state
+outline; the "where the chunks come from" table is gone. Run 6.7 min
+(inventory 103 s, Part 2 80 s, Part 6 160 s, Parts 3/4/5 14/7/37 s), 19
+cells, 6 figures, 0 errors. **Fifth round (2026-09-27):** vocabulary made
+consistent (QL4 defined once then used everywhere — `demo_plots.POD_LEVEL_LABEL`
+drives the figure text; satellite/data-element/sensing span/criteria/period;
+"pass" and "meeting" no longer overloaded) and a sub-agent content review of
+the executed notebook: 31 findings, 29 applied (figure-6 headline via
+`plot_region_result(subject=)`, spanners, SSMIS wording, Title Case titles,
+panel numbering, second-resolution ticks, test-roots clause in Part 6, unused
+`S3_PREFIX`/`ROOTS` removed), 2 handled otherwise (ATMS colour, holdings
+title). Library: `demo_plots.py` (+`swath_pixels`,
+`swath_label`, `SATELLITES`, `_color` tolerant of a satellite suffix,
+`title=`/`region=`/`group_by=`/`extent=` params, `_swath_legend`) +7 tests →
+`tests/test_demo_plots.py` 41; suite green; basic 9/9; STARE-PODS 15/15. Records: handoff
+`docs/handoffs/handoff-2026-09-25-video-notebook-v5.md` (supersedes the
+v3/v4 one for the notebook thread), memory. Same trial rule: accept =
+delete v2–v4 + move references (script fork to v5, plan HTML, this note),
+ask before deleting.)*
+
+*Prior: 2026-09-07b (**worker redeployed + Q1 step 7 DONE — the
 bulk-ingest plan is complete**. (1) Fixes 1–3 pushed (`c4e8344`) and the
 worker image rebuilt via `build.sh --push` (wheel `0.6.8+103.gc4e8344`, ECR
 `:dev` `ecc20a91… → 899c4986…`). **Deploy trap**: ECS resolves the `:dev`
