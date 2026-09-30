@@ -337,7 +337,7 @@ def rendezvous_of_size(events, n_instruments, metadata=None, window=None):
 
 
 def plot_pod_coverage(catalog, highlight=(), instruments=None, figsize=(14, 7),
-                      group_by=None, extent=None):
+                      group_by=None, extent=None, region=None):
     """World map, one panel per instrument, of the pods its chunks occupy.
 
     Parameters
@@ -350,6 +350,8 @@ def plot_pod_coverage(catalog, highlight=(), instruments=None, figsize=(14, 7),
         e.g. a per-swath label, so six orbit swaths get six panels (three
         ATMS satellites apart) rather than four. Panels follow the column's
         order of first appearance; each is coloured by its instrument.
+    region : shapely geometry, optional
+        A region of interest drawn as a dashed outline on every panel.
     extent : tuple, optional
         ``(lon_min, lon_max, lat_min, lat_max)`` to zoom every panel to,
         with state and country borders drawn; default is the whole globe.
@@ -395,6 +397,9 @@ def plot_pod_coverage(catalog, highlight=(), instruments=None, figsize=(14, 7),
         for geoms, color in group_geoms:
             ax.add_geometries(geoms, crs=ccrs.PlateCarree(),
                               facecolor='none', edgecolor=color, linewidth=1.6)
+        if region is not None:
+            ax.add_geometries([region], crs=ccrs.PlateCarree(), facecolor='none',
+                              edgecolor='black', linestyle='--', linewidth=1.2, zorder=6)
         ax.add_feature(cfeature.COASTLINE, linewidth=0.4)
         if extent is None:
             ax.set_global()
@@ -520,23 +525,35 @@ def pod_pixels(demo, metadata, podcode, window, fold=True):
 
 LEGEND_MARKER_SIZE = 7
 POINT_COLOR = '#911eb4'   # a place marked on a map — purple, no instrument uses it
+FADED_COLOR = '#8c8c8c'   # a swath drawn for context only (not in the rendezvous)
+COVER_COLOR = '#7570b3'   # a region's STARE cover pods
 
 
-def _swath_legend(passes):
+def _swath_legend(passes, members=None):
     """Legend handles for a ``{label: pixels}`` dict, in order of arrival and
     all the same size: the scatter markers themselves are sized by density
     (a dense swath draws small so a sparse one stays visible), and a legend
     that inherited those sizes read as if the instruments had different
-    footprints."""
+    footprints. With ``members``, a label outside it is drawn faded and
+    marked "(context)"."""
     from matplotlib.lines import Line2D
     by_arrival = sorted(passes, key=lambda k: passes[k]['timestamp'].min())
-    return [Line2D([], [], marker='o', linestyle='', color=_color(label),
-                   markersize=LEGEND_MARKER_SIZE, label=label)
+    return [Line2D([], [], marker='o', linestyle='', color=_swath_color(label, members),
+                   markersize=LEGEND_MARKER_SIZE,
+                   label=label if members is None or label in members else f"{label} (context)")
             for label in by_arrival]
 
 
+def _swath_color(label, members=None):
+    """Instrument colour, or the faded grey for a swath outside ``members``."""
+    if members is not None and label not in members:
+        return FADED_COLOR
+    return _color(label)
+
+
 def plot_rendezvous(podcode, passes, meeting, dt, figsize=(15, 6.5), title=None,
-                    region=None, region_label='region', point=None, point_label='point'):
+                    region=None, region_label='region', point=None, point_label='point',
+                    members=None, shade_window=False):
     """One pod, zoomed: the swaths that meet there (left) and when (right).
 
     Parameters
@@ -567,6 +584,15 @@ def plot_rendezvous(podcode, passes, meeting, dt, figsize=(15, 6.5), title=None,
         the map).
     point_label : str, optional
         Its legend text.
+    members : iterable of str, optional
+        The labels that take part in the rendezvous. The others are drawn
+        in :data:`FADED_COLOR` on both panels and marked "(context)" in the
+        legend, so a figure of every pass over a pod still reads as one
+        rendezvous plus its neighbours.
+    shade_window : bool, optional
+        Shade ``[meeting − dt, meeting]`` on the time axis — the Δt before
+        the last arrival, inside which every earlier member must have ended
+        (or still be running) for it to count.
 
     Returns
     -------
@@ -588,13 +614,16 @@ def plot_rendezvous(podcode, passes, meeting, dt, figsize=(15, 6.5), title=None,
     # Densest swath first so sparser ones stay visible on top, but keep the
     # markers small and semi-transparent throughout: a 2,500-pixel sliver drawn
     # boldly will otherwise hide the 35,000-pixel swath underneath it.
-    by_density = sorted(passes, key=lambda k: -len(passes[k]))
+    members = None if members is None else set(members)
+    # faded (context) swaths go underneath the members whatever their density
+    by_density = sorted(passes, key=lambda k: (members is None or k in members, -len(passes[k])))
     for rank, instrument in enumerate(by_density):
         pixels = passes[instrument]
+        faded = members is not None and instrument not in members
         ax.scatter(pixels['lon'], pixels['lat'],
                    s=(1.2, 2.5, 4.0, 5.5)[min(rank, 3)],
-                   alpha=(0.45, 0.55, 0.65, 0.75)[min(rank, 3)],
-                   color=_color(instrument), label=instrument, zorder=2 + rank,
+                   alpha=0.5 if faded else (0.45, 0.55, 0.65, 0.75)[min(rank, 3)],
+                   color=_swath_color(instrument, members), label=instrument, zorder=2 + rank,
                    transform=ccrs.PlateCarree())
     # Pods are triangles of wildly varying shape — a polar one spans tens of
     # degrees of longitude but only a few of latitude. Let the panel fill its
@@ -606,7 +635,7 @@ def plot_rendezvous(podcode, passes, meeting, dt, figsize=(15, 6.5), title=None,
                       facecolor='none', edgecolor='black', linewidth=2, zorder=10)
     ax.add_feature(cfeature.LAND, facecolor='#f2f2f2')
     ax.add_feature(cfeature.COASTLINE, linewidth=0.5)
-    handles = _swath_legend(passes)
+    handles = _swath_legend(passes, members)
     if region is not None:
         from matplotlib.lines import Line2D
         ax.add_geometries([region], crs=ccrs.PlateCarree(), facecolor='none',
@@ -621,17 +650,11 @@ def plot_rendezvous(podcode, passes, meeting, dt, figsize=(15, 6.5), title=None,
                       crs=ccrs.PlateCarree())
         handles.append(Line2D([], [], color='black', linestyle='--', label=region_label))
     if point is not None:
-        from matplotlib.lines import Line2D
-        lon, lat = point
-        ax.scatter([lon], [lat], s=110, facecolors='none', edgecolors=POINT_COLOR,
-                   linewidths=2, zorder=11, transform=ccrs.PlateCarree())
-        handles.append(Line2D([], [], marker='o', linestyle='', markerfacecolor='none',
-                              markeredgecolor=POINT_COLOR, markeredgewidth=1.6,
-                              markersize=LEGEND_MARKER_SIZE + 2, label=point_label))
+        _mark_point(ax, point, point_label, handles)
     ax.gridlines(draw_labels=True, linewidth=0.3)
-    # with a region the map widens westward and the pod's apex reaches the
-    # upper right, so the legend moves to the emptier upper left
-    ax.legend(handles=handles, loc='upper left' if region is not None else 'upper right',
+    # with a region the map widens westward; the lower left (ocean off the
+    # Carolinas here) is the one corner with neither pod nor region in it
+    ax.legend(handles=handles, loc='lower left' if region is not None else 'upper right',
               fontsize=9)
     ax.set_title(f"Where — pod {podcode} is one {POD_LEVEL_LABEL} trixel")
 
@@ -642,13 +665,18 @@ def plot_rendezvous(podcode, passes, meeting, dt, figsize=(15, 6.5), title=None,
         stamps = passes[instrument]['timestamp']
         start, end = mdates.date2num(stamps.min()), mdates.date2num(stamps.max())
         ax2.barh(row, max(end - start, 1e-4), left=start, height=0.45,
-                 color=_color(instrument))
+                 color=_swath_color(instrument, members))
         ax2.text(start, row + 0.42,
                  f"{stamps.min().strftime('%H:%M:%S')}–{stamps.max().strftime('%H:%M:%S')}",
                  fontsize=9, va='bottom')
         ax2.text(start, row, f"{instrument} ", ha='right', va='center',
                  fontsize=10, fontweight='bold')
     ax2.axvline(mdates.date2num(meeting), color='black', linestyle='--', linewidth=1.2)
+    if shade_window:
+        ax2.axvspan(mdates.date2num(meeting - dt), mdates.date2num(meeting),
+                    color='#ffe08a', alpha=0.35, zorder=0,
+                    label=f"Δt = {minutes} min before the last arrival")
+        ax2.legend(loc='lower right', fontsize=9, frameon=False)
     first = min(p['timestamp'].min() for p in passes.values())
     last = max(p['timestamp'].max() for p in passes.values())
     if last - first < pd.Timedelta(minutes=20):
@@ -657,6 +685,8 @@ def plot_rendezvous(podcode, passes, meeting, dt, figsize=(15, 6.5), title=None,
         ax2.xaxis.set_major_locator(mdates.MinuteLocator(interval=1))
         ax2.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M:%S'))
     else:
+        if last - first < pd.Timedelta(hours=6):
+            ax2.xaxis.set_major_locator(mdates.MinuteLocator(byminute=[0, 30]))
         ax2.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
     # Frame the passes themselves rather than the sweep's look-back window —
     # the [meeting − Δt, meeting] eligibility band is the kernel's
@@ -675,15 +705,31 @@ def plot_rendezvous(podcode, passes, meeting, dt, figsize=(15, 6.5), title=None,
                      f"same pod, and within Δt of each other", fontsize=13)
     else:
         ax2.set_title(f"When — the {len(passes)} passes over the pod\n"
-                      f"rendezvous at {meeting.strftime('%H:%M:%S')} (dashed)")
+                      f"last arrival of the rendezvous {meeting.strftime('%H:%M:%S')} (dashed)")
         fig.suptitle(title, fontsize=13)
     fig.tight_layout()
     return fig
 
 
-def _draw_region_box(ax, bbox, highlight_pod, region=None):
+def _mark_point(ax, point, label, handles):
+    """A hollow circle in :data:`POINT_COLOR` at ``(lon, lat)``, plus its
+    legend handle — no text is written on the map."""
+    from matplotlib.lines import Line2D
+    lon, lat = point
+    ax.scatter([lon], [lat], s=110, facecolors='none', edgecolors=POINT_COLOR,
+               linewidths=2, zorder=11, transform=ccrs.PlateCarree())
+    handles.append(Line2D([], [], marker='o', linestyle='', markerfacecolor='none',
+                          markeredgecolor=POINT_COLOR, markeredgewidth=1.6,
+                          markersize=LEGEND_MARKER_SIZE + 2, label=label))
+
+
+def _draw_region_box(ax, bbox, highlight_pod, region=None, cover_pods=None):
     """The dashed region — its outline when ``region`` is a geometry, else
-    the bbox — and (optionally) the highlighted pod's trixel."""
+    the bbox — the region's cover pods outlined in :data:`COVER_COLOR` when
+    given, and (optionally) the highlighted pod's trixel."""
+    if cover_pods:
+        ax.add_geometries(pod_trixels(sorted(set(cover_pods))), crs=ccrs.PlateCarree(),
+                          facecolor='none', edgecolor=COVER_COLOR, linewidth=1.4, zorder=6)
     if region is not None:
         ax.add_geometries([region], crs=ccrs.PlateCarree(), facecolor='none',
                           edgecolor='black', linestyle='--', linewidth=1.6,
@@ -701,7 +747,8 @@ def _draw_region_box(ax, bbox, highlight_pod, region=None):
 
 
 def plot_region_cover(bbox, cover_sids, spatial_only, highlight_pod=None,
-                      figsize=(9, 6.5), region=None, region_label='region (bbox)'):
+                      figsize=(9, 6.5), region=None, region_label='region (bbox)',
+                      point=None, point_label='point'):
     """The spatial half of a region query: region → STARE cover → pods.
 
     The region (dashed — a bounding box, or the outline of ``region``), the
@@ -726,6 +773,11 @@ def plot_region_cover(bbox, cover_sids, spatial_only, highlight_pod=None,
         of the bbox.
     region_label : str, optional
         Legend text for the dashed region.
+    point : tuple of float, optional
+        A place to mark — ``(lon, lat)`` — as a hollow circle in
+        :data:`POINT_COLOR`, named in the legend only.
+    point_label : str, optional
+        Its legend text.
 
     Returns
     -------
@@ -767,6 +819,8 @@ def plot_region_cover(bbox, cover_sids, spatial_only, highlight_pod=None,
     if highlight_pod is not None:
         handles.append(Patch(facecolor='none', edgecolor='black', linewidth=2,
                              label=f'pod {highlight_pod}'))
+    if point is not None:
+        _mark_point(ax, point, point_label, handles)
     ax.legend(handles=handles, loc='lower left', fontsize=9)
     ax.set_title("Where — the region becomes a STARE cover")
     fig.tight_layout()
@@ -774,7 +828,8 @@ def plot_region_cover(bbox, cover_sids, spatial_only, highlight_pod=None,
 
 
 def plot_region_result(passes, spatial_only, window, bbox, highlight_pod=None,
-                       figsize=(15, 10.5), fold=True, region=None, subject='chunks'):
+                       figsize=(15, 10.5), fold=True, region=None, subject='chunks',
+                       cover_pods=None):
     """The result of a region query: its data elements above its time spans.
 
     Top: the pixels of the chunks that survive both filters, per instrument
@@ -841,10 +896,10 @@ def plot_region_result(passes, spatial_only, window, bbox, highlight_pod=None,
         pixels = passes[instrument]
         ax.scatter(pixels['lon'], pixels['lat'],
                    s=(0.5, 1.2, 2.2, 3.5)[min(rank, 3)],
-                   alpha=(0.35, 0.45, 0.55, 0.65)[min(rank, 3)],
+                   alpha=(0.55, 0.6, 0.65, 0.7)[min(rank, 3)],
                    color=_color(instrument), label=instrument, zorder=2 + rank,
                    transform=ccrs.PlateCarree())
-    _draw_region_box(ax, bbox, highlight_pod, region=region)
+    _draw_region_box(ax, bbox, highlight_pod, region=region, cover_pods=cover_pods)
     ax.add_feature(cfeature.LAND, facecolor='#f2f2f2')
     ax.add_feature(cfeature.COASTLINE, linewidth=0.5)
     if region is not None:
@@ -858,7 +913,16 @@ def plot_region_result(passes, spatial_only, window, bbox, highlight_pod=None,
                        lats.min() - 2, lats.max() + 2], crs=ccrs.PlateCarree())
     ax.set_aspect('auto')
     if passes:
-        ax.legend(handles=_swath_legend(passes), loc='upper right', fontsize=9)
+        handles = _swath_legend(passes)
+        if cover_pods:
+            from matplotlib.patches import Patch
+            handles.append(Patch(facecolor='none', edgecolor=COVER_COLOR, linewidth=1.4,
+                                 label=f"the region's {len(set(cover_pods))} cover pods"))
+        if highlight_pod is not None:
+            from matplotlib.patches import Patch
+            handles.append(Patch(facecolor='none', edgecolor='black', linewidth=2,
+                                 label=f'pod {highlight_pod}'))
+        ax.legend(handles=handles, loc='upper right', fontsize=9)
     ax.set_title("Where — the data elements the query returns\n"
                  "(whole chunks, so they extend past the region)")
 
@@ -885,6 +949,7 @@ def plot_region_result(passes, spatial_only, window, bbox, highlight_pod=None,
     for edge in (start, end):
         ax2.axvline(mdates.date2num(edge), color='black', linestyle='--',
                     linewidth=1.1)
+    ax2.xaxis.set_major_locator(mdates.HourLocator(interval=1))
     ax2.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
     # The frame must hold the whole window, not just the chunks — a window
     # edge clipped at the axis boundary reads as if the band never closed.

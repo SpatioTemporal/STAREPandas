@@ -600,3 +600,62 @@ def test_plot_rendezvous_marks_a_point_in_the_legend_only():
     # no text label was written onto the map itself
     assert not [t for t in ax.texts if 'Washington' in t.get_text()]
     plt.close(fig)
+
+
+def test_plot_rendezvous_fades_non_members_and_shades_the_window():
+    from starepandas.demo_plots import plot_rendezvous, FADED_COLOR, INSTRUMENT_COLORS
+    t0 = pd.Timestamp('2025-02-08 07:36')
+    mk = lambda start: pd.DataFrame({'lat': [40.0, 40.1], 'lon': [-75.0, -75.1],
+                                     'timestamp': [start, start + pd.Timedelta(minutes=1)]})
+    passes = {'AMSR2_S1 (GCOM-W1)': mk(t0 - pd.Timedelta(minutes=4)),
+              'GMI_S1 (GPM)': mk(t0 - pd.Timedelta(minutes=2)),
+              'SSMIS_S1 (DMSP F18)': mk(t0 + pd.Timedelta(minutes=70))}
+    fig = plot_rendezvous('q111332', passes, t0, pd.Timedelta(minutes=5), title='six passes',
+                          members={'AMSR2_S1 (GCOM-W1)', 'GMI_S1 (GPM)'}, shade_window=True)
+    ax, ax2 = fig.axes[0], fig.axes[1]
+    legend = {t.get_text(): h for t, h in zip(ax.get_legend().get_texts(), ax.get_legend().legend_handles)}
+    assert 'SSMIS_S1 (DMSP F18) (context)' in legend
+    assert legend['SSMIS_S1 (DMSP F18) (context)'].get_color() == FADED_COLOR
+    assert legend['GMI_S1 (GPM)'].get_color() == INSTRUMENT_COLORS['GMI']
+    # the time bars follow the same rule, and the Δt band is drawn once
+    bars = [b for c in ax2.containers for b in c]
+    colours = {tuple(round(c, 3) for c in b.get_facecolor()[:3]) for b in bars}
+    assert len(bars) == 3 and len(colours) == 3
+    bands = [p for p in ax2.patches if str(p.get_label()).startswith('Δt = 5 min')]
+    assert len(bands) == 1
+    assert ax2.get_legend() is not None
+    plt.close(fig)
+    # without members nothing is faded and no band is drawn
+    fig = plot_rendezvous('q111332', passes, t0, pd.Timedelta(minutes=5))
+    assert not [p for p in fig.axes[1].patches if str(p.get_label()).startswith('Δt')]
+    assert '(context)' not in ' '.join(t.get_text() for t in fig.axes[0].get_legend().get_texts())
+    plt.close(fig)
+
+
+def test_region_figures_mark_point_cover_pods_and_region_panels():
+    from shapely.geometry import Polygon
+    from starepandas.staredataframe import podcode_to_sid
+    from starepandas.demo_plots import plot_region_cover, plot_region_result, plot_pod_coverage
+    virginia = Polygon([(-83.7, 36.5), (-75.2, 36.5), (-75.2, 39.5), (-83.7, 39.5)])
+    cover = [podcode_to_sid(p) for p in ('q111301', 'q111303', 'q111332', 'q111333')]
+    spatial = pd.DataFrame({'podcode': ['q111332', 'q111333'], 'Dataset': ['GMI_S1', 'GMI_S1'],
+                            't_start': pd.to_datetime(['2025-02-08 07:00', '2025-02-08 09:00']),
+                            't_end': pd.to_datetime(['2025-02-08 07:05', '2025-02-08 09:05'])})
+    fig = plot_region_cover(None, cover, spatial, highlight_pod='q111332', region=virginia,
+                            region_label='Virginia', point=(-77.04, 38.9), point_label='Washington D.C.')
+    texts = [t.get_text() for t in fig.axes[0].get_legend().get_texts()]
+    assert texts[-1] == 'Washington D.C.' and not [t for t in fig.axes[0].texts if 'Washington' in t.get_text()]
+    plt.close(fig)
+    t0 = pd.Timestamp('2025-02-08 07:00')
+    px = pd.DataFrame({'lat': [37.0, 37.1], 'lon': [-77.0, -77.1], 'timestamp': [t0, t0 + pd.Timedelta(minutes=1)]})
+    fig = plot_region_result({'GMI_S1': px}, spatial, (t0 - pd.Timedelta(hours=3), t0 + pd.Timedelta(hours=3)),
+                             bbox=None, region=virginia, highlight_pod='q111332', fold=False,
+                             cover_pods=['q111301', 'q111303', 'q111332', 'q111333'])
+    legend = fig.axes[0].get_legend()
+    labels = [t.get_text() for t in legend.get_texts()]
+    assert "the region's 4 cover pods" in labels and 'pod q111332' in labels
+    plt.close(fig)
+    catalog = pd.DataFrame({'podcode': ['q111332', 'q111333'], 'Dataset': ['GMI_S1', 'GMI_S1'], 'swath': ['a', 'a']})
+    fig = plot_pod_coverage(catalog, group_by='swath', extent=(-100, -60, 22, 52), region=virginia)
+    assert fig.axes[0].get_title().startswith('a —')
+    plt.close(fig)

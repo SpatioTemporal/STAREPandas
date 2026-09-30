@@ -455,9 +455,52 @@ pip install -e .
 
 ---
 
-*Last Updated: 2026-09-25 (**video notebook v5 — Parts 3–5 redesigned
-around Washington, DC / Virginia on the whole quarter; uncommitted, under
-the user's review**. From the user's v4 comments: (1) the Part 2 drill-down
+*Last Updated: 2026-09-29 (**video notebook v6 — the 2026-09-28 review
+applied on top of v5, then a sub-agent review round; committed locally as a trial**. Two PDFs from the user: revised
+intro text for Parts 1–6 (used verbatim up to house style) and a reviewer's
+Recommendation (23 tables, 6 plots). v6 =
+`starepandas/s3_starepods_examples_video_v6.ipynb`, built from v5 by the
+scratchpad `build_v6.py`; 19 cells, 6 figures, 0 errors, 5.5 min. Changes:
+Part 3 opens with the generated headline "12,451,867 records → 20,216 for
+Virginia's 4 pods, 616×, 99.84% excluded" (`N_QUARTER` kept from Part 2);
+rendezvous defined in the intro as a pod-level candidate co-observation and
+Part 2 states the count semantics (event counted once at its own n; n-way =
+at least n present; matrix/combinations = at least those members);
+**Part 6 now runs on the whole store like Parts 1–5** so Part 2 and the
+Part 6 quarter row agree exactly (2,338,290 events, 2048/1983/65; asserted
+equal matrices) — the alternative, `path_prefix` pod reads on the bulk root,
+was measured at ~30 s per pod vs ~2.5 s (JSON field, no index; test roots
+add only 36 Virginia rows) and rejected, the one departure from the revised
+Part 6 text; the cover figure moved from Part 5 to Part 3 (figures 1–3 /
+4–5 / 6); Part 3's per-pod table is long format (pod × window, example pod
+bold via `<b>`) and its minutes column is "Pass start relative to
+rendezvous completion"; Part 4's six-swath table has a "Gap to the
+rendezvous" column with a generated rule note (Suomi NPP +24 min is the
+same instrument, so n would not rise) and its figure fades the three
+non-members and shades the Δt band (`plot_rendezvous(members=,
+shade_window=)`, `FADED_COLOR`, +1 test → 43); Part 5 gets a selectivity
+line (38,574 → 20,216 → 128) and the 32-of-128 first-scan-group note; Part 6
+says "observed timings from this single run" with a generated "In this run"
+line, and "Flat in n" became "One Catalog Pass Computes All …"; holdings
+title "STARE-PODS Holdings"; April-1 and median notes on Part 1; Recap ends
+with the reviewer's three messages. **Review round (same day):** a sub-agent
+content review of the executed v6 — 25 findings, 24 applied (drill-down
+note now describes arrivals, not "all present" — a triple can outnumber a
+pair; Part 3 counts "once, at its own n"; "first 3-way"; legend lower-left
++ darker context grey; all four cover pods on figure 6; D.C. on figure 1;
+Virginia on figure 3; Title Case spanners; on-screen variable names without
+"sweep"; Feb 8 scopes; round ticks), 1 declined (renaming Part 5's heading,
+the user's own title). `demo_plots`: `_mark_point`, `COVER_COLOR`,
+`plot_region_result(cover_pods=)`, `plot_region_cover(point=)`,
+`plot_pod_coverage(region=)`; +2 tests → 44; suite 420; basic 9/9;
+STARE-PODS 15/15. Records: handoff
+`docs/handoffs/handoff-2026-09-29-video-notebook-v6.md` (supersedes v5's for
+the thread), memory. Trial rule: accept = delete v2–v5 + move references,
+ask before deleting.)*
+
+*Prior: 2026-09-25 (**video notebook v5 — Parts 3–5 redesigned
+around Washington, DC / Virginia on the whole quarter; committed + pushed as
+`558fb55` and `d03847e`, still a trial under the user's review**. From the user's v4 comments: (1) the Part 2 drill-down
 is now left-aligned (`cols_align`) with a short subtitle — its long subtitle
 was widening the table; (2) one Δt set everywhere, `WINDOWS = 5/10/30 min`
 defined in setup and used by Parts 2, 3 and 6 (v4's 15/45-min Parts 3–5
