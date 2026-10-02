@@ -493,7 +493,12 @@ Virginia on figure 3; Title Case spanners; on-screen variable names without
 the user's own title). `demo_plots`: `_mark_point`, `COVER_COLOR`,
 `plot_region_result(cover_pods=)`, `plot_region_cover(point=)`,
 `plot_pod_coverage(region=)`; +2 tests → 44; suite 420; basic 9/9;
-STARE-PODS 15/15. Records: handoff
+STARE-PODS 15/15. **Footnote round (2026-10-01):** the user removed the
+notes under tables in the v5 round and the review round had brought four
+back (plus longer notes/subtitles on six more) — all reverted to v5's form,
+facts moved into the markdown; then every remaining footnote too (v6 has no
+`tab_source_note` at all). **Rule: no footnotes under tables;
+subtitles no wordier than v5's; table content unchanged.** Records: handoff
 `docs/handoffs/handoff-2026-09-29-video-notebook-v6.md` (supersedes v5's for
 the thread), memory. Trial rule: accept = delete v2–v5 + move references,
 ask before deleting.)*
