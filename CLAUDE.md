@@ -455,7 +455,19 @@ pip install -e .
 
 ---
 
-*Last Updated: 2026-09-29 (**video notebook v6 — the 2026-09-28 review
+*Last Updated: 2026-10-06 (**video notebook v7 — column-label round on top
+of v6; committed locally as a trial**. From the user's list: Part 3's swath
+table reads "Granule time span / (UTC)", "Chunks / in pod", "Missing by /
+(min)"; both Part 4 arrival tables "Missing by / (min)"; Part 6's scale
+table "Catalog / read", "Find / matches" — two-line labels via
+`html("…<br>…")`, table bodies byte-identical to v6's. v7 =
+`starepandas/s3_starepods_examples_video_v7.ipynb`, built from v6
+(`b8fdba2`) by the scratchpad `build_v7.py`, re-executed: 19 cells, 6
+figures, 0 errors, 5.6 min. Handoff
+`docs/handoffs/handoff-2026-10-06-video-notebook-v7.md`. Trial rule: accept
+= delete v2–v6 + move references, ask before deleting.)*
+
+*Prior: 2026-09-29 (**video notebook v6 — the 2026-09-28 review
 applied on top of v5, then a sub-agent review round; committed locally as a trial**. Two PDFs from the user: revised
 intro text for Parts 1–6 (used verbatim up to house style) and a reviewer's
 Recommendation (23 tables, 6 plots). v6 =
