@@ -455,7 +455,25 @@ pip install -e .
 
 ---
 
-*Last Updated: 2026-10-06 (**video notebook v7 — column-label round on top
+*Last Updated: 2026-10-09 (**video notebook v8 — holdings-table round on
+top of v7; committed + pushed as a trial**. From the user: the ATMS row lists
+its three satellites one per line without commas, GMI's satellite reads
+"GPM CO", and two new columns follow "Scan groups" — "# Res" (distinct
+footprint sizes among the instrument's Level 1C channels) and "Res (km)"
+(finest–coarsest, long axis of the 3-dB footprint, ATMS at nadir): GMI 6 /
+6–32, SSMIS 3 / 14–70, AMSR2 5 / 5–42, ATMS 3 / 16–75. Neither the catalog
+nor the 1C files carry footprint sizes (swath headers checked: pixel counts
+and channel lists only), so the figures live in a documented `FOOTPRINT_KM`
+constant in the holdings cell (Draper 2015 GMI, Berg 2021 SSMIS, JAXA
+AMSR2, NOAA ATMS SDR ATBD); the Part 1 prose states the convention in one
+sentence and "one footprint size" per scan group became "one scan geometry"
+(GMI S1 holds five). v8 = `starepandas/s3_starepods_examples_video_v8.ipynb`,
+built from v7 (`0ebd540`) by the scratchpad `build_v8.py`, re-executed: 19
+cells, 6 figures, 0 errors, 5.9 min; all other tables identical to v7's.
+Handoff `docs/handoffs/handoff-2026-10-09-video-notebook-v8.md`. Trial
+rule: accept = delete v2–v7 + move references, ask before deleting.)*
+
+*Prior: 2026-10-06 (**video notebook v7 — column-label round on top
 of v6; committed locally as a trial**. From the user's list: Part 3's swath
 table reads "Granule time span / (UTC)", "Chunks / in pod", "Missing by /
 (min)"; both Part 4 arrival tables "Missing by / (min)"; Part 6's scale
