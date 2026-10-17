@@ -455,7 +455,37 @@ pip install -e .
 
 ---
 
-*Last Updated: 2026-10-09 (**video notebook v8 — holdings-table round on
+*Last Updated: 2026-10-16 (**video notebook v9 — terminology round on top
+of v8; built and executed, NOT yet committed**. From the reviewer's feedback on
+the demo-video narration, which the user adopted for the notebook too:
+"rendezvous" → **"conjunction"** everywhere on screen (title "STARE-PODS —
+Conjunction Analytics"; intro defines "a **conjunction** — a meeting of
+instruments over one pod"; Part headings "Conjunction analytics",
+"Conjunctions over Virginia", "A conjunction up close", "Conjunction over a
+region of interest"; table titles "Time-Window Dependence of Conjunctions",
+"Pairwise Conjunctions …", "Conjunctions of All Instrument Combinations …",
+"Conjunctions in Virginia's QL4 Pods", "… around the Example Conjunction",
+"Pod … — a 3-Instrument Conjunction", "The Conjunction Engine at Scale"), and
+**"2-way / 3-way / 4-way" → "2 / 3 / 4 instruments"** (two-line labels under
+the spanner "QL4 Pods where at Least n Instruments Meet"; Part 6 one-pass
+table "One Catalog Pass Computes the 2-, 3- and 4-Instrument Results"; prose
+"4-instrument conjunction"). Library API names (`rendezvous_events`,
+`plot_rendezvous`) unchanged; `demo_plots.plot_rendezvous`'s default
+suptitle now reads "A n-instrument conjunction in pod …" / "last arrival of
+the conjunction" (+ `tests/test_demo_plots.py` updated, 44 pass). v9 =
+`starepandas/s3_starepods_examples_video_v9.ipynb`, built from v8
+(`ba94cd3`) by the scratchpad `build_v9.py`, re-executed: 19 cells, 6
+figures, 0 errors, 5.8 min; every table body identical to v8's (checked
+number-for-number by `check_v9.py`). Companion: demo-video plan
+`rendezvous_demo_video_v8_plan.html` + narration
+`rendezvous_demo_video_v8_narration.docx` (first draft) and
+`conjunction_demo_video_v9_narration_v2.docx` (reviewer's 19 notes applied, same vocabulary as v9,
+differences vs the first draft as Word tracked changes by "Draft v2"), all
+repo-root and uncommitted. Handoff
+`docs/handoffs/handoff-2026-10-16-video-notebook-v9.md`. Trial rule: accept =
+delete v2–v8 + move references, ask before deleting.)*
+
+*Prior: 2026-10-09 (**video notebook v8 — holdings-table round on
 top of v7; committed + pushed as a trial**. From the user: the ATMS row lists
 its three satellites one per line without commas, GMI's satellite reads
 "GPM CO", and two new columns follow "Scan groups" — "# Res" (distinct

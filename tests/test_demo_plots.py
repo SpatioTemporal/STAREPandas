@@ -488,7 +488,7 @@ def test_plot_rendezvous_title_override():
     passes = {'GMI_S1 (GPM)': pd.DataFrame({'lat': [38.0, 38.1], 'lon': [-77.0, -77.1],
                                             'timestamp': [t0, t0 + pd.Timedelta(minutes=1)]})}
     fig = plot_rendezvous('q111333', passes, t0, pd.Timedelta(minutes=5))
-    assert fig._suptitle.get_text().startswith('A 1-way rendezvous')
+    assert fig._suptitle.get_text().startswith('A 1-instrument conjunction')
     plt.close(fig)
     fig = plot_rendezvous('q111333', passes, t0, pd.Timedelta(minutes=5),
                           title='Six swaths over the pod')

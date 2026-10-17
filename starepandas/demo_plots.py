@@ -701,11 +701,11 @@ def plot_rendezvous(podcode, passes, meeting, dt, figsize=(15, 6.5), title=None,
     if title is None:
         ax2.set_title(f"When — all {len(passes)} passes within Δt = {minutes} min\n"
                       f"last arrival {meeting.strftime('%H:%M:%S')} (dashed)")
-        fig.suptitle(f"A {len(passes)}-way rendezvous in pod {podcode}: "
+        fig.suptitle(f"A {len(passes)}-instrument conjunction in pod {podcode}: "
                      f"same pod, and within Δt of each other", fontsize=13)
     else:
         ax2.set_title(f"When — the {len(passes)} passes over the pod\n"
-                      f"last arrival of the rendezvous {meeting.strftime('%H:%M:%S')} (dashed)")
+                      f"last arrival of the conjunction {meeting.strftime('%H:%M:%S')} (dashed)")
         fig.suptitle(title, fontsize=13)
     fig.tight_layout()
     return fig
