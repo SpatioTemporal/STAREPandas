@@ -456,7 +456,7 @@ pip install -e .
 ---
 
 *Last Updated: 2026-10-16 (**video notebook v9 — terminology round on top
-of v8; built and executed, NOT yet committed**. From the reviewer's feedback on
+of v8; committed + pushed as `7e28010` on 2026-10-17, still a trial**. From the reviewer's feedback on
 the demo-video narration, which the user adopted for the notebook too:
 "rendezvous" → **"conjunction"** everywhere on screen (title "STARE-PODS —
 Conjunction Analytics"; intro defines "a **conjunction** — a meeting of
