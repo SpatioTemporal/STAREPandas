@@ -6,6 +6,7 @@ Goal: a second person can run and troubleshoot a job using only this document.
 - **Region / account:** `us-west-2` / `637388276731`
 - **Stack:** `StarePodsInfraStack` (AWS CDK, `infra/cdk/`)
 - **Design / history:** `docs/path_c_implementation.md` (local-only); `stare_pods_aws_parallel_plan.html` §C.
+- **Cost actions ledger:** `docs/aws_cost_actions.md` — every deliberate removal / down-size, with evidence and how to undo. **Since 2026-10-18 the stack is deployed in the idle posture (no NAT) — see §6i before running a job.**
 
 ---
 
@@ -331,6 +332,29 @@ a SHARE lock (blocking ingest writes) for the build duration. The rejected menu 
 t_start) composite; CLUSTER-by-podcode — measured harmful) are recorded in the
 issue-06 profiling note and ADR-0002; don't re-derive them.
 
+### 6i. Network posture — idle (no NAT) vs run (NAT)
+
+Since the 2026-10-18 cost review (`docs/aws_cost_actions.md`, action 2) the
+stack is deployed with **`starepods:natGateways=0`**: no NAT gateway, no EIP,
+the `private` worker subnets are isolated. Idle cost ≈ $37/mo lower. In this
+posture **a worker task cannot start** — it has no route to RDS, ECR, SQS or
+Secrets Manager — and a `POST /ingest` would scale the service up to tasks that
+fail with a network error.
+
+```bash
+# before an ingest run (≈ 3 min; creates NAT + EIP + default routes in place):
+./infra/cdk/cdk-zarpodder.sh deploy StarePodsInfraStack -c starepods:natGateways=1 --require-approval never
+# after the run (≈ 1.5 min; removes them again):
+./infra/cdk/cdk-zarpodder.sh deploy StarePodsInfraStack --require-approval never   # cdk.json default = 0
+```
+
+Rule: `infra/cdk/cdk.json` always carries the posture that is **deployed**. If
+the run posture should persist (a multi-week campaign), change the file to `1`
+and commit it, so that a later plain deploy does not silently remove the NAT
+mid-run. Check the live posture with
+`describe_nat_gateways(Filter vpc-id=starepods-vpc, state=available)` — empty
+means idle.
+
 ---
 
 ## 7. Common error → likely cause
@@ -345,7 +369,7 @@ issue-06 profiling note and ADR-0002; don't re-derive them.
 | Same granule processed twice | visibility-timeout overrun or duplicate scheduler invoke | benign (idempotent); see §6c — consider heartbeat (deferred) |
 | RDS write-conflict spike | duplicate ticket delivery | §6c; upsert handles it |
 | `starepods-callbacks-dlq` depth > 0 (alarm) | callback receiver down / rejecting | inspect payloads §6d; fix receiver; replay if needed |
-| Tasks fail to start | bad image tag / secret / NAT | check ECS task stopped-reason + worker logs |
+| Tasks fail to start | bad image tag / secret / **idle network posture (no NAT, §6i)** | check ECS task stopped-reason + worker logs; redeploy with `natGateways=1` |
 | Budgets alarm silent | `Project` cost-allocation tag not activated in Billing | activate the tag (one-time) |
 
 ---
@@ -398,6 +422,7 @@ run cadence × that figure.
 | ECR image | `637388276731.dkr.ecr.us-west-2.amazonaws.com/starepods/worker:dev` |
 | Budgets | `starepods-monthly` ($200, tag `Project=starepods`) |
 | CDK helper | `infra/cdk/cdk-zarpodder.sh <diff|deploy|destroy>` |
+| Network posture | `starepods:natGateways` — **0 (idle, deployed since 2026-10-18)** / 1 (run); §6i |
 | Log groups (30-day) | `/ecs/starepods-worker`, scheduler/status/watcher Lambda groups |
 
 ---

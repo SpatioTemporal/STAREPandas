@@ -455,7 +455,27 @@ pip install -e .
 
 ---
 
-*Last Updated: 2026-10-16 (**video notebook v9 — terminology round on top
+*Last Updated: 2026-10-18 (**AWS cost review after the Q1 ingest — ledger
+`docs/aws_cost_actions.md` (committed), runbook §6i**. Account run rate
+$16.63/day ≈ $515/mo + tax (Jun–Aug baseline $427, Sept $592 = ingest month);
+STARE-PODS ≈ $170 of it. Review was read-only: `zarpodder` is S3-only but may
+assume the CDK bootstrap lookup role (ReadOnlyAccess) for Cost Explorer and
+Describe*. **Done:** StarePodsInfraStack deployed in the **idle network
+posture** — `starepods:natGateways` 0 in `cdk.json`, NAT + EIP + private
+default routes removed, `private` subnets converted in place to ISOLATED
+(`worker_subnet_type` follows `nat_gateways`; the old `int(ctx or 1)` could
+never express 0), ≈ $37/mo saved. **Workers cannot start in this posture —
+deploy with `-c starepods:natGateways=1` before any ingest** (runbook §6i);
+`cdk.json` always holds the deployed posture. **Pending admin credentials
+(user runs `infra/scripts/aws_cost_actions_2026_10_18.py`):** delete the empty
+RDS `starepods` db.t4g.micro (final snapshot `starepods-final-2026-10-18`,
+≈ $14/mo) and the 2023 `EKS-VPC-Stack` in us-east-2 (2 idle NATs of a deleted
+EKS cluster, ≈ $73/mo). **Open:** RDS `starepodsmetadata` db.t4g.large (idle,
+≈ $99/mo) — reservation vs resize to medium vs stop; user has not decided.
+Other-project items (Bayesics EFS backup $95, EC2 t3.large $65, SageMaker,
+bayesicspg) listed in the ledger, not ours to act on.)*
+
+*Prior: 2026-10-16 (**video notebook v9 — terminology round on top
 of v8; committed + pushed as `7e28010` on 2026-10-17, still a trial**. From the reviewer's feedback on
 the demo-video narration, which the user adopted for the notebook too:
 "rendezvous" → **"conjunction"** everywhere on screen (title "STARE-PODS —

@@ -17,8 +17,13 @@ Design notes baked in here (see docs/path_c_implementation.md §C-3):
   for RDS reachability — with a NAT present the interface endpoints were
   redundant, so they were dropped (net idle ~\\$73/mo → ~\\$32/mo). The free
   S3 + DDB *gateway* endpoints are kept so bulky traffic bypasses the NAT.
-  ``natGateways`` context key defaults to 1; set it to 0 only if you also
-  restore the interface endpoints + isolated subnets (see ``_build_network``).
+  ``natGateways`` context key: **1 = run posture** (workers can start),
+  **0 = idle posture** (2026-10-18 cost action, see
+  ``docs/aws_cost_actions.md``): no NAT, no EIP, the worker subnets become
+  ``PRIVATE_ISOLATED`` in place and a worker task launched in this posture
+  cannot reach RDS/ECR/SQS — so **deploy with ``-c starepods:natGateways=1``
+  before any ingest run** and back to 0 afterwards (≈ \\$37/mo saved idle).
+  ``cdk.json`` carries the posture that is currently deployed.
 * **Visibility timeout 6 h / 21600 s** (raised from 3600 s after C-7 load test
   #1; C-2 §C10 #5 Option A) — overrides the "15 min" figure in the §C6 table;
   the worker has no heartbeat, so a long visibility window plus the idempotent
@@ -68,7 +73,17 @@ class StarePodsInfraStack(Stack):
         # ── Context-driven knobs (overridable via cdk.json / -c flags) ──────
         ctx = self.node.try_get_context
         self.worker_image_tag: str = ctx("starepods:workerImageTag") or "dev"
-        self.nat_gateways: int = int(ctx("starepods:natGateways") or 1)
+        # NB: not ``int(ctx(...) or 1)`` — that silently turned 0 into 1.
+        _nat = ctx("starepods:natGateways")
+        self.nat_gateways: int = 1 if _nat is None else int(_nat)
+        # Idle posture (natGateways=0): the worker subnets have no egress route,
+        # so CDK requires them to be declared ISOLATED. Same subnet group name
+        # → same logical IDs → the subnets convert in place (no replacement).
+        self.worker_subnet_type = (
+            ec2.SubnetType.PRIVATE_WITH_EGRESS
+            if self.nat_gateways
+            else ec2.SubnetType.PRIVATE_ISOLATED
+        )
         self.vpc_cidr: str = ctx("starepods:vpcCidr") or "10.0.0.0/16"
         self.source_buckets: list[str] = ctx("starepods:sourceBuckets") or ["zarrpods"]
         self.storage_bucket: str = ctx("starepods:storageBucket") or "zarrpods"
@@ -127,6 +142,13 @@ class StarePodsInfraStack(Stack):
         The two *gateway* endpoints (S3, DDB) are free and kept, so bulky S3
         image-layer / Parquet I/O and DDB traffic still bypass the NAT (no
         per-GB NAT data-processing charge on those).
+
+        Idle posture (``natGateways=0``, 2026-10-18): the NAT and its EIP are
+        removed and the same ``private`` subnets become ``PRIVATE_ISOLATED``
+        (route tables lose their default route; gateway endpoints stay). The
+        service keeps pointing at the same subnet IDs, so flipping between the
+        postures is a route-table + NAT change only. Workers cannot run in the
+        idle posture — redeploy with ``natGateways=1`` before an ingest.
         """
         self.vpc = ec2.Vpc(
             self,
@@ -142,10 +164,11 @@ class StarePodsInfraStack(Stack):
             # in-place migration with a CIDR conflict (2026-06-07). With private
             # first, the new public subnets land in fresh space (10.0.2.x/26).
             subnet_configuration=[
-                # Workers run here — egress to RDS + AWS APIs via the NAT.
+                # Workers run here — egress to RDS + AWS APIs via the NAT
+                # (run posture) or none at all (idle posture, natGateways=0).
                 ec2.SubnetConfiguration(
                     name="private",
-                    subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS,
+                    subnet_type=self.worker_subnet_type,
                     cidr_mask=24,
                 ),
                 # Public subnet hosts the NAT gateway (and the IGW route).
@@ -464,8 +487,9 @@ class StarePodsInfraStack(Stack):
             desired_count=0,  # scheduler scales up; watcher scales back to 0
             assign_public_ip=False,
             vpc_subnets=ec2.SubnetSelection(
-                # Egress subnets: workers reach RDS + AWS APIs via the NAT.
-                subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS
+                # The ``private`` subnets: egress via the NAT in the run
+                # posture; isolated (workers cannot start) in the idle posture.
+                subnet_type=self.worker_subnet_type
             ),
             min_healthy_percent=0,  # allow full scale-to-zero
             max_healthy_percent=100,

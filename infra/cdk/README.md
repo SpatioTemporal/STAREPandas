@@ -23,7 +23,7 @@ infra/cdk/
 | Key | Default | Meaning |
 |---|---|---|
 | `starepods:workerImageTag` | `dev` | ECR tag the task def pulls (`starepods/worker:<tag>`). |
-| `starepods:natGateways` | `0` | NAT gateways. **0 = no egress** (cost trap avoided). Bump to `1` only to unblock RDS reachability (see Open items). |
+| `starepods:natGateways` | `0` | **Network posture.** `0` = idle (no NAT/EIP, worker subnets isolated, workers cannot start; ≈ $37/mo saved — 2026-10-18 cost action, `docs/aws_cost_actions.md`). **Deploy with `-c starepods:natGateways=1` before any ingest run**, back to `0` after. `cdk.json` holds the deployed posture. |
 | `starepods:vpcCidr` | `10.0.0.0/16` | VPC CIDR. |
 | `starepods:sourceBuckets` | `["zarrpods"]` | Buckets the worker task role may read granules from. |
 | `starepods:storageBucket` | `zarrpods` | Bucket the worker writes Parquet to. |
