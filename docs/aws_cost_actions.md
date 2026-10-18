@@ -48,7 +48,7 @@ Read-only throughout; nothing was changed during the review itself.
 - **Code.** `infra/cdk/stacks/starepods_infra_stack.py` (`worker_subnet_type`
   follows `nat_gateways`; the old `int(ctx(...) or 1)` could never express 0).
 
-### Action 3 — RDS `starepods` (db.t4g.micro) deleted — PENDING (needs admin credentials)
+### Action 3 — RDS `starepods` (db.t4g.micro) deleted — DONE 2026-10-18
 
 - **What.** RDS instance `starepods`, us-west-2, PostgreSQL 16, created
   2025-07-31, 20 GB gp2, publicly accessible, no tags, in no stack.
@@ -61,11 +61,13 @@ Read-only throughout; nothing was changed during the review itself.
   attempt that was never used.
 - **Saves.** ≈ $14 / mo.
 - **How.** `infra/scripts/aws_cost_actions_2026_10_18.py delete-rds-starepods --execute`
-  with admin credentials; it takes a final snapshot `starepods-final-2026-10-18`
-  first (a few MB of data, cents per month to keep).
+  run as `zarpodder` holding the temporary managed policy
+  `infra/iam/zarpodder-cost-actions-2026-10-18.json` (attach, run, detach).
+  Final snapshot `starepods-final-2026-10-18` taken first (manual, `available`;
+  a few MB of data, cents per month to keep). Instance gone 2026-10-18 23:05 UTC.
 - **Reverse.** Restore the snapshot (`rds restore-db-instance-from-db-snapshot`).
 
-### Action 7 — CloudFormation `EKS-VPC-Stack` (us-east-2) deleted — PENDING (needs admin credentials)
+### Action 7 — CloudFormation `EKS-VPC-Stack` (us-east-2) deleted — DONE 2026-10-18 (role stack left, $0)
 
 - **What.** AWS sample template "Amazon EKS Sample VPC – Private and Public
   subnets", created 2023-11-01 for the eksctl cluster `EKS-Cluster`. Holds VPC
@@ -82,7 +84,13 @@ Read-only throughout; nothing was changed during the review itself.
   instance live in `vpc-0555c227d37ba79a9` and are not touched.
 - **Saves.** ≈ $73 / mo (2 × NAT hours + 2 public IPv4).
 - **How.** `infra/scripts/aws_cost_actions_2026_10_18.py delete-eks-vpc-stack --execute`
-  with admin credentials (re-checks the evidence before deleting).
+  as `zarpodder` with the same temporary policy (re-checks the evidence first).
+  `EKS-VPC-Stack` → DELETE_COMPLETE 2026-10-18 23:10 UTC; both NATs `deleted`,
+  both EIPs released, VPC gone. The companion eksctl stack went
+  **DELETE_FAILED**: its role's physical name is `AmazonEKS_EBS_CSI_DriverRole`
+  (not eksctl-prefixed), so the policy's IAM statement did not cover it. It
+  costs nothing; delete it later with that role ARN added to the policy, or
+  from the console, or leave it.
 - **Reverse.** Re-create from the public sample template; nothing in it was
   custom.
 

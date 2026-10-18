@@ -1,7 +1,8 @@
 """Admin-side steps of the 2026-10-18 cost review (docs/aws_cost_actions.md).
 
-Two deletions that the project's ``zarpodder`` user is not allowed to perform
-and that are therefore run by a person holding admin credentials:
+Two deletions outside the project's own stack. ``zarpodder`` may run them while
+the temporary managed policy ``infra/iam/zarpodder-cost-actions-2026-10-18.json``
+is attached (detach it afterwards); admin credentials work too:
 
     delete-rds-starepods    RDS instance ``starepods`` (us-west-2) — empty,
                             unused since creation; final snapshot taken first.
@@ -148,9 +149,7 @@ def main() -> None:
     p.add_argument("--execute", action="store_true", help="actually delete (default: dry run)")
     args = p.parse_args()
     session = boto3.Session()
-    arn = _whoami(session)
-    if arn.endswith(":user/zarpodder"):
-        sys.exit("zarpodder cannot perform these deletions — use admin credentials")
+    _whoami(session)  # any principal holding infra/iam/zarpodder-cost-actions-2026-10-18.json
     {"delete-rds-starepods": delete_rds_starepods, "delete-eks-vpc-stack": delete_eks_vpc_stack}[
         args.action
     ](session, args.execute)

@@ -1,0 +1,70 @@
+{
+ "Version": "2012-10-17",
+ "Statement": [
+  {
+   "Effect": "Allow",
+   "Action": [
+    "rds:Describe*",
+    "ec2:Describe*",
+    "eks:ListClusters",
+    "cloudformation:Describe*",
+    "cloudformation:ListStacks"
+   ],
+   "Resource": "*"
+  },
+  {
+   "Effect": "Allow",
+   "Action": [
+    "rds:DeleteDBInstance",
+    "rds:CreateDBSnapshot",
+    "rds:AddTagsToResource",
+    "rds:DeleteDBInstanceAutomatedBackup"
+   ],
+   "Resource": [
+    "arn:aws:rds:us-west-2:637388276731:db:starepods",
+    "arn:aws:rds:us-west-2:637388276731:snapshot:starepods-final-2026-10-18",
+    "arn:aws:rds:us-west-2:637388276731:auto-backup:*"
+   ]
+  },
+  {
+   "Effect": "Allow",
+   "Action": "cloudformation:DeleteStack",
+   "Resource": [
+    "arn:aws:cloudformation:us-east-2:637388276731:stack/EKS-VPC-Stack/*",
+    "arn:aws:cloudformation:us-east-2:637388276731:stack/eksctl-EKS-Cluster-addon-*/*"
+   ]
+  },
+  {
+   "Effect": "Allow",
+   "Action": [
+    "ec2:DeleteNatGateway",
+    "ec2:ReleaseAddress",
+    "ec2:DeleteRoute",
+    "ec2:DisassociateRouteTable",
+    "ec2:DeleteRouteTable",
+    "ec2:DeleteSubnet",
+    "ec2:DetachInternetGateway",
+    "ec2:DeleteInternetGateway",
+    "ec2:DeleteSecurityGroup",
+    "ec2:DeleteVpc"
+   ],
+   "Resource": "*",
+   "Condition": {
+    "StringEquals": {
+     "aws:RequestedRegion": "us-east-2"
+    }
+   }
+  },
+  {
+   "Effect": "Allow",
+   "Action": [
+    "iam:GetRole",
+    "iam:List*RolePolicies",
+    "iam:DetachRolePolicy",
+    "iam:DeleteRolePolicy",
+    "iam:DeleteRole"
+   ],
+   "Resource": "arn:aws:iam::637388276731:role/eksctl-EKS-Cluster-addon-*"
+  }
+ ]
+}

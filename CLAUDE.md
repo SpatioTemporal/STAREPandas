@@ -466,11 +466,14 @@ default routes removed, `private` subnets converted in place to ISOLATED
 (`worker_subnet_type` follows `nat_gateways`; the old `int(ctx or 1)` could
 never express 0), ≈ $37/mo saved. **Workers cannot start in this posture —
 deploy with `-c starepods:natGateways=1` before any ingest** (runbook §6i);
-`cdk.json` always holds the deployed posture. **Pending admin credentials
-(user runs `infra/scripts/aws_cost_actions_2026_10_18.py`):** delete the empty
-RDS `starepods` db.t4g.micro (final snapshot `starepods-final-2026-10-18`,
-≈ $14/mo) and the 2023 `EKS-VPC-Stack` in us-east-2 (2 idle NATs of a deleted
-EKS cluster, ≈ $73/mo). **Open:** RDS `starepodsmetadata` db.t4g.large (idle,
+`cdk.json` always holds the deployed posture. **Also done the same day** (zarpodder ran
+`infra/scripts/aws_cost_actions_2026_10_18.py` under the temporary managed
+policy `infra/iam/zarpodder-cost-actions-2026-10-18.json` — detach it when
+finished): empty RDS `starepods` db.t4g.micro deleted (final snapshot
+`starepods-final-2026-10-18`, ≈ $14/mo) and the 2023 `EKS-VPC-Stack` in
+us-east-2 deleted (2 idle NATs + EIPs of a long-gone EKS cluster, ≈ $73/mo);
+its $0 companion eksctl role stack is DELETE_FAILED (role name not covered by
+the policy) and may be left or removed later. **Open:** RDS `starepodsmetadata` db.t4g.large (idle,
 ≈ $99/mo) — reservation vs resize to medium vs stop; user has not decided.
 Other-project items (Bayesics EFS backup $95, EC2 t3.large $65, SageMaker,
 bayesicspg) listed in the ledger, not ours to act on.)*
