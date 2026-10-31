@@ -477,7 +477,12 @@ pass). Plan `conjunction_demo_video_v10_plan.html` + shot list
 `docs/conjunction_demo_video_v10_recording_script.md` (v9 ones kept). Draft
 re-recorded by `make_conjunction_video.py` → `conjunction_demo_video_v10_draft.mp4`
 (uncommitted). Handoff `docs/handoffs/handoff-2026-10-31-video-notebook-v10.md`.
-Open: send v3 to the reviewers; thread 12 follow-up only if asked.)*
+**Later the same day** the six per-step "Processing Time of Each Step"
+tables were removed from v10 (code lines, outputs and the unused
+`StepTimer.table`, edited in place without re-running; the Run time cell
+stays as the one timing summary; v10 now has 21 HTML outputs, 20 of them
+byte-identical in structure to v9's). Open: send v3 to the reviewers;
+thread 12 follow-up only if asked.)*
 
 *Prior: 2026-10-24 (**demo video — plan v9 + recording script +
 pre-run; nothing recorded yet**. Nine scenes, ≈ 7:31, over

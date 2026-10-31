@@ -66,8 +66,8 @@ Each scene's bridge sentence is the last line of its voice and is spoken
 silent and moving at once. Timestamps are targets, not marks to hit: if a
 scene runs long, the next ones shift; §5 says what to cut.
 
-**Skipped on screen (scroll past during a bridge):** every "Processing Time
-of Each Step" table; Part 2's q033303 drill-down; Part 4's two arrival
+**Skipped on screen (scroll past during a bridge):** Part 2's q033303
+drill-down; Part 4's two arrival
 tables; Part 5's "Region-of-Interest Query" and by-instrument tables;
 Part 6's one-pass table and "In this run …" line; the Run time cell.
 
@@ -134,7 +134,7 @@ scrolling to the next scene).
    1963) on "almost everywhere"; along **SSMIS's row** (473 · 653 · 1963) on
    "largely apart from AMSR2 and ATMS".
 5. Last sentence over the matrix; cursor back to the margin. Do **not**
-   scroll to the q033303 drill-down or the step-time table.
+   scroll to the q033303 drill-down.
 
 **Say**
 
