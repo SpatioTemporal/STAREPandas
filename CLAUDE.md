@@ -455,7 +455,54 @@ pip install -e .
 
 ---
 
-*Last Updated: 2026-10-18 (**AWS cost review after the Q1 ingest — ledger
+*Last Updated: 2026-10-31 (**video notebook v10 + narration v3 — the
+2026-10-30 review by Mike Bauer and Kwo-Sen Kuo applied; committed locally**.
+20 comment threads (19 Kuo) → narration v3
+`conjunction_demo_video_v10_narration_v3.docx` (repo root, uncommitted):
+"conjunction" everywhere ("meeting" only in scene 1's definition), "the first
+quarter of 2025" at first mention per scene, "pod code" (the on-screen term;
+not Kuo's "pod index"), GMI's orbit "inclined" not "drifting", Virginia
+sentence names "the pod that covers half of Virginia", figure-4 band "ends
+with ATMS's arrival at seven thirty-six", overpasses "qualify for" a
+conjunction, the instruments-vs-satellites sentence and the spill-over
+explanation **cut** (Kuo disputes per-instrument counting — a per-satellite
+engine would be a v11 with new numbers), US spelling; 1,170 words ≈ 8:05.
+v10 = `starepandas/s3_starepods_examples_video_v10.ipynb`, v9 with the same
+wording on screen (13 replacements incl. drill-down column "Conjunctions",
+step labels "find conjunctions"), executed 2026-10-31: 341 s, 6 figures,
+0 errors, 18/18 content tables identical to v9's. `demo_plots` figure 6:
+title without "(whole chunks, so they extend past the region)", legend
+"outside the period", suptitle "keeps N and excludes M" (tests follow, 44
+pass). Plan `conjunction_demo_video_v10_plan.html` + shot list
+`docs/conjunction_demo_video_v10_recording_script.md` (v9 ones kept). Draft
+re-recorded by `make_conjunction_video.py` → `conjunction_demo_video_v10_draft.mp4`
+(uncommitted). Handoff `docs/handoffs/handoff-2026-10-31-video-notebook-v10.md`.
+Open: send v3 to the reviewers; thread 12 follow-up only if asked.)*
+
+*Prior: 2026-10-24 (**demo video — plan v9 + recording script +
+pre-run; nothing recorded yet**. Nine scenes, ≈ 7:31, over
+`s3_starepods_examples_video_v9.ipynb`. Plan of record
+`conjunction_demo_video_v9_plan.html` (repo root, uncommitted; the v8 plan
+is history) = the v8 plan in narration-v2 wording with the three open
+decisions taken (conversational register, nothing live on camera, close on
+the Recap + 2 s hold). Shot list
+`docs/conjunction_demo_video_v9_recording_script.md`: pre-flight, timeline
+at 155 wpm, per-scene cursor targets with the on-screen values, narration v2
+verbatim, a said-number ↔ on-screen table, trim/fill lines. v9 re-executed
+in place 2026-10-24 as the pre-run: 354 s, 19 cells, 6 figures, 0 errors,
+every non-timing table identical to the 2026-10-16 run; only Part 6's
+seconds moved (quarter 42.5 / 12.2 / 1.5 → scene 8 says "forty-two … twelve
+… a second and a half"; re-read off the screen before voicing). Mike's
+reply file is complete (19 threaded replies) and still to be sent by the
+user. Re-executed notebook uncommitted. **Same day, later: first draft of
+the video recorded by script** — `make_conjunction_video.py` (Playwright
+headless Chromium records the nbconvert HTML of v9 while scrolling per the
+shot list with a drawn cursor + highlight on the named cells; voice macOS
+"Zoe (Premium)" at `say -r 150`; ffmpeg mux) → `conjunction_demo_video_v9_draft.mp4`
+(repo root, uncommitted, ≈ 7:55). The 2026-08 slide-based MP4 approach is
+retired: the user did not use it. Handoff §6.)*
+
+*Prior: 2026-10-18 (**AWS cost review after the Q1 ingest — ledger
 `docs/aws_cost_actions.md` (committed), runbook §6i**. Account run rate
 $16.63/day ≈ $515/mo + tax (Jun–Aug baseline $427, Sept $592 = ingest month);
 STARE-PODS ≈ $170 of it. Review was read-only: `zarpodder` is S3-only but may

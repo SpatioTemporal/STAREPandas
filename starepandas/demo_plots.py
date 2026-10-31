@@ -923,8 +923,7 @@ def plot_region_result(passes, spatial_only, window, bbox, highlight_pod=None,
             handles.append(Patch(facecolor='none', edgecolor='black', linewidth=2,
                                  label=f'pod {highlight_pod}'))
         ax.legend(handles=handles, loc='upper right', fontsize=9)
-    ax.set_title("Where — the data elements the query returns\n"
-                 "(whole chunks, so they extend past the region)")
+    ax.set_title("Where — the data elements the query returns")
 
     # ---- bottom: time — every spatially-selected chunk ---------------------
     ax2 = fig.add_subplot(grid[1])
@@ -968,13 +967,13 @@ def plot_region_result(passes, spatial_only, window, bbox, highlight_pod=None,
         Patch(facecolor='0.90', label='the query period'),
         Patch(facecolor='#dfe2e8', edgecolor='#6b7280', hatch='///',
               linewidth=0.8,
-              label=f'dropped by the period — {n_dropped} chunks'),
+              label=f'outside the period — {n_dropped} chunks'),
     ], loc='upper left', fontsize=9)
     ax2.set_title("When — each spatially-selected chunk's time span")
 
     fig.suptitle(
         f"Space picks {len(spatial_only)} {subject} in "
         f"{spatial_only['podcode'].nunique()} pods; the period keeps "
-        f"{n_kept} and drops {n_dropped}", fontsize=13)
+        f"{n_kept} and excludes {n_dropped}", fontsize=13)
     fig.tight_layout()
     return fig

@@ -392,7 +392,7 @@ def test_region_result_splits_kept_and_dropped():
                              bbox=(0.0, 0.0, 10.0, 10.0),
                              highlight_pod='q000001')
     # the morning SSMIS chunk is outside the window: kept 2, dropped 1
-    assert 'keeps 2 and drops 1' in fig._suptitle.get_text()
+    assert 'keeps 2 and excludes 1' in fig._suptitle.get_text()
     plt.close(fig)
 
 
@@ -517,8 +517,8 @@ def test_region_figures_accept_a_polygon_outline():
     window = (t0 - pd.Timedelta(hours=3), t0 + pd.Timedelta(hours=3))
     fig = plot_region_result({'GMI_S1': px}, spatial, window, bbox=None,
                              region=region, fold=False)
-    assert 'keeps 1 and drops 1' in fig._suptitle.get_text()
-    assert 'past the region' in fig.axes[0].get_title()
+    assert 'keeps 1 and excludes 1' in fig._suptitle.get_text()
+    assert fig.axes[0].get_title() == 'Where — the data elements the query returns'
     plt.close(fig)
 
 
