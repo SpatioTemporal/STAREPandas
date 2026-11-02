@@ -481,8 +481,12 @@ re-recorded by `make_conjunction_video.py` → `conjunction_demo_video_v10_draft
 tables were removed from v10 (code lines, outputs and the unused
 `StepTimer.table`, edited in place without re-running; the Run time cell
 stays as the one timing summary; v10 now has 21 HTML outputs, 20 of them
-byte-identical in structure to v9's). Open: send v3 to the reviewers;
-thread 12 follow-up only if asked.)*
+byte-identical in structure to v9's). **2026-11-01 — narration v4:** scene 3's closing line "Forty seconds to
+read the catalog, twelve to find every conjunction, and not one chunk
+opened." cut (its source was the removed Part 2 step table; scene 8 keeps the
+timing message) → `conjunction_demo_video_v10_narration_v4.docx` (v3 kept),
+plan, recording script (≈ 7:59, 1,154 words), recorder scene 3. Open: send
+v4 to the reviewers; thread 12 follow-up only if asked.)*
 
 *Prior: 2026-10-24 (**demo video — plan v9 + recording script +
 pre-run; nothing recorded yet**. Nine scenes, ≈ 7:31, over

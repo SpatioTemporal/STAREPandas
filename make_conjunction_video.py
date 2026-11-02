@@ -1,8 +1,8 @@
-"""Record the conjunction demo video (notebook v10, narration v3) without a camera.
+"""Record the conjunction demo video (notebook v10, narration v4) without a camera.
 
 What it does, following docs/conjunction_demo_video_v10_recording_script.md:
 
-1. Voice: every narration segment of narration v2 is synthesized with a macOS
+1. Voice: every narration segment of narration v4 is synthesized with a macOS
    voice (default "Zoe (Premium)") via ``say`` and measured.
 2. Picture: the executed notebook, exported to HTML with the code hidden, is
    opened in headless Chromium (Playwright) at 1920x1080 / 125 % zoom and
@@ -128,7 +128,6 @@ SCENES = [
             cues=[("all pods", ("cell", PW, "2048", 0)), ("GMI's inclined", ("cell", PW, "1976", 1)),
                   ("almost everywhere", ("cell", PW, "1963", 0)), ("SSMIS's orbital", ("cell", PW, "473", 1)),
                   ("apart from", ("cell", PW, "653", 1))]),
-        dict(park=True, say="Forty seconds to read the catalog, twelve to find every conjunction, and not one chunk opened."),
         dict(bridge=("text", "Catalog-first discovery", 0, -90), say="That was the planet. Now one state."),
     ],
     # ── 4 ──

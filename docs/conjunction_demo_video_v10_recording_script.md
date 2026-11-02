@@ -1,4 +1,4 @@
-# Recording script — "STARE-PODS: Conjunction Analytics" (notebook v10, narration v3, ≈ 8:05)
+# Recording script — "STARE-PODS: Conjunction Analytics" (notebook v10, narration v4, ≈ 7:59)
 
 Companion notebook: `starepandas/s3_starepods_examples_video_v10.ipynb`
 (built 2026-10-31 from v9 with the reviewers' wording, executed the same day —
@@ -10,9 +10,9 @@ verbatim so the recording needs this one file open. A scripted draft of the
 whole film exists: `make_conjunction_video.py` →
 `conjunction_demo_video_v10_draft.mp4`.
 
-Nine scenes, about 1,170 spoken words at 155 words per minute (7:33 of
+Nine scenes, about 1,154 spoken words at 155 words per minute (7:27 of
 voice), six five-second pauses on the figures and a two-second hold at the
-end: **≈ 8:05**. Decisions taken 2026-10-24: conversational register as
+end: **≈ 7:59**. Decisions taken 2026-10-24: conversational register as
 written; nothing runs live on camera; the film closes on the Recap cell.
 
 ## 1. Pre-flight (the day of recording)
@@ -28,8 +28,8 @@ written; nothing runs live on camera; the film closes on the Recap cell.
 3. **Read the scene 8 numbers off this run** (Part 6, "The Conjunction Engine
    at Scale", the quarter row's three Seconds columns) and say those instead
    of the ones printed in §3 if they differ by more than a second or two.
-   Scene 3's "forty seconds … twelve" comes from Part 2's step table (read /
-   find at Δt = 5 min) and is approximate on purpose.
+   They are the only timings the voice says (narration v4 dropped scene 3's
+   "forty seconds … twelve" line when Part 2's step table left the notebook).
 4. **Display**: 1080p or higher; notebook zoom 125–150 %; collapse or hide
    every code input (JupyterLab: `View → Collapse All Code`, or the
    `hide-input` toolbar); turn off cell execution counts if the theme shows
@@ -53,13 +53,13 @@ instruments"), never "three-way". No algorithm names.
 |---|---|---|---|---|---|
 | 1 Cold open | 0:00 | 1:05 | — | 1:05 | title cell (In [–], first markdown) |
 | 2 The store and its catalog | 1:05 | 0:48 | — | 1:53 | holdings table (In [2]) → pod occupancy (In [3]) |
-| 3 Who met whom | 1:53 | 1:06 | — | 2:59 | Part 2 (In [4]): Δt table, pair matrix |
-| 4 Virginia | 2:59 | 1:00 | 1 × 5 s | 4:04 | Part 3 (In [5]): callout, figure 1, per-pod table |
-| 5 Six passes | 4:04 | 0:52 | 2 × 5 s | 5:06 | Part 3 (In [5]): swath table, figures 2–3 |
-| 6 Up close | 5:06 | 0:46 | 2 × 5 s | 6:03 | Part 4 (In [6]): figures 4–5 |
-| 7 One query | 6:03 | 0:47 | 1 × 5 s | 6:54 | Part 5 (In [7]): criteria table, figure 6 |
-| 8 Scale of a quarter | 6:54 | 0:41 | — | 7:35 | Part 6 (In [8]): scope table, matrix |
-| 9 Takeaways | 7:35 | 0:28 | hold 2 s | 8:05 | Recap cell |
+| 3 Who met whom | 1:53 | 1:00 | — | 2:53 | Part 2 (In [4]): Δt table, pair matrix |
+| 4 Virginia | 2:53 | 1:00 | 1 × 5 s | 3:58 | Part 3 (In [5]): callout, figure 1, per-pod table |
+| 5 Six passes | 3:58 | 0:52 | 2 × 5 s | 5:00 | Part 3 (In [5]): swath table, figures 2–3 |
+| 6 Up close | 5:00 | 0:46 | 2 × 5 s | 5:57 | Part 4 (In [6]): figures 4–5 |
+| 7 One query | 5:57 | 0:47 | 1 × 5 s | 6:48 | Part 5 (In [7]): criteria table, figure 6 |
+| 8 Scale of a quarter | 6:48 | 0:41 | — | 7:29 | Part 6 (In [8]): scope table, matrix |
+| 9 Takeaways | 7:29 | 0:28 | hold 2 s | 7:59 | Recap cell |
 
 Each scene's bridge sentence is the last line of its voice and is spoken
 *while scrolling* to the next scene's first cell, so the screen is never
@@ -119,7 +119,7 @@ scrolling to the next scene).
 
 **Bridge** (scrolling to Part 2's Δt table) → *Where, when, which instrument: that's all a conjunction search needs. Let's run one on the whole quarter.*
 
-### Scene 3 — Who met whom, from records alone · 1:53–2:59 · 170 words
+### Scene 3 — Who met whom, from records alone · 1:53–2:53 · 154 words
 
 **Shots**
 1. "Time-Window Dependence of Conjunctions" fills the frame; cursor in the
@@ -133,8 +133,8 @@ scrolling to the next scene).
    **AMSR2–ATMS 2048** on "meet in all pods"; along GMI's row (1976 · 1980 ·
    1963) on "almost everywhere"; along **SSMIS's row** (473 · 653 · 1963) on
    "largely apart from AMSR2 and ATMS".
-5. Last sentence over the matrix; cursor back to the margin. Do **not**
-   scroll to the q033303 drill-down.
+5. The SSMIS sentence ends over the matrix; cursor back to the margin. Do
+   **not** scroll to the q033303 drill-down.
 
 **Say**
 
@@ -143,12 +143,10 @@ scrolling to the next scene).
 > With delta-t at five minutes of observation time: one and a half million events. Every pod sees at least two instruments meet, fourteen hundred see three, nineteen see all four. Widen delta-t to ten minutes and the four-instrument conjunction count climbs to sixty-five; at thirty, three hundred and ninety.
 >
 > The pair matrix tells us who meets whom. For example, the near-co-orbiting pair of AMSR2 and ATMS meet in all pods. GMI's inclined orbit meets all the others almost everywhere at some point. In contrast, SSMIS's orbital plane keeps it largely apart from AMSR2 and ATMS.
->
-> Forty seconds to read the catalog, twelve to find every conjunction, and not one chunk opened.
 
-**Bridge** (scrolling past the drill-down and step table to Part 3) → *That was the planet. Now one state.*
+**Bridge** (scrolling past the drill-down to Part 3) → *That was the planet. Now one state.*
 
-### Scene 4 — Virginia: twelve and a half million records to twenty thousand · 2:59–4:04 · 154 words + pause
+### Scene 4 — Virginia: twelve and a half million records to twenty thousand · 2:53–3:58 · 154 words + pause
 
 **Shots**
 1. Part 3's headline callout fills the top of the frame: "12,451,867 chunk
@@ -173,7 +171,7 @@ scrolling to the next scene).
 
 **Bridge** (scrolling to the swath table) → *Here's everyone who passed over that pod that morning.*
 
-### Scene 5 — Six passes, three in the window · 4:04–5:06 · 135 words + 2 pauses
+### Scene 5 — Six passes, three in the window · 3:58–5:00 · 135 words + 2 pauses
 
 **Shots**
 1. "Orbit Swaths over Pod q111332 around the Example Conjunction" fills the
@@ -198,7 +196,7 @@ scrolling to the next scene).
 
 **Bridge** (scrolling into Part 4, past its six-swath table) → *Let's go inside that black pod.*
 
-### Scene 6 — Up close: three satellites in five minutes · 5:06–6:03 · 120 words + 2 pauses
+### Scene 6 — Up close: three satellites in five minutes · 5:00–5:57 · 120 words + 2 pauses
 
 **Shots**
 1. Scroll past "Pod q111332 — All 6 Orbit Swaths in the Pod" (not read) so
@@ -219,7 +217,7 @@ scrolling to the next scene).
 
 **Bridge** (scrolling into Part 5, past "The Region-of-Interest Query") → *That's who met. Now, what did they see?*
 
-### Scene 7 — One query, space and time together · 6:03–6:54 · 121 words + pause
+### Scene 7 — One query, space and time together · 5:57–6:48 · 121 words + pause
 
 **Shots**
 1. "One Query, Both Criteria — the Whole Store" fills the frame (subtitle
@@ -243,7 +241,7 @@ scrolling to the next scene).
 
 **Bridge** (scrolling to Part 6) → *One question left: what happens as the scope grows?*
 
-### Scene 8 — The engine at the scale of a quarter · 6:54–7:35 · 105 words
+### Scene 8 — The engine at the scale of a quarter · 6:48–7:29 · 105 words
 
 **Shots**
 1. "The Conjunction Engine at Scale — the Whole Store, Δt = 10 min" fills
@@ -263,9 +261,9 @@ The scripted draft reads them from the executed notebook automatically.
 >
 > The cross-check: this matrix is, cell for cell, the one from the global search.
 
-**Bridge** (scrolling past the Part 6 step table to the Recap) → *Which brings us back to where we started.*
+**Bridge** (scrolling past the Run time cell to the Recap) → *Which brings us back to where we started.*
 
-### Scene 9 — Three takeaways · 7:35–8:05 · 72 words + hold
+### Scene 9 — Three takeaways · 7:29–7:59 · 72 words + hold
 
 **Shots**
 1. The **Recap** cell, scrolled so the numbered list of three fills the
@@ -293,7 +291,6 @@ rows after every re-run; the rest only change if the store is re-ingested.
 | one and a half million events · every pod · fourteen hundred · nineteen | 1,499,727 · 2048 · 1414 · 19 | Δt table, Δt = 5 min |
 | sixty-five · three hundred ninety | 65 · 390 | Δt table, "4 instruments" at 10 / 30 min |
 | AMSR2 and ATMS in all pods · SSMIS largely apart | 2048 · SSMIS row 473 / 653 / 1963 | Pair matrix |
-| forty seconds to read, twelve to find | ≈ 43 s read · ≈ 12.6 s find (Δt = 5) | Part 2 step table (not shown) |
 | twenty thousand · six hundred sixteen times · ninety-nine point eight | 20,216 · 616× · 99.84 % | Part 3 callout |
 | the pod that covers half of Virginia | q111332, 50 % | Virginia per-pod table |
 | no four-instrument conjunction all quarter · three-instrument ones within five minutes | "4 instruments" column all 0 · q111332 Δt = 5: 6 | Virginia per-pod table |
